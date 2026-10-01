@@ -37,7 +37,7 @@ flowchart TD
         D3[(Kubernetes Cluster)]
     end
 
-    A1 & A2 -->|SSE / stdio Connection| B1
+    A1 & A2 -->|Streamable HTTP / stdio| B1
     B2 -->|Proxy Dispatch| C1 --> D1
     B2 -->|Proxy Dispatch| C2 --> D2
     B2 -->|Proxy Dispatch| C3 --> D3
