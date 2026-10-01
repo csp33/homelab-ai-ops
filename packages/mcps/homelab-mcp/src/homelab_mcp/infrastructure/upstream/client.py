@@ -1,6 +1,9 @@
-"""Process-based upstream MCP client using official MCP SDK."""
+"""Process-based upstream MCP client using official MCP SDK with persistent sessions."""
 
+import asyncio
+import logging
 import os
+from contextlib import AsyncExitStack
 from typing import Any
 
 from homelab_mcp.domain.interfaces import UpstreamMCPInterface
@@ -8,9 +11,11 @@ from homelab_mcp.domain.models import ToolDefinition, ToolResult, UpstreamType
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+logger = logging.getLogger("homelab_mcp.upstream_client")
+
 
 class ProcessUpstreamClient(UpstreamMCPInterface):
-    """Client that communicates with an upstream MCP server running as a sub-process over stdio."""
+    """Client that communicates with an upstream MCP server via a persistent stdio sub-process."""
 
     def __init__(
         self,
@@ -23,6 +28,9 @@ class ProcessUpstreamClient(UpstreamMCPInterface):
         self.args = args or []
         self.env = {**os.environ, **(env or {})}
         self.upstream_type = upstream_type
+        self._lock = asyncio.Lock()
+        self._session: ClientSession | None = None
+        self._exit_stack: AsyncExitStack | None = None
 
     def _get_server_params(self) -> StdioServerParameters:
         return StdioServerParameters(
@@ -31,15 +39,50 @@ class ProcessUpstreamClient(UpstreamMCPInterface):
             env=self.env,
         )
 
-    async def list_tools(self) -> list[ToolDefinition]:
-        """Connect to upstream MCP server, initialize session, and discover tools."""
+    async def _ensure_connected(self) -> ClientSession:
+        """Establish and initialize the persistent upstream process session if not already connected."""
+        if self._session is not None:
+            return self._session
+
+        logger.info(f"Starting persistent upstream MCP process for '{self.upstream_type}' ({self.command})...")
         server_params = self._get_server_params()
-        async with (
-            stdio_client(server_params) as (read, write),
-            ClientSession(read, write) as session,
-        ):
+        self._exit_stack = AsyncExitStack()
+        try:
+            read, write = await self._exit_stack.enter_async_context(stdio_client(server_params))
+            session = await self._exit_stack.enter_async_context(ClientSession(read, write))
             await session.initialize()
-            result = await session.list_tools()
+            self._session = session
+            logger.info(f"Persistent upstream MCP session established for '{self.upstream_type}'.")
+            return self._session
+        except Exception as exc:
+            logger.error(f"Failed to start upstream MCP process '{self.upstream_type}': {exc}")
+            await self._close_session()
+            raise
+
+    async def _close_session(self) -> None:
+        """Gracefully terminate upstream session and process."""
+        if self._exit_stack:
+            try:
+                await self._exit_stack.aclose()
+            except Exception as exc:
+                logger.warning(f"Error terminating upstream MCP process for '{self.upstream_type}': {exc}")
+            finally:
+                self._session = None
+                self._exit_stack = None
+
+    async def list_tools(self) -> list[ToolDefinition]:
+        """Discover tools using the persistent upstream session."""
+        async with self._lock:
+            try:
+                session = await self._ensure_connected()
+                result = await session.list_tools()
+            except Exception as exc:
+                logger.warning(
+                    f"list_tools failed on upstream '{self.upstream_type}', attempting reconnection: {exc}"
+                )
+                await self._close_session()
+                session = await self._ensure_connected()
+                result = await session.list_tools()
 
             tool_definitions = []
             for tool in result.tools:
@@ -54,14 +97,18 @@ class ProcessUpstreamClient(UpstreamMCPInterface):
             return tool_definitions
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
-        """Connect to upstream MCP server and execute a specific tool."""
-        server_params = self._get_server_params()
-        async with (
-            stdio_client(server_params) as (read, write),
-            ClientSession(read, write) as session,
-        ):
-            await session.initialize()
-            result = await session.call_tool(name, arguments)
+        """Execute a tool using the persistent upstream session with automatic recovery."""
+        async with self._lock:
+            try:
+                session = await self._ensure_connected()
+                result = await session.call_tool(name, arguments)
+            except Exception as exc:
+                logger.warning(
+                    f"Tool call '{name}' failed on upstream '{self.upstream_type}', retrying with fresh connection: {exc}"
+                )
+                await self._close_session()
+                session = await self._ensure_connected()
+                result = await session.call_tool(name, arguments)
 
             # Format content
             contents = []
