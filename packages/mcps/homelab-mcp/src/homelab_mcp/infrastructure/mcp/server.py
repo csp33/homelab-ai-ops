@@ -6,6 +6,7 @@ from typing import Any
 from fastmcp import FastMCP
 from fastmcp.server.auth import AccessToken, MultiAuth, TokenVerifier
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
+from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 from homelab_mcp.application.service import MCPGatewayService
 from homelab_mcp.config import settings
 from homelab_mcp.infrastructure.auth.google import GoogleJWTVerifier
@@ -72,6 +73,12 @@ def create_gateway_mcp_server(service: MCPGatewayService) -> FastMCP:
             auth_provider = token_verifier
 
     mcp = FastMCP("homelab-mcp-gateway", auth=auth_provider)
+    mcp.add_middleware(
+        ResponseCachingMiddleware(
+            list_tools_settings={"enabled": True, "ttl": 300},
+            call_tool_settings={"enabled": False},
+        )
+    )
 
     @mcp.tool()
     async def gateway_list_tools() -> list[dict[str, Any]]:
