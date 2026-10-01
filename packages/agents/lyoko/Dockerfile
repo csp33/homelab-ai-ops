@@ -11,15 +11,19 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 WORKDIR /app
 
-# Copy dependency definition
-COPY pyproject.toml /app/
-COPY packages/agents/lyoko/pyproject.toml /app/packages/agents/lyoko/
+# Copy root workspace and manifests + lockfile
+COPY pyproject.toml uv.lock README.md ./
+COPY packages/mcps/homelab-mcp/pyproject.toml packages/mcps/homelab-mcp/README.md packages/mcps/homelab-mcp/
+COPY packages/agents/lyoko/pyproject.toml packages/agents/lyoko/README.md packages/agents/lyoko/
 
 # Install dependencies into virtual environment
-RUN uv sync --package lyoko --no-dev --frozen || uv sync --package lyoko --no-dev
+RUN uv sync --package lyoko --no-dev --no-install-workspace --frozen
 
 # Copy source code
-COPY packages/agents/lyoko/src/ /app/packages/agents/lyoko/src/
+COPY packages/agents/lyoko/src/ packages/agents/lyoko/src/
+
+# Install package into venv
+RUN uv sync --package lyoko --no-dev --frozen
 
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
