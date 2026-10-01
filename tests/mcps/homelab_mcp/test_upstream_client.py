@@ -27,23 +27,21 @@ def test_process_upstream_client_params():
 
 
 @pytest.mark.asyncio
-async def test_list_tools_prefers_input_schema():
+async def test_list_tools_reads_input_schema():
     client = ProcessUpstreamClient(
         command="k8s",
         upstream_type=UpstreamType.KUBERNETES,
     )
 
-    # Tool with standard input_schema
     tool1 = SimpleNamespace(
         name="k8s_get_pods",
         description="List pods",
         input_schema={"type": "object", "properties": {"namespace": {"type": "string"}}},
     )
-    # Tool with legacy inputSchema only
     tool2 = SimpleNamespace(
-        name="legacy_tool",
+        name="k8s_get_nodes",
         description=None,
-        inputSchema={"type": "object"},
+        input_schema={},
     )
 
     mock_session = AsyncMock()
@@ -67,8 +65,8 @@ async def test_list_tools_prefers_input_schema():
             "properties": {"namespace": {"type": "string"}},
         }
         assert tools[0].description == "List pods"
-        assert tools[1].name == "legacy_tool"
-        assert tools[1].parameters == {"type": "object"}
+        assert tools[1].name == "k8s_get_nodes"
+        assert tools[1].parameters == {}
         assert tools[1].description == ""
 
 
@@ -79,9 +77,10 @@ async def test_call_tool_handles_is_error_and_text_content():
         upstream_type=UpstreamType.KUBERNETES,
     )
 
+    # In MCP SDK v2, is_error can be None or False on success
     mock_result = SimpleNamespace(
         content=[SimpleNamespace(text="pod-1"), SimpleNamespace(text="pod-2")],
-        is_error=False,
+        is_error=None,
     )
 
     mock_session = AsyncMock()
@@ -101,3 +100,34 @@ async def test_call_tool_handles_is_error_and_text_content():
         assert result.status == "success"
         assert result.content == "pod-1\npod-2"
         assert result.is_error is False
+
+
+@pytest.mark.asyncio
+async def test_call_tool_handles_error_status():
+    client = ProcessUpstreamClient(
+        command="k8s",
+        upstream_type=UpstreamType.KUBERNETES,
+    )
+
+    mock_result = SimpleNamespace(
+        content=[SimpleNamespace(text="pod not found")],
+        is_error=True,
+    )
+
+    mock_session = AsyncMock()
+    mock_session.call_tool.return_value = mock_result
+
+    with (
+        patch("homelab_mcp.infrastructure.upstream.client.stdio_client") as mock_stdio,
+        patch("homelab_mcp.infrastructure.upstream.client.ClientSession") as mock_session_cls,
+    ):
+        mock_stdio.return_value.__aenter__.return_value = (MagicMock(), MagicMock())
+        mock_stdio.return_value.__aexit__.return_value = None
+        mock_session_cls.return_value.__aenter__.return_value = mock_session
+        mock_session_cls.return_value.__aexit__.return_value = None
+
+        result = await client.call_tool("k8s_get_pods", {"namespace": "nonexistent"})
+
+        assert result.status == "error"
+        assert result.content == "pod not found"
+        assert result.is_error is True
