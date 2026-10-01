@@ -58,6 +58,7 @@ def create_gateway_mcp_server(service: MCPGatewayService) -> FastMCP:
                 config_url="https://accounts.google.com/.well-known/openid-configuration",
                 client_id=settings.google_client_id,
                 client_secret=settings.google_client_secret,
+                jwt_signing_key=settings.google_client_secret,
                 base_url=settings.base_url,
                 redirect_path=settings.redirect_path,
                 verify_id_token=True,
