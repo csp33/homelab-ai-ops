@@ -43,11 +43,14 @@ class ProcessUpstreamClient(UpstreamMCPInterface):
 
             tool_definitions = []
             for tool in result.tools:
+                parameters = getattr(tool, "input_schema", None)
+                if parameters is None:
+                    parameters = getattr(tool, "inputSchema", {})
                 tool_definitions.append(
                     ToolDefinition(
                         name=tool.name,
                         description=tool.description or "",
-                        parameters=getattr(tool, "input_schema", getattr(tool, "inputSchema", {})),
+                        parameters=parameters,
                         upstream_type=self.upstream_type,
                     )
                 )
@@ -71,7 +74,9 @@ class ProcessUpstreamClient(UpstreamMCPInterface):
                 else:
                     contents.append(str(item))
 
-            is_error = getattr(result, "is_error", getattr(result, "isError", False))
+            is_error = getattr(result, "is_error", None)
+            if is_error is None:
+                is_error = getattr(result, "isError", False)
             return ToolResult(
                 status="error" if is_error else "success",
                 content="\n".join(contents)
