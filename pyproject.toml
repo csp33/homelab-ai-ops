@@ -1,0 +1,46 @@
+[project]
+name = "homelab-aiops"
+version = "0.1.0"
+description = "Autonomous Homelab AIOps platform with FastMCP Gateway and LangGraph Auto-remediation Agent (LYOKO)"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+authors = [
+    { name = "Carlos Páez" }
+]
+dependencies = [
+    "homelab-mcp",
+    "lyoko",
+]
+
+[tool.uv.workspace]
+members = [
+    "packages/mcps/*",
+    "packages/agents/*",
+]
+
+[tool.uv.sources]
+homelab-mcp = { workspace = true }
+lyoko = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.0,<10.0.0",
+    "pytest-asyncio>=1.4.0,<2.0.0",
+    "ruff>=0.16.0,<1.0.0",
+    "httpx>=0.28.0,<1.0.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["packages/mcps/homelab-mcp/src", "packages/agents/lyoko/src"]
+addopts = ["--import-mode=importlib"]

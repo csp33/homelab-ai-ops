@@ -1,0 +1,210 @@
+name: CI & CD
+
+on:
+  push:
+    branches: [master, main]
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Registry + Helm image.tag (empty = "<branch>-<short sha>"). Use latest to match standard release.'
+        required: false
+        default: ''
+      skip_tests:
+        description: 'Skip build test; only build & push images (+ Helm values bump).'
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    if: ${{ !(github.event_name == 'workflow_dispatch' && (github.event.inputs.skip_tests == true || github.event.inputs.skip_tests == 'true')) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install 3.13
+      - name: Install dependencies
+        run: uv sync --all-packages
+      - name: Run Ruff Linter
+        run: uv run ruff check .
+      - name: Run Pytest
+        run: uv run pytest
+
+  publish-meta:
+    name: Resolve image tags
+    runs-on: ubuntu-latest
+    needs: [lint-and-test]
+    if: |
+      always() &&
+      !cancelled() &&
+      (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      (needs.lint-and-test.result == 'success' || needs.lint-and-test.result == 'skipped')
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      branch: ${{ steps.meta.outputs.branch }}
+      mcp_tags: ${{ steps.meta.outputs.mcp_tags }}
+      lyoko_tags: ${{ steps.meta.outputs.lyoko_tags }}
+    steps:
+      - name: Resolve image tags
+        id: meta
+        run: |
+          BRANCH='${{ github.ref_name }}'
+          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.image_tag }}" ]; then
+            TAG='${{ github.event.inputs.image_tag }}'
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${BRANCH}"
+          else
+            SHORT=$(echo '${{ github.sha }}' | cut -c1-7)
+            TAG="${BRANCH}-${SHORT}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "mcp_tags<<EOF"
+            echo "ghcr.io/csp33/homelab-mcp:${TAG}"
+            if [ "${BRANCH}" = "master" ] || [ "${BRANCH}" = "main" ]; then
+              echo "ghcr.io/csp33/homelab-mcp:latest"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "lyoko_tags<<EOF"
+            echo "ghcr.io/csp33/lyoko:${TAG}"
+            if [ "${BRANCH}" = "master" ] || [ "${BRANCH}" = "main" ]; then
+              echo "ghcr.io/csp33/lyoko:latest"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  publish-images:
+    name: Build & push Docker images
+    runs-on: ubuntu-latest
+    needs: publish-meta
+    if: |
+      always() &&
+      !cancelled() &&
+      needs.publish-meta.result == 'success'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GHCR_WRITE_TOKEN != '' && secrets.GHCR_WRITE_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Build & push homelab-mcp image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/mcps/homelab-mcp/Dockerfile
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          sbom: false
+          tags: ${{ needs.publish-meta.outputs.mcp_tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push lyoko image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/agents/lyoko/Dockerfile
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          sbom: false
+          tags: ${{ needs.publish-meta.outputs.lyoko_tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  update-k8s-helm-values:
+    name: Bump homelab-aiops image tags in k8s-at-home
+    runs-on: ubuntu-latest
+    needs: [publish-meta, publish-images]
+    if: |
+      always() &&
+      !cancelled() &&
+      needs.publish-images.result == 'success' &&
+      (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    steps:
+      - name: Check deployment token secret
+        id: check-token
+        run: |
+          if [ -z "${{ secrets.K8S_CHARTS_REPO_TOKEN }}" ]; then
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::K8S_CHARTS_REPO_TOKEN secret is not configured in this repository. Skipping automated Helm values bump in csp33/k8s-at-home."
+          else
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install yq
+        if: steps.check-token.outputs.has_token == 'true'
+        run: |
+          sudo curl -fsSL "https://github.com/mikefarah/yq/releases/download/v4.44.5/yq_linux_amd64" -o /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/yq
+
+      - uses: actions/checkout@v4
+        if: steps.check-token.outputs.has_token == 'true'
+        with:
+          repository: csp33/k8s-at-home
+          ref: master
+          token: ${{ secrets.K8S_CHARTS_REPO_TOKEN }}
+          path: k8s-charts
+
+      - name: Set image tags in homelab-aiops Helm values
+        if: steps.check-token.outputs.has_token == 'true'
+        working-directory: k8s-charts
+        env:
+          TAG: ${{ needs.publish-meta.outputs.tag }}
+          BRANCH: ${{ needs.publish-meta.outputs.branch }}
+        run: |
+          TARGET="charts/homelab-aiops/values.yaml"
+          if [ ! -f "${TARGET}" ]; then
+            echo "::warning::${TARGET} does not exist in k8s-at-home yet. Skipping bump."
+            exit 0
+          fi
+          echo "Bumping ${TARGET} image tags to ${TAG}"
+          yq eval -i '.mcp.image.tag = strenv(TAG)' "${TARGET}"
+          yq eval -i '.agent.image.tag = strenv(TAG)' "${TARGET}"
+          echo "target=${TARGET}" >> "$GITHUB_ENV"
+
+      - name: Commit and push
+        if: steps.check-token.outputs.has_token == 'true'
+        working-directory: k8s-charts
+        env:
+          TAG: ${{ needs.publish-meta.outputs.tag }}
+          BRANCH: ${{ needs.publish-meta.outputs.branch }}
+        run: |
+          if [ ! -f "charts/homelab-aiops/values.yaml" ]; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add charts/homelab-aiops/values.yaml
+          if git diff --cached --quiet; then
+            echo "No change to values.yaml (tag already ${TAG})."
+            exit 0
+          fi
+          git commit -m "chore(homelab-aiops): bump image tags to ${TAG}"
+          git push origin HEAD:master

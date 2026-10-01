@@ -1,0 +1,29 @@
+[project]
+name = "lyoko"
+version = "0.1.0"
+description = "LYOKO - Live Yaml Optimization & K8s Orchestration (LangGraph Auto-Remediation Agent)"
+readme = "README.md"
+requires-python = ">=3.13"
+authors = [
+    { name = "Carlos Páez" }
+]
+dependencies = [
+    "langgraph>=1.2.12,<2.0.0",
+    "langchain-core>=1.6.6,<2.0.0",
+    "langchain-openai>=1.6.7,<2.0.0",
+    "langchain-mcp-adapters>=0.3.1,<1.0.0",
+    "fastapi>=0.142.0,<1.0.0",
+    "uvicorn[standard]>=0.54.0,<1.0.0",
+    "pydantic>=2.13.0,<3.0.0",
+    "pydantic-settings>=2.15.0,<3.0.0",
+    "httpx>=0.28.0,<1.0.0",
+    "python-dotenv>=1.2.0,<2.0.0",
+    "langfuse>=4.16.0,<5.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lyoko"]

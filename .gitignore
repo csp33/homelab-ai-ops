@@ -216,3 +216,30 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Secrets & Local Configurations (DO NOT COMMIT)
+.env
+.env.*
+*.env
+!.env.example
+*.local
+*.secret
+*.secrets
+secrets/
+*.pem
+*.key
+*.crt
+*.cert
+kubeconfig*
+*kubeconfig
+token.json
+credentials.json
+auth.json
+*.id_rsa
+*.id_ed25519
