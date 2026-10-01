@@ -1,6 +1,8 @@
 """FastMCP Gateway Server exposing aggregated upstream tools."""
 
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastmcp import FastMCP
@@ -73,7 +75,13 @@ def create_gateway_mcp_server(service: MCPGatewayService) -> FastMCP:
         else:
             auth_provider = token_verifier
 
-    mcp = FastMCP("homelab-mcp-gateway", auth=auth_provider)
+    @asynccontextmanager
+    async def server_lifespan(server: FastMCP):
+        logger.info("Pre-warming upstream MCP connections and routing table...")
+        asyncio.create_task(service.discover_tools())
+        yield
+
+    mcp = FastMCP("homelab-mcp-gateway", auth=auth_provider, lifespan=server_lifespan)
     mcp.add_middleware(
         ResponseCachingMiddleware(
             list_tools_settings={"enabled": True, "ttl": 300},
