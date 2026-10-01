@@ -1,5 +1,4 @@
-"""Application service orchestrating upstream MCP tool aggregation, routing, and guardrails."""
-
+import asyncio
 import logging
 from typing import Any
 
@@ -33,34 +32,42 @@ class MCPGatewayService:
             )
         )
         self._tool_routing: dict[str, tuple[str, UpstreamMCPInterface]] = {}
+        self._cached_tools: list[ToolDefinition] | None = None
 
     def verify_access(self, token: str | None) -> AuthIdentity:
         return self.auth.verify(token)
 
-    async def discover_tools(self) -> list[ToolDefinition]:
-        """Query all upstream MCP servers and build the aggregated tool routing table, filtered by guardrails."""
+    async def discover_tools(self, force_refresh: bool = False) -> list[ToolDefinition]:
+        """Query all upstream MCP servers in parallel and build the aggregated tool routing table."""
+        if self._cached_tools is not None and not force_refresh:
+            return self._cached_tools
+
         aggregated_tools: list[ToolDefinition] = []
         routing: dict[str, tuple[str, UpstreamMCPInterface]] = {}
 
-        for upstream_name, upstream_port in self.upstreams.items():
+        async def fetch_upstream(name: str, client: UpstreamMCPInterface):
             try:
-                tools = await upstream_port.list_tools()
-                for t in tools:
-                    # Filter tool discovery through whitelist/guardrail
-                    if self.guardrail.is_tool_allowed(t.name):
-                        routing[t.name] = (upstream_name, upstream_port)
-                        aggregated_tools.append(t)
-                    else:
-                        logger.debug(
-                            f"Tool '{t.name}' from upstream '{upstream_name}' excluded by guardrail policy."
-                        )
-                logger.info(
-                    f"Discovered {len(tools)} tools from upstream '{upstream_name}' (allowed: {sum(1 for t in tools if t.name in routing)})."
-                )
+                tools = await client.list_tools()
+                return name, client, tools
             except Exception as exc:
-                logger.warning(f"Failed to discover tools from upstream '{upstream_name}': {exc}")
+                logger.warning(f"Failed to discover tools from upstream '{name}': {exc}")
+                return name, client, []
+
+        results = await asyncio.gather(
+            *[fetch_upstream(name, client) for name, client in self.upstreams.items()]
+        )
+
+        for upstream_name, upstream_port, tools in results:
+            for t in tools:
+                if self.guardrail.is_tool_allowed(t.name):
+                    routing[t.name] = (upstream_name, upstream_port)
+                    aggregated_tools.append(t)
+            logger.info(
+                f"Discovered {len(tools)} tools from upstream '{upstream_name}' (allowed: {sum(1 for t in tools if t.name in routing)})."
+            )
 
         self._tool_routing = routing
+        self._cached_tools = aggregated_tools
         return aggregated_tools
 
     async def execute_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
