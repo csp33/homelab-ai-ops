@@ -14,7 +14,9 @@ from lyoko.application.chat_manager import ChatManager
 from lyoko.application.hitl import ApprovalManager
 from lyoko.application.workflow import create_remediation_workflow
 from lyoko.config import settings
+from lyoko.domain.exceptions import MCPGatewayError
 from lyoko.domain.interfaces.llm import LLMClientInterface
+from lyoko.domain.interfaces.mcp import MCPClientInterface
 from lyoko.infrastructure.chat.telegram import TelegramConnector
 from lyoko.infrastructure.llm.openai import OpenAILLMAdapter
 from lyoko.infrastructure.mcp.client import FastMCPClient
@@ -70,6 +72,22 @@ def build_chat_manager(
     return chat_manager
 
 
+async def verify_mcp_gateway(mcp_client: MCPClientInterface) -> None:
+    """Check the MCP gateway at startup so misconfiguration is loud instead of silent.
+
+    Configuration errors (wrong URL, rejected credentials) abort startup when
+    ``MCP_FAIL_FAST`` is enabled, because retrying cannot fix them and the agent would
+    otherwise run without any tools. A gateway that is merely unreachable (e.g. still
+    starting) is logged as an error but does not prevent the agent from booting.
+    """
+    try:
+        await mcp_client.verify_connection()
+    except MCPGatewayError as exc:
+        logger.error("MCP gateway check failed: %s", exc)
+        if exc.is_configuration_error and settings.mcp_fail_fast:
+            raise
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Initializing LYOKO Auto-Remediation Agent...")
@@ -107,6 +125,12 @@ async def lifespan(app: FastAPI):
     llm = getattr(app.state, "llm", None) or build_llm_adapter()
     mcp_client = getattr(app.state, "mcp_client", None) or FastMCPClient()
     approval_manager = getattr(app.state, "approval_manager", None) or ApprovalManager()
+    try:
+        await verify_mcp_gateway(mcp_client)
+    except MCPGatewayError:
+        if pool:
+            await pool.close()
+        raise
     chat_manager = getattr(app.state, "chat_manager", None) or build_chat_manager(
         mcp_client, approval_manager, llm=llm
     )

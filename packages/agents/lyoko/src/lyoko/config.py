@@ -30,6 +30,13 @@ class AgentSettings(BaseSettings):
     service_token: str = Field(
         default="", description="Bearer token to authenticate against homelab-mcp"
     )
+    mcp_fail_fast: bool = Field(
+        default=True,
+        description=(
+            "Abort startup when the MCP gateway rejects our credentials or the URL is not an "
+            "MCP endpoint (HTTP 401/403/404). A merely unreachable gateway only logs an error."
+        ),
+    )
 
     # Telegram Bot settings
     telegram_enabled: bool = Field(
