@@ -10,6 +10,7 @@ class UpstreamType(StrEnum):
     UNIFI = "unifi"
     KUBERNETES = "kubernetes"
     GRAFANA = "grafana"
+    GITHUB = "github"
 
 
 @dataclass(frozen=True)

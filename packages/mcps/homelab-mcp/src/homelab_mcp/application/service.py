@@ -29,6 +29,8 @@ class MCPGatewayService:
                 allowed_exec_commands=settings.allowed_exec_commands,
                 blocked_exec_patterns=settings.blocked_exec_patterns,
                 blocked_namespaces=settings.blocked_namespaces,
+                allowed_github_repos=settings.github_allowed_repos,
+                blocked_github_repos=settings.github_blocked_repos,
             )
         )
         self._tool_routing: dict[str, tuple[str, UpstreamMCPInterface]] = {}

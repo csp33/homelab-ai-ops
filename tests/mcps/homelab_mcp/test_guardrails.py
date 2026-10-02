@@ -112,3 +112,52 @@ def test_guardrail_allowed_command_whitelist():
             "k8s_exec", {"namespace": "default", "command": "curl http://external.site"}
         )
     assert "not in the allowed commands whitelist" in str(exc.value)
+
+
+def test_guardrail_github_repos_allowlist_and_denylist():
+    policy = GuardrailPolicy(
+        allowed_github_repos=["csp33/*", "homelab-org/gitops"],
+        blocked_github_repos=["csp33/secrets-vault", "*/private-*"],
+    )
+    engine = GuardrailEngine(policy)
+
+    # 1. Allowed repo matching wildcard
+    engine.validate_tool_call(
+        "github_get_file_contents",
+        {"repo": "csp33/homelab-aiops", "path": "values.yaml"},
+        upstream_name="github",
+    )
+
+    # 2. Allowed repo exact match
+    engine.validate_tool_call(
+        "github_list_tree",
+        {"repository": "homelab-org/gitops"},
+        upstream_name="github",
+    )
+
+    # 3. Blocked repo matching denylist
+    with pytest.raises(GuardrailViolationError) as exc:
+        engine.validate_tool_call(
+            "github_get_file_contents",
+            {"repo": "csp33/secrets-vault", "path": "passwords.txt"},
+            upstream_name="github",
+        )
+    assert "blocked by security policy" in str(exc.value)
+
+    # 4. Blocked repo matching pattern in denylist
+    with pytest.raises(GuardrailViolationError) as exc:
+        engine.validate_tool_call(
+            "github_get_recent_commits",
+            {"repo": "csp33/private-infra"},
+            upstream_name="github",
+        )
+    assert "blocked by security policy" in str(exc.value)
+
+    # 5. Repo not in allowlist
+    with pytest.raises(GuardrailViolationError) as exc:
+        engine.validate_tool_call(
+            "github_get_file_contents",
+            {"repo": "unauthorized-user/repo", "path": "main.py"},
+            upstream_name="github",
+        )
+    assert "not permitted by allowed repositories policy" in str(exc.value)
