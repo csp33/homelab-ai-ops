@@ -11,6 +11,7 @@ from psycopg_pool import AsyncConnectionPool
 from lyoko.application.workflow import create_remediation_workflow
 from lyoko.config import settings
 from lyoko.infrastructure.mcp.client import FastMCPClient
+from lyoko.infrastructure.observability.langfuse import LangfuseTracer
 from lyoko.infrastructure.web.controller import create_webhook_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -68,12 +69,19 @@ def create_app() -> FastAPI:
     app = FastAPI(title="LYOKO Auto-Remediation Agent", lifespan=lifespan)
 
     mcp_client = FastMCPClient()
+    tracer = LangfuseTracer(
+        public_key=settings.langfuse_public_key,
+        secret_key=settings.langfuse_secret_key,
+        host=settings.langfuse_host,
+    )
     workflow_engine = create_remediation_workflow(mcp_client)
+
     app.state.workflow_engine = workflow_engine
+    app.state.tracer = tracer
     app.state.checkpointer = None
     app.state.db_pool = None
 
-    webhook_router = create_webhook_router()
+    webhook_router = create_webhook_router(workflow_engine, tracer=tracer)
     app.include_router(webhook_router)
 
     @app.get("/healthz")

@@ -92,6 +92,7 @@ homelab-aiops/
 
 - **Python Version**: Python 3.13+
 - **Package Manager**: `uv` (`uv sync`, `uv run`, `uv add`)
+- **Dependency Version Pinning**: All dependencies across all workspace `pyproject.toml` files **must always have an explicit major version ceiling** (e.g., `"langchain>=1.4.3,<2.0.0"`, `"pydantic>=2.13.0,<3.0.0"`). Unbounded dependencies (such as `"pkg>=1.0.0"` without `<2.0.0`) are strictly forbidden to prevent accidental breaking changes during dependency resolution.
 - **Linter & Formatter**: `ruff` (`ruff check .`, `ruff format .`)
 - **Testing**: `pytest` with `pytest-asyncio` for asynchronous tool and graph execution
 - **Type Checking**: Full type annotations required on all public interfaces and Pydantic schemas.

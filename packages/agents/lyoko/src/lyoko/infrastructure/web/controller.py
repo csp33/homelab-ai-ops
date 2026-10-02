@@ -3,10 +3,14 @@
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from lyoko.domain.interfaces.tracer import TracerInterface
 from lyoko.domain.models import Incident
 
 
-def create_webhook_router(workflow_app: Any = None) -> APIRouter:
+def create_webhook_router(
+    workflow_app: Any = None,
+    tracer: TracerInterface | None = None,
+) -> APIRouter:
     router = APIRouter(prefix="/webhook", tags=["webhooks"])
 
     @router.post("/alertmanager")
@@ -19,6 +23,8 @@ def create_webhook_router(workflow_app: Any = None) -> APIRouter:
             raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
 
         engine = workflow_app or getattr(request.app.state, "workflow_engine", None)
+        active_tracer = tracer or getattr(request.app.state, "tracer", None)
+
         if not engine:
             raise HTTPException(status_code=503, detail="Workflow engine is not initialized")
 
@@ -49,7 +55,22 @@ def create_webhook_router(workflow_app: Any = None) -> APIRouter:
                 }
 
                 thread_id = f"incident-{incident.fingerprint or incident.pod_name}"
-                config = {"configurable": {"thread_id": thread_id}}
+                config: dict[str, Any] = {
+                    "configurable": {"thread_id": thread_id},
+                    "tags": ["lyoko", f"ns:{incident.namespace}", f"alert:{incident.alert_name}"],
+                    "metadata": {
+                        "namespace": incident.namespace,
+                        "pod_name": incident.pod_name,
+                        "alert_name": incident.alert_name,
+                        "fingerprint": incident.fingerprint or "",
+                    },
+                    "run_name": f"lyoko-{incident.alert_name}-{incident.pod_name}",
+                }
+
+                if active_tracer:
+                    callback = active_tracer.get_callback_handler()
+                    if callback:
+                        config["callbacks"] = [callback]
 
                 background_tasks.add_task(engine.ainvoke, initial_state, config=config)
 
