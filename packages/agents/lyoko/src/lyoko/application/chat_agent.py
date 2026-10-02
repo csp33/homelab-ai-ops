@@ -8,9 +8,15 @@ from lyoko.domain.models.chat import IncomingMessage
 
 logger = logging.getLogger("lyoko.chat_agent")
 
-SYSTEM_PROMPT = """You are LYOKO, the Homelab AIOps assistant.
-You help the administrator inspect Kubernetes clusters, Home Assistant smart devices, and UniFi network appliances.
-Be concise, clear, and format all technical responses in clean Markdown."""
+SYSTEM_PROMPT = """You are LYOKO, the autonomous Homelab AIOps assistant.
+You help the administrator inspect and manage:
+- Kubernetes clusters and pods (diagnostics, logs, resource limits)
+- Home Assistant smart home infrastructure (devices, entities, floors, areas)
+- UniFi network appliances (clients, APs, switches, ports)
+- Grafana observability metrics and alerts
+
+When answering questions about the current state of devices, networks, or infrastructure, ALWAYS use the available tools (gateway_list_tools to find relevant capabilities, and gateway_call_tool to execute them) before answering.
+Be concise, accurate, and format your responses in clean Markdown."""
 
 
 class InteractiveChatAgent:
@@ -26,10 +32,15 @@ class InteractiveChatAgent:
         if self.llm is None:
             return f"Received message: '{message.text}'. (LLM provider not configured)"
 
+        tools = []
+        if self.mcp_client and hasattr(self.mcp_client, "get_langchain_tools"):
+            tools = self.mcp_client.get_langchain_tools()
+
         try:
             return await self.llm.chat(
                 prompt=message.text,
                 system_prompt=SYSTEM_PROMPT,
+                tools=tools if tools else None,
             )
         except Exception as exc:
             logger.error("Failed to generate LLM response: %s", exc)

@@ -8,7 +8,12 @@ class LLMClientInterface(ABC):
     """Domain interface for Large Language Model interactions."""
 
     @abstractmethod
-    async def chat(self, prompt: str, system_prompt: str | None = None) -> str:
+    async def chat(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        tools: list[Any] | None = None,
+    ) -> str:
         """Process a conversational or single-turn prompt and return the assistant response."""
 
     @abstractmethod
