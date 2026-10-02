@@ -25,6 +25,93 @@ from telegram.ext import (
 logger = logging.getLogger("lyoko.chat.telegram")
 
 
+# Telegram has no table support. Tables narrower than this many characters are rendered as
+# aligned monospace blocks; wider ones wrap badly on phones, so they become per-row cards.
+MAX_TABLE_PRE_WIDTH = 42
+
+_TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$")
+_EMPTY_CELL_VALUES = {"", "-", "—", "–"}
+
+
+def _split_table_row(line: str) -> list[str]:
+    stripped = line.strip()
+    if stripped.startswith("|"):
+        stripped = stripped[1:]
+    if stripped.endswith("|"):
+        stripped = stripped[:-1]
+    return [_clean_table_cell(cell) for cell in stripped.split("|")]
+
+
+def _clean_table_cell(cell: str) -> str:
+    """Strip inline Markdown from a table cell so it renders as plain text."""
+    cell = re.sub(r"<br\s*/?>", " ", cell, flags=re.IGNORECASE)
+    cell = re.sub(r"\[(.+?)\]\((https?://[^\s)]+)\)", r"\1", cell)
+    cell = cell.replace("**", "").replace("`", "")
+    return cell.strip()
+
+
+def _is_table_start(lines: list[str], index: int) -> bool:
+    if index + 1 >= len(lines):
+        return False
+    header, separator = lines[index], lines[index + 1]
+    return "|" in header and "|" in separator and bool(_TABLE_SEPARATOR_RE.match(separator))
+
+
+def _render_table(rows: list[list[str]]) -> tuple[str, bool]:
+    """Render parsed table rows. Returns (text, is_preformatted)."""
+    header, body = rows[0], rows[1:]
+    columns = len(header)
+    body = [(row + [""] * columns)[:columns] for row in body]
+
+    widths = [max(len(r[i]) for r in [header, *body]) for i in range(columns)]
+    total_width = sum(widths) + 2 * (columns - 1)
+
+    if total_width <= MAX_TABLE_PRE_WIDTH:
+        lines = ["  ".join(cell.ljust(widths[i]) for i, cell in enumerate(header)).rstrip()]
+        lines.append("  ".join("─" * w for w in widths))
+        lines.extend(
+            "  ".join(c.ljust(widths[i]) for i, c in enumerate(row)).rstrip() for row in body
+        )
+        return "\n".join(lines), True
+
+    cards: list[str] = []
+    for row in body:
+        card = [f"**{row[0] or header[0]}**"]
+        card.extend(
+            f"• {header[i]}: {row[i]}"
+            for i in range(1, columns)
+            if row[i] not in _EMPTY_CELL_VALUES
+        )
+        cards.append("\n".join(card))
+    return "\n\n".join(cards), False
+
+
+def _convert_markdown_tables(text: str, code_blocks: list[str]) -> str:
+    """Replace Markdown tables with Telegram-friendly text (Telegram cannot render tables)."""
+    lines = text.split("\n")
+    output: list[str] = []
+    i = 0
+    while i < len(lines):
+        if not _is_table_start(lines, i):
+            output.append(lines[i])
+            i += 1
+            continue
+
+        rows = [_split_table_row(lines[i])]
+        i += 2  # skip header + separator
+        while i < len(lines) and "|" in lines[i] and lines[i].strip():
+            rows.append(_split_table_row(lines[i]))
+            i += 1
+
+        rendered, preformatted = _render_table(rows)
+        if preformatted:
+            code_blocks.append(rendered)
+            output.append(f"@@CODE_BLOCK_{len(code_blocks) - 1}@@")
+        else:
+            output.append(rendered)
+    return "\n".join(output)
+
+
 def markdown_to_telegram_html(text: str) -> str:
     """Convert standard Markdown output from LLMs to Telegram-compatible HTML formatting."""
     if not text:
@@ -39,6 +126,9 @@ def markdown_to_telegram_html(text: str) -> str:
 
     # Match ```lang\ncode``` or ```code```
     processed = re.sub(r"```([a-zA-Z0-9_-]*\n)?(.*?)```", save_code_block, text, flags=re.DOTALL)
+
+    # 1b. Convert Markdown tables (unsupported by Telegram) into monospace blocks or cards
+    processed = _convert_markdown_tables(processed, code_blocks)
 
     # 2. Extract and preserve inline code
     inline_codes: list[str] = []
