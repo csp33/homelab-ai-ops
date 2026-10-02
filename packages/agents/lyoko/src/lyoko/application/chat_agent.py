@@ -21,11 +21,21 @@ class InteractiveChatAgent:
 
     def __init__(self, mcp_client: Any, llm: Any | None = None) -> None:
         self.mcp_client = mcp_client
-        self.llm = llm or ChatOpenAI(model=settings.openai_model, temperature=0.2)
+        if llm is not None:
+            self.llm = llm
+        else:
+            try:
+                self.llm = ChatOpenAI(model=settings.openai_model, temperature=0.2)
+            except Exception as exc:
+                logger.debug("ChatOpenAI could not be initialized directly: %s", exc)
+                self.llm = None
 
     async def handle_message(self, message: IncomingMessage) -> str:
         """Process incoming chat query and return conversational response."""
         logger.info("Processing chat message from user %s: %s", message.user.user_id, message.text)
+        if self.llm is None:
+            return f"Received message: '{message.text}'. (LLM provider not configured)"
+
         langfuse_cb = get_langfuse_callback_handler()
         callbacks = [langfuse_cb] if langfuse_cb else []
 
