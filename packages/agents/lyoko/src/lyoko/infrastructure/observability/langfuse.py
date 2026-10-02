@@ -71,20 +71,20 @@ class LangfuseTracer(TracerInterface):
 
         meta: dict[str, Any] = dict(metadata or {})
         if session_id:
-            meta["langfuse_session_id"] = session_id
+            meta["langfuse_session_id"] = str(session_id)
         if user_id:
-            meta["langfuse_user_id"] = user_id
+            meta["langfuse_user_id"] = str(user_id)
         if trace_name:
-            meta["langfuse_trace_name"] = trace_name
+            meta["langfuse_trace_name"] = str(trace_name)
         if tags:
-            meta["langfuse_tags"] = list(tags)
+            meta["langfuse_tags"] = [str(t) for t in tags]
 
         if meta:
             config["metadata"] = meta
         if tags:
-            config["tags"] = list(tags)
+            config["tags"] = [str(t) for t in tags]
         if trace_name:
-            config["run_name"] = trace_name
+            config["run_name"] = str(trace_name)
 
         return config
 
@@ -113,3 +113,41 @@ def get_langfuse_callback_handler() -> Any | None:
     except Exception as e:
         logger.error("Failed to initialize Langfuse callback handler: %s", e)
         return None
+
+
+def get_langfuse_trace_config(
+    *,
+    session_id: str | None = None,
+    user_id: str | None = None,
+    trace_name: str | None = None,
+    tags: list[str] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Create a full LangChain/LangGraph trace config dict with Langfuse session_id, user_id, tags and metadata."""
+    if not settings.langfuse_enabled:
+        return {}
+
+    if not settings.langfuse_public_key or not settings.langfuse_secret_key:
+        return {}
+
+    try:
+        secret_val = (
+            settings.langfuse_secret_key.get_secret_value()
+            if hasattr(settings.langfuse_secret_key, "get_secret_value")
+            else str(settings.langfuse_secret_key)
+        )
+        tracer = LangfuseTracer(
+            public_key=settings.langfuse_public_key,
+            secret_key=secret_val,
+            host=settings.langfuse_host,
+        )
+        return tracer.get_trace_config(
+            session_id=session_id,
+            user_id=user_id,
+            trace_name=trace_name,
+            tags=tags,
+            metadata=metadata,
+        )
+    except Exception as e:
+        logger.error("Failed to build Langfuse trace config: %s", e)
+        return {}

@@ -37,6 +37,15 @@ class InteractiveChatAgent:
                 prompt=message.text,
                 system_prompt=SYSTEM_PROMPT,
                 tools=tools if tools else None,
+                session_id=f"telegram-{message.chat_id}",
+                user_id=str(message.user.user_id),
+                trace_name="telegram-chat-interaction",
+                tags=["telegram", "interactive-chat", f"chat:{message.chat_id}"],
+                metadata={
+                    "chat_id": message.chat_id,
+                    "username": message.user.username,
+                    "message_id": message.message_id,
+                },
             )
         except Exception as exc:
             logger.error("Failed to generate LLM response: %s", exc)

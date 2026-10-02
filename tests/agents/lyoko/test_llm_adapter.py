@@ -27,11 +27,13 @@ async def test_openai_llm_adapter_chat():
 
 
 @pytest.mark.asyncio
-@patch("lyoko.infrastructure.llm.openai.get_langfuse_callback_handler")
-async def test_openai_llm_adapter_with_langfuse_callback(mock_get_cb):
-    """Verify Langfuse callback is attached when available."""
-    mock_cb = MagicMock()
-    mock_get_cb.return_value = mock_cb
+@patch("lyoko.infrastructure.llm.openai.get_langfuse_trace_config")
+async def test_openai_llm_adapter_with_langfuse_callback(mock_get_config):
+    """Verify Langfuse trace config is attached when available."""
+    mock_get_config.return_value = {
+        "callbacks": ["mock_cb"],
+        "metadata": {"langfuse_session_id": "telegram-123"},
+    }
 
     adapter = OpenAILLMAdapter(api_key="sk-test")
     mock_client = AsyncMock()
@@ -40,10 +42,21 @@ async def test_openai_llm_adapter_with_langfuse_callback(mock_get_cb):
     mock_client.ainvoke.return_value = mock_response
     adapter._client = mock_client
 
-    result = await adapter.chat(prompt="Status check")
+    result = await adapter.chat(
+        prompt="Status check",
+        session_id="telegram-123",
+        user_id="user-456",
+    )
     assert result == "All green."
     config = mock_client.ainvoke.call_args[1].get("config")
-    assert config == {"callbacks": [mock_cb]}
+    assert config == {"callbacks": ["mock_cb"], "metadata": {"langfuse_session_id": "telegram-123"}}
+    mock_get_config.assert_called_once_with(
+        session_id="telegram-123",
+        user_id="user-456",
+        trace_name="telegram-chat-interaction",
+        tags=["telegram", "chat-agent"],
+        metadata=None,
+    )
 
 
 @pytest.mark.asyncio

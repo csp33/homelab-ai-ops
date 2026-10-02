@@ -59,6 +59,7 @@ def create_remediation_workflow(
                     pod_name=pod_name,
                     namespace=namespace,
                     diagnostics=diag,
+                    session_id=state.get("incident_id"),
                 )
             except Exception as e:
                 logger.warning(

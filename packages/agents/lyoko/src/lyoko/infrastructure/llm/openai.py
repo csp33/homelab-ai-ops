@@ -7,7 +7,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from lyoko.domain.interfaces.llm import LLMClientInterface
-from lyoko.infrastructure.observability.langfuse import get_langfuse_callback_handler
+from lyoko.infrastructure.observability.langfuse import get_langfuse_trace_config
 
 logger = logging.getLogger("lyoko.infrastructure.llm.openai")
 
@@ -45,12 +45,20 @@ class OpenAILLMAdapter(LLMClientInterface):
         prompt: str,
         system_prompt: str | None = None,
         tools: list[Any] | None = None,
+        session_id: str | None = None,
+        user_id: str | None = None,
+        trace_name: str | None = None,
+        tags: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
-        """Process conversational prompt with optional system prompt, tools, and Langfuse tracing."""
-        cb = get_langfuse_callback_handler()
-        config: dict[str, Any] = {}
-        if cb:
-            config["callbacks"] = [cb]
+        """Process conversational prompt with optional tools, Langfuse session, user, and tracing."""
+        config = get_langfuse_trace_config(
+            session_id=session_id,
+            user_id=user_id,
+            trace_name=trace_name or "telegram-chat-interaction",
+            tags=tags or ["telegram", "chat-agent"],
+            metadata=metadata,
+        )
 
         if tools:
             try:
@@ -85,6 +93,7 @@ class OpenAILLMAdapter(LLMClientInterface):
         pod_name: str,
         namespace: str,
         diagnostics: Any,
+        session_id: str | None = None,
     ) -> str:
         """Analyze pod failure diagnostics and determine root cause."""
         prompt = f"""
@@ -94,9 +103,25 @@ class OpenAILLMAdapter(LLMClientInterface):
 
         Identify the root cause in 1-2 sentences. Is it OOMKilled, Misconfiguration, CrashLoop, or Unknown?
         """
-        return await self.chat(prompt=prompt, system_prompt=DIAGNOSTIC_SYSTEM_PROMPT)
+        return await self.chat(
+            prompt=prompt,
+            system_prompt=DIAGNOSTIC_SYSTEM_PROMPT,
+            session_id=session_id,
+            trace_name=f"incident-diagnosis-{alert_name}-{pod_name}",
+            tags=["remediation", "workflow", f"ns:{namespace}"],
+        )
 
-    async def generate_remediation_plan(self, context: dict[str, Any]) -> str:
+    async def generate_remediation_plan(
+        self,
+        context: dict[str, Any],
+        session_id: str | None = None,
+    ) -> str:
         """Generate automated remediation steps from diagnostic incident context."""
         prompt = f"Generate remediation plan for incident context: {context}"
-        return await self.chat(prompt=prompt, system_prompt=DIAGNOSTIC_SYSTEM_PROMPT)
+        return await self.chat(
+            prompt=prompt,
+            system_prompt=DIAGNOSTIC_SYSTEM_PROMPT,
+            session_id=session_id,
+            trace_name="incident-remediation-plan",
+            tags=["remediation", "plan"],
+        )

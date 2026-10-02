@@ -13,8 +13,13 @@ class LLMClientInterface(ABC):
         prompt: str,
         system_prompt: str | None = None,
         tools: list[Any] | None = None,
+        session_id: str | None = None,
+        user_id: str | None = None,
+        trace_name: str | None = None,
+        tags: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
-        """Process a conversational or single-turn prompt and return the assistant response."""
+        """Process a conversational or single-turn prompt with optional tools and session tracing."""
 
     @abstractmethod
     async def analyze_incident(
@@ -23,9 +28,14 @@ class LLMClientInterface(ABC):
         pod_name: str,
         namespace: str,
         diagnostics: Any,
+        session_id: str | None = None,
     ) -> str:
         """Analyze pod failure diagnostics and determine the root cause."""
 
     @abstractmethod
-    async def generate_remediation_plan(self, context: dict[str, Any]) -> str:
+    async def generate_remediation_plan(
+        self,
+        context: dict[str, Any],
+        session_id: str | None = None,
+    ) -> str:
         """Generate automated remediation steps from diagnostic incident context."""

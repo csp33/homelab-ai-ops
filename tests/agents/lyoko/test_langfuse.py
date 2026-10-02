@@ -71,3 +71,38 @@ def test_langfuse_initialization_exception_returns_none(monkeypatch):
 
     handler = get_langfuse_callback_handler()
     assert handler is None
+
+
+def test_get_langfuse_trace_config_disabled(monkeypatch):
+    """When langfuse is disabled, get_langfuse_trace_config returns empty dict."""
+    monkeypatch.setattr("lyoko.config.settings.langfuse_enabled", False)
+    from lyoko.infrastructure.observability.langfuse import get_langfuse_trace_config
+
+    cfg = get_langfuse_trace_config(session_id="s123", user_id="u456")
+    assert cfg == {}
+
+
+def test_get_langfuse_trace_config_enabled(monkeypatch):
+    """When langfuse is enabled, get_langfuse_trace_config returns config with metadata and callbacks."""
+    monkeypatch.setattr("lyoko.config.settings.langfuse_enabled", True)
+    monkeypatch.setattr("lyoko.config.settings.langfuse_public_key", "pk-lf-test")
+    monkeypatch.setattr("lyoko.config.settings.langfuse_secret_key", "sk-lf-test")
+    monkeypatch.setattr("lyoko.config.settings.langfuse_host", "https://cloud.langfuse.com")
+    from lyoko.infrastructure.observability.langfuse import get_langfuse_trace_config
+
+    cfg = get_langfuse_trace_config(
+        session_id="telegram-12345",
+        user_id="user-999",
+        trace_name="chat-trace",
+        tags=["tg", "chat"],
+        metadata={"extra": "val"},
+    )
+    assert "callbacks" in cfg
+    assert len(cfg["callbacks"]) == 1
+    assert cfg["metadata"]["langfuse_session_id"] == "telegram-12345"
+    assert cfg["metadata"]["langfuse_user_id"] == "user-999"
+    assert cfg["metadata"]["langfuse_trace_name"] == "chat-trace"
+    assert cfg["metadata"]["langfuse_tags"] == ["tg", "chat"]
+    assert cfg["metadata"]["extra"] == "val"
+    assert cfg["run_name"] == "chat-trace"
+    assert cfg["tags"] == ["tg", "chat"]

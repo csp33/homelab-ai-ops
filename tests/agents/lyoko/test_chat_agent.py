@@ -29,6 +29,10 @@ async def test_interactive_chat_agent_answers_query():
     mock_llm.chat.assert_awaited_once()
     call_kwargs = mock_llm.chat.call_args[1]
     assert call_kwargs.get("prompt") == "How is the cluster?"
+    assert call_kwargs.get("session_id") == "telegram-12345"
+    assert call_kwargs.get("user_id") == "12345"
+    assert call_kwargs.get("trace_name") == "telegram-chat-interaction"
+    assert "telegram" in call_kwargs.get("tags", [])
 
 
 @pytest.mark.asyncio
