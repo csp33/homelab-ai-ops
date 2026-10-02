@@ -1,0 +1,92 @@
+"""Automated structural architecture tests enforcing Clean Architecture boundaries."""
+
+import ast
+from pathlib import Path
+
+WORKSPACE_ROOT = Path(__file__).parent.parent
+
+
+def get_imports_from_file(file_path: Path) -> list[str]:
+    """Parse a python source file and return all imported module root names."""
+    try:
+        tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=str(file_path))
+    except Exception:
+        return []
+
+    imported_modules: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imported_modules.append(alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported_modules.append(node.module)
+    return imported_modules
+
+
+def test_domain_layer_clean_architecture_isolation():
+    """Ensure domain layers across all packages never import from application, infrastructure, or vendor SDKs."""
+    forbidden_domain_prefixes = (
+        "infrastructure",
+        "application",
+        "fastapi",
+        "langchain",
+        "langgraph",
+        "telegram",
+        "psycopg",
+        "langfuse",
+        "mcp",
+        "lyoko.infrastructure",
+        "lyoko.application",
+        "homelab_mcp.infrastructure",
+        "homelab_mcp.application",
+    )
+
+    domain_dirs = list(WORKSPACE_ROOT.glob("packages/**/domain"))
+    assert len(domain_dirs) > 0, "Domain directories must exist."
+
+    violations: list[str] = []
+    for domain_dir in domain_dirs:
+        for py_file in domain_dir.rglob("*.py"):
+            imports = get_imports_from_file(py_file)
+            for imp in imports:
+                for forbidden in forbidden_domain_prefixes:
+                    if imp == forbidden or imp.startswith(f"{forbidden}."):
+                        violations.append(
+                            f"{py_file.relative_to(WORKSPACE_ROOT)} imports forbidden '{imp}'"
+                        )
+
+    assert not violations, "Domain layer Clean Architecture violations found:\n" + "\n".join(
+        violations
+    )
+
+
+def test_application_layer_clean_architecture_isolation():
+    """Ensure application layers never import concrete infrastructure adapters or vendor SDKs."""
+    forbidden_app_prefixes = (
+        "lyoko.infrastructure",
+        "homelab_mcp.infrastructure",
+        "langchain_openai",
+        "openai",
+        "telegram",
+        "psycopg",
+        "psycopg_pool",
+        "langfuse",
+    )
+
+    app_dirs = list(WORKSPACE_ROOT.glob("packages/**/application"))
+    assert len(app_dirs) > 0, "Application directories must exist."
+
+    violations: list[str] = []
+    for app_dir in app_dirs:
+        for py_file in app_dir.rglob("*.py"):
+            imports = get_imports_from_file(py_file)
+            for imp in imports:
+                for forbidden in forbidden_app_prefixes:
+                    if imp == forbidden or imp.startswith(f"{forbidden}."):
+                        violations.append(
+                            f"{py_file.relative_to(WORKSPACE_ROOT)} imports forbidden '{imp}'"
+                        )
+
+    assert not violations, "Application layer Clean Architecture violations found:\n" + "\n".join(
+        violations
+    )

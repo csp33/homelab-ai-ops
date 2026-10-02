@@ -1,20 +1,16 @@
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 from lyoko.application.hitl import ApprovalManager
 from lyoko.application.workflow import create_remediation_workflow
+from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.models.chat import ApprovalResponse
 
 
 @pytest.fixture(autouse=True)
 def mock_verification_delay(monkeypatch):
     monkeypatch.setattr("lyoko.application.workflow.settings.verification_delay_seconds", 0)
-    mock_llm = MagicMock()
-    mock_llm.ainvoke = AsyncMock(
-        return_value=MagicMock(content="Root cause: Pod terminated with exit code 137 (OOMKilled).")
-    )
-    monkeypatch.setattr("lyoko.application.workflow.ChatOpenAI", lambda *a, **kw: mock_llm)
 
 
 @pytest.mark.asyncio
@@ -28,14 +24,19 @@ async def test_workflow_oom_approval_and_remediation():
     mock_chat = AsyncMock()
     approval_mgr = ApprovalManager()
 
+    mock_llm = AsyncMock(spec=LLMClientInterface)
+    mock_llm.analyze_incident.return_value = (
+        "Root cause: Pod terminated with exit code 137 (OOMKilled)."
+    )
+
     workflow = create_remediation_workflow(
         mcp_client=mock_mcp,
         approval_manager=approval_mgr,
         chat_manager=mock_chat,
+        llm=mock_llm,
     )
 
     async def auto_approve():
-        # Wait a bit then approve
         await asyncio.sleep(0.05)
         approval_mgr.resolve_approval(
             ApprovalResponse(
@@ -72,10 +73,16 @@ async def test_workflow_oom_approval_rejected():
     mock_chat = AsyncMock()
     approval_mgr = ApprovalManager()
 
+    mock_llm = AsyncMock(spec=LLMClientInterface)
+    mock_llm.analyze_incident.return_value = (
+        "Root cause: Pod terminated with exit code 137 (OOMKilled)."
+    )
+
     workflow = create_remediation_workflow(
         mcp_client=mock_mcp,
         approval_manager=approval_mgr,
         chat_manager=mock_chat,
+        llm=mock_llm,
     )
 
     async def auto_reject():
@@ -118,10 +125,16 @@ async def test_workflow_oom_approval_timeout():
     mock_chat = AsyncMock()
     approval_mgr = ApprovalManager(default_timeout_seconds=0.05)
 
+    mock_llm = AsyncMock(spec=LLMClientInterface)
+    mock_llm.analyze_incident.return_value = (
+        "Root cause: Pod terminated with exit code 137 (OOMKilled)."
+    )
+
     workflow = create_remediation_workflow(
         mcp_client=mock_mcp,
         approval_manager=approval_mgr,
         chat_manager=mock_chat,
+        llm=mock_llm,
     )
 
     initial_state = {
@@ -140,39 +153,3 @@ async def test_workflow_oom_approval_timeout():
     mock_chat.broadcast_approval_request.assert_called_once()
     mock_chat.broadcast_message.assert_called_once()
     assert mock_mcp.call_tool.await_count == 1
-
-
-@pytest.mark.asyncio
-@patch("lyoko.application.workflow.get_langfuse_callback_handler")
-async def test_workflow_with_langfuse_callback(mock_get_cb):
-    mock_cb = MagicMock()
-    mock_get_cb.return_value = mock_cb
-
-    mock_llm = AsyncMock()
-    mock_resp = MagicMock()
-    mock_resp.content = "Root cause: OOMKilled exit code 137"
-    mock_llm.ainvoke.return_value = mock_resp
-
-    mock_mcp = AsyncMock()
-    mock_mcp.call_tool.side_effect = [
-        {"phase": "CrashLoopBackOff", "logs": "some log"},  # diagnose
-        {"status": "patched"},  # remediate
-        {"phase": "Running"},  # verify
-    ]
-
-    workflow = create_remediation_workflow(
-        mcp_client=mock_mcp,
-        llm=mock_llm,
-    )
-
-    initial_state = {
-        "namespace": "default",
-        "pod_name": "web-1234",
-        "alert_name": "PodCrash",
-    }
-
-    final_state = await workflow.ainvoke(initial_state)
-    assert final_state["is_resolved"] is True
-    mock_llm.ainvoke.assert_awaited_once()
-    call_kwargs = mock_llm.ainvoke.call_args[1]
-    assert call_kwargs.get("config") == {"callbacks": [mock_cb]}

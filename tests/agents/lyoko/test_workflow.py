@@ -4,17 +4,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from lyoko.application.workflow import create_remediation_workflow
+from lyoko.domain.interfaces.llm import LLMClientInterface
 
 
 @pytest.mark.asyncio
-@patch("lyoko.application.workflow.ChatOpenAI")
-async def test_remediation_workflow_oom_path(mock_chat_openai_cls):
+async def test_remediation_workflow_oom_path():
     # Mock LLM responding with OOM root cause
-    mock_llm = MagicMock()
-    mock_llm.ainvoke = AsyncMock(
-        return_value=MagicMock(content="Root cause: Pod terminated with exit code 137 (OOMKilled).")
+    mock_llm = AsyncMock(spec=LLMClientInterface)
+    mock_llm.analyze_incident.return_value = (
+        "Root cause: Pod terminated with exit code 137 (OOMKilled)."
     )
-    mock_chat_openai_cls.return_value = mock_llm
 
     # Mock MCP Client
     mock_mcp = MagicMock()
@@ -30,7 +29,7 @@ async def test_remediation_workflow_oom_path(mock_chat_openai_cls):
     )
 
     with patch("lyoko.application.workflow.settings.verification_delay_seconds", 0):
-        workflow = create_remediation_workflow(mcp_client=mock_mcp)
+        workflow = create_remediation_workflow(mcp_client=mock_mcp, llm=mock_llm)
 
         initial_state = {
             "namespace": "media",
@@ -51,19 +50,16 @@ async def test_remediation_workflow_oom_path(mock_chat_openai_cls):
         assert "Bumped memory to 1Gi" in final_state["action_taken"]
         assert final_state["is_resolved"] is True
         assert final_state["requires_escalation"] is False
+        mock_llm.analyze_incident.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-@patch("lyoko.application.workflow.ChatOpenAI")
-async def test_remediation_workflow_escalation_path(mock_chat_openai_cls):
+async def test_remediation_workflow_escalation_path():
     # Mock LLM responding with Misconfiguration root cause
-    mock_llm = MagicMock()
-    mock_llm.ainvoke = AsyncMock(
-        return_value=MagicMock(
-            content="Root cause: Misconfiguration - invalid database credentials."
-        )
+    mock_llm = AsyncMock(spec=LLMClientInterface)
+    mock_llm.analyze_incident.return_value = (
+        "Root cause: Misconfiguration - invalid database credentials."
     )
-    mock_chat_openai_cls.return_value = mock_llm
 
     # Mock MCP Client
     mock_mcp = MagicMock()
@@ -72,7 +68,7 @@ async def test_remediation_workflow_escalation_path(mock_chat_openai_cls):
     )
 
     with patch("lyoko.application.workflow.settings.verification_delay_seconds", 0):
-        workflow = create_remediation_workflow(mcp_client=mock_mcp)
+        workflow = create_remediation_workflow(mcp_client=mock_mcp, llm=mock_llm)
 
         initial_state = {
             "namespace": "default",
@@ -96,15 +92,13 @@ async def test_remediation_workflow_escalation_path(mock_chat_openai_cls):
 
 
 @pytest.mark.asyncio
-@patch("lyoko.application.workflow.ChatOpenAI")
-async def test_remediation_workflow_with_checkpointer(mock_chat_openai_cls):
+async def test_remediation_workflow_with_checkpointer():
     from langgraph.checkpoint.memory import MemorySaver
 
-    mock_llm = MagicMock()
-    mock_llm.ainvoke = AsyncMock(
-        return_value=MagicMock(content="Root cause: Pod terminated with exit code 137 (OOMKilled).")
+    mock_llm = AsyncMock(spec=LLMClientInterface)
+    mock_llm.analyze_incident.return_value = (
+        "Root cause: Pod terminated with exit code 137 (OOMKilled)."
     )
-    mock_chat_openai_cls.return_value = mock_llm
 
     mock_mcp = MagicMock()
     mock_mcp.call_tool = AsyncMock(
@@ -116,7 +110,9 @@ async def test_remediation_workflow_with_checkpointer(mock_chat_openai_cls):
     )
 
     checkpointer = MemorySaver()
-    workflow = create_remediation_workflow(mcp_client=mock_mcp, checkpointer=checkpointer)
+    workflow = create_remediation_workflow(
+        mcp_client=mock_mcp, checkpointer=checkpointer, llm=mock_llm
+    )
 
     initial_state = {
         "namespace": "media",

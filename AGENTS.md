@@ -86,6 +86,29 @@ homelab-aiops/
     └── mcps/homelab_mcp/       # Tests for MCP gateway (routing, auth, guardrails)
 ```
 
+### Clean Architecture & Layer Boundary Governance (Strict Rule)
+
+Every package in `homelab-aiops` strictly adheres to **Clean Architecture** (Ports & Adapters / Hexagonal Architecture). Boundary crossing rules are strictly enforced:
+
+1. **`domain/` (Pure Entities & Ports)**:
+   - Contains pure business logic, domain entity models (`dataclasses`, `Pydantic`), domain exceptions, and abstract interfaces (`ABC` ports).
+   - **ZERO external framework or vendor dependencies allowed**: Strictly forbidden to import `langchain`, `langchain_openai`, `langgraph`, `fastapi`, `telegram`, `psycopg`, `langfuse`, `mcp`, or concrete infrastructure adapters.
+   - Domain layers must only depend on standard Python libraries or shared domain primitives.
+
+2. **`application/` (Use Cases & Workflow Orchestration)**:
+   - Contains use-case services (`MCPGatewayService`, `GuardrailEngine`, `ApprovalManager`, `ChatManager`, `InteractiveChatAgent`) and workflow definitions (`workflow.py`).
+   - Coordinates domain models and interacts with external capabilities **exclusively through domain interfaces / ports** (`LLMClientInterface`, `MCPClientInterface`, `ChatConnector`, `AuthVerifierInterface`).
+   - **ZERO infrastructure imports allowed**: Strictly forbidden to import concrete infrastructure classes or vendor SDKs (e.g., `ChatOpenAI`, `OpenAILLMAdapter`, `FastMCPClient`, `TelegramConnector`, `AsyncConnectionPool`, `LangfuseTracer`). All external services must be injected into application constructors.
+
+3. **`infrastructure/` (Adapters & External Drivers)**:
+   - Implements domain interfaces and encapsulates all vendor SDKs, databases, web servers, and protocols (`FastMCP`, `LangChain`, `OpenAI`, `Langfuse`, `python-telegram-bot`, `psycopg`, `FastAPI`).
+   - Translates domain requests into third-party API calls and formats responses into domain models.
+
+4. **Composition Root (`main.py` / `server.py`)**:
+   - The only place where concrete infrastructure adapters are instantiated, configuration is bound, and dependencies are injected into application services and workflow graphs.
+
+Automated AST architectural tests (`tests/test_clean_architecture.py`) run in CI to permanently prevent layer leakage.
+
 ---
 
 ## 3. Tooling & Quality Standards

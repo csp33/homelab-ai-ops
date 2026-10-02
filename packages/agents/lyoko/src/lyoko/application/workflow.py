@@ -4,15 +4,13 @@ import asyncio
 import logging
 from typing import Annotated, Any, TypedDict
 
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
+from lyoko.application.chat_manager import ChatManager
 from lyoko.application.hitl import ApprovalManager
 from lyoko.config import settings
+from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.models.chat import ApprovalAction, ApprovalRequest
-from lyoko.infrastructure.chat.manager import ChatManager
-from lyoko.infrastructure.observability.langfuse import get_langfuse_callback_handler
 
 logger = logging.getLogger("lyoko.workflow")
 
@@ -20,7 +18,7 @@ logger = logging.getLogger("lyoko.workflow")
 class RemediationGraphState(TypedDict, total=False):
     incident_id: str
     chat_id: str
-    messages: Annotated[list[BaseMessage], add_messages]
+    messages: Annotated[list[Any], add_messages]
     namespace: str
     pod_name: str
     deployment_name: str
@@ -33,29 +31,17 @@ class RemediationGraphState(TypedDict, total=False):
     approval_granted: bool
 
 
-SYSTEM_PROMPT = """You are LYOKO (Live Yaml Optimization & K8s Orchestration), the autonomous remediation agent.
-Analyze pod failure events, diagnose root causes (e.g., OOMKilled, CrashLoopBackOff), and provide precise recommendations."""
-
-
 def create_remediation_workflow(
     mcp_client: Any,
     approval_manager: ApprovalManager | None = None,
     chat_manager: ChatManager | None = None,
     checkpointer: Any = None,
-    llm: Any | None = None,
+    llm: LLMClientInterface | None = None,
 ) -> Any:
     """Build LangGraph StateGraph workflow for incident diagnosis and auto-remediation."""
-    model = llm
-    if model is None:
-        try:
-            api_key = settings.openai_api_key or "sk-dummy"
-            model = ChatOpenAI(model=settings.openai_model, temperature=0, api_key=api_key)
-        except Exception as exc:
-            logger.debug("ChatOpenAI could not be initialized: %s", exc)
-            model = None
 
     async def diagnose_node(state: RemediationGraphState) -> dict[str, Any]:
-        """Fetch diagnostics from homelab-mcp."""
+        """Fetch diagnostics from homelab-mcp and evaluate root cause."""
         namespace = state.get("namespace", "default")
         pod_name = state.get("pod_name", "")
         logger.info(f"Diagnosing pod {pod_name} in namespace {namespace}...")
@@ -65,26 +51,15 @@ def create_remediation_workflow(
             {"namespace": namespace, "pod_name": pod_name, "tail_lines": 40},
         )
 
-        prompt = f"""
-        Alert: {state.get("alert_name", "")}
-        Target Pod: {pod_name} (Namespace: {namespace})
-        Diagnostics: {diag}
-
-        Identify the root cause in 1-2 sentences. Is it OOMKilled, Misconfiguration, CrashLoop, or Unknown?
-        """
-
         root_cause = ""
-        if model is not None:
+        if llm is not None:
             try:
-                cb = get_langfuse_callback_handler()
-                config: dict[str, Any] = {}
-                if cb:
-                    config["callbacks"] = [cb]
-                response = await model.ainvoke(
-                    [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=prompt)],
-                    config=config if config else None,
+                root_cause = await llm.analyze_incident(
+                    alert_name=state.get("alert_name", ""),
+                    pod_name=pod_name,
+                    namespace=namespace,
+                    diagnostics=diag,
                 )
-                root_cause = str(response.content)
             except Exception as e:
                 logger.warning(
                     "LLM root cause analysis failed: %s; falling back to diagnostic inspection", e

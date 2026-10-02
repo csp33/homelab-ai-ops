@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.main import create_app, lifespan
 
 
@@ -21,19 +22,16 @@ async def test_postgres_checkpointer_integration_with_local_container():
         ]
     )
 
+    mock_llm = AsyncMock(spec=LLMClientInterface)
+    mock_llm.analyze_incident.return_value = (
+        "Root cause: Pod terminated with exit code 137 (OOMKilled)."
+    )
+
     with (
         patch("lyoko.main.settings.postgres_uri", "postgresql://lyoko:lyoko@localhost:5432/lyoko"),
         patch("lyoko.main.FastMCPClient", return_value=mock_mcp),
-        patch("lyoko.application.workflow.ChatOpenAI") as mock_chat_openai_cls,
+        patch("lyoko.main.build_llm_adapter", return_value=mock_llm),
     ):
-        mock_llm = MagicMock()
-        mock_llm.ainvoke = AsyncMock(
-            return_value=MagicMock(
-                content="Root cause: Pod terminated with exit code 137 (OOMKilled)."
-            )
-        )
-        mock_chat_openai_cls.return_value = mock_llm
-
         try:
             async with lifespan(app):
                 # Ensure checkpointer is initialized
