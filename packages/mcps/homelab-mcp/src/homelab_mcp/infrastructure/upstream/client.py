@@ -44,7 +44,9 @@ class ProcessUpstreamClient(UpstreamMCPInterface):
         if self._session is not None:
             return self._session
 
-        logger.info(f"Starting persistent upstream MCP process for '{self.upstream_type}' ({self.command})...")
+        logger.info(
+            f"Starting persistent upstream MCP process for '{self.upstream_type}' ({self.command})..."
+        )
         server_params = self._get_server_params()
         self._exit_stack = AsyncExitStack()
         try:
@@ -65,7 +67,9 @@ class ProcessUpstreamClient(UpstreamMCPInterface):
             try:
                 await self._exit_stack.aclose()
             except Exception as exc:
-                logger.warning(f"Error terminating upstream MCP process for '{self.upstream_type}': {exc}")
+                logger.warning(
+                    f"Error terminating upstream MCP process for '{self.upstream_type}': {exc}"
+                )
             finally:
                 self._session = None
                 self._exit_stack = None

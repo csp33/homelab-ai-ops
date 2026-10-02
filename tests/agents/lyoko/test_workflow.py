@@ -93,3 +93,53 @@ async def test_remediation_workflow_escalation_path(mock_chat_openai_cls):
         assert "requires human inspection" in final_state["action_taken"]
         assert final_state["is_resolved"] is False
         assert final_state["requires_escalation"] is True
+
+
+@pytest.mark.asyncio
+@patch("lyoko.application.workflow.ChatOpenAI")
+async def test_remediation_workflow_with_checkpointer(mock_chat_openai_cls):
+    from langgraph.checkpoint.memory import MemorySaver
+
+    mock_llm = MagicMock()
+    mock_llm.ainvoke = AsyncMock(
+        return_value=MagicMock(content="Root cause: Pod terminated with exit code 137 (OOMKilled).")
+    )
+    mock_chat_openai_cls.return_value = mock_llm
+
+    mock_mcp = MagicMock()
+    mock_mcp.call_tool = AsyncMock(
+        side_effect=[
+            {"phase": "Running", "logs": "out of memory"},
+            {"status": "patched"},
+            {"phase": "Running"},
+        ]
+    )
+
+    checkpointer = MemorySaver()
+    workflow = create_remediation_workflow(mcp_client=mock_mcp, checkpointer=checkpointer)
+
+    initial_state = {
+        "namespace": "media",
+        "pod_name": "sonarr-12345",
+        "deployment_name": "sonarr",
+        "alert_name": "KubePodCrashLooping",
+        "messages": [],
+        "diagnostics": {},
+        "root_cause": "",
+        "action_taken": "",
+        "is_resolved": False,
+        "requires_escalation": False,
+    }
+
+    config = {"configurable": {"thread_id": "incident-sonarr-12345"}}
+    with patch("lyoko.application.workflow.settings.verification_delay_seconds", 0):
+        final_state = await workflow.ainvoke(initial_state, config=config)
+
+    assert final_state["is_resolved"] is True
+
+    # Verify checkpointer saved state
+    saved_state = await workflow.aget_state(config)
+    assert (
+        saved_state.values["root_cause"]
+        == "Root cause: Pod terminated with exit code 137 (OOMKilled)."
+    )
