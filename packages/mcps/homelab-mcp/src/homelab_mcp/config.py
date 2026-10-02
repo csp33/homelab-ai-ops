@@ -46,6 +46,9 @@ class GatewaySettings(BaseSettings):
     service_token: str = Field(
         default="", description="Internal static bearer token for automated in-cluster agents"
     )
+    jwt_secret: str = Field(
+        default="", description="Secret key for signing and verifying HS256 JWT tokens"
+    )
 
     # Upstream: Home Assistant MCP (github.com/homeassistant-ai/ha-mcp)
     ha_enabled: bool = Field(default=True, description="Enable Home Assistant MCP upstream")
