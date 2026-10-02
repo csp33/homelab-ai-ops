@@ -3,8 +3,8 @@
 import logging
 from typing import Any
 
-from langchain.agents import create_agent
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langchain_core.runnables import RunnableLambda
 from langchain_openai import ChatOpenAI
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.infrastructure.observability.langfuse import get_langfuse_trace_config
@@ -77,7 +77,7 @@ class OpenAILLMAdapter(LLMClientInterface):
         """Process conversational prompt with optional tools, Langfuse session, user, and tracing.
 
         ``max_steps`` bounds the tool-use iterations of the ReAct agent. When exceeded, the
-        underlying graph raises instead of looping forever.
+        underlying loop raises instead of looping forever.
 
         With ``parent_config`` the call joins the trace of the enclosing graph run as a child
         span named ``trace_name``. Without it, a new trace is started.
@@ -95,22 +95,50 @@ class OpenAILLMAdapter(LLMClientInterface):
 
         if tools:
             try:
-                agent = create_agent(
-                    model=self.client,
-                    tools=tools,
-                    system_prompt=system_prompt,
-                )
-                messages = [HumanMessage(content=prompt)]
-                agent_config = dict(config) if config else {}
-                if max_steps is not None:
-                    # Each tool-use iteration takes two graph steps (model, then tools).
-                    agent_config["recursion_limit"] = max_steps * 2 + 1
-                result = await agent.ainvoke(
-                    {"messages": messages},
-                    config=agent_config or None,
-                )
-                last_message = result["messages"][-1]
-                return str(last_message.content)
+                tools_by_name = {tool.name: tool for tool in tools}
+                model_with_tools = self.client.bind_tools(tools)
+                max_iterations = max_steps or 10
+
+                async def _react_loop(prompt_text: str) -> str:
+                    messages: list[Any] = []
+                    if system_prompt:
+                        messages.append(SystemMessage(content=system_prompt))
+                    messages.append(HumanMessage(content=prompt_text))
+
+                    for _ in range(max_iterations):
+                        response = await model_with_tools.ainvoke(messages)
+                        messages.append(response)
+
+                        if not response.tool_calls:
+                            return str(response.content)
+
+                        for tool_call in response.tool_calls:
+                            tool_name = tool_call["name"]
+                            tool_args = tool_call["args"]
+                            tool = tools_by_name.get(tool_name)
+                            if tool is None:
+                                tool_output = f"Error: Tool '{tool_name}' not found."
+                            else:
+                                try:
+                                    if hasattr(tool, "ainvoke"):
+                                        tool_output = await tool.ainvoke(tool_args)
+                                    else:
+                                        tool_output = tool.invoke(tool_args)
+                                except Exception as exc:
+                                    tool_output = f"Error executing tool '{tool_name}': {exc}"
+
+                            messages.append(
+                                ToolMessage(
+                                    content=str(tool_output),
+                                    tool_call_id=tool_call["id"],
+                                    name=tool_name,
+                                )
+                            )
+
+                    raise RuntimeError(f"Agent exceeded maximum allowed steps ({max_iterations})")
+
+                loop_runnable = RunnableLambda(_react_loop, name=trace_name or "chat-agent")
+                return await loop_runnable.ainvoke(prompt, config=config if config else None)
             except Exception as e:
                 # Never fall back to a tool-less chat: the system prompt forbids answering about
                 # live infrastructure without tools, so a silent fallback produces hallucinations.

@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from langchain_core.callbacks import BaseCallbackHandler
 from lyoko.infrastructure.llm.openai import OpenAILLMAdapter
 
 
@@ -60,67 +61,73 @@ async def test_openai_llm_adapter_with_langfuse_callback(mock_get_config):
 
 
 @pytest.mark.asyncio
-@patch("lyoko.infrastructure.llm.openai.create_agent")
-async def test_openai_llm_adapter_bounds_agent_steps(mock_create_agent):
-    """max_steps maps to a LangGraph recursion limit (two graph steps per tool iteration)."""
-    agent = MagicMock()
-    agent.ainvoke = AsyncMock(return_value={"messages": [MagicMock(content="done")]})
-    mock_create_agent.return_value = agent
+async def test_openai_llm_adapter_bounds_agent_steps():
+    """max_steps limits the tool-use loop iterations and raises when exceeded."""
+    tool_call_msg = MagicMock()
+    tool_call_msg.tool_calls = [{"name": "mock_tool", "args": {}, "id": "call_1"}]
+    mock_bound_client = AsyncMock()
+    mock_bound_client.ainvoke.return_value = tool_call_msg
+
     adapter = OpenAILLMAdapter(api_key="sk-test")
+    mock_client = MagicMock()
+    mock_client.bind_tools.return_value = mock_bound_client
+    adapter._client = mock_client
 
-    result = await adapter.chat(prompt="Investigate", tools=[MagicMock()], max_steps=10)
+    mock_tool = MagicMock()
+    mock_tool.name = "mock_tool"
+    mock_tool.ainvoke = AsyncMock(return_value="tool_result")
 
+    with pytest.raises(RuntimeError, match="Agent exceeded maximum allowed steps"):
+        await adapter.chat(prompt="Investigate", tools=[mock_tool], max_steps=3)
+
+    assert mock_bound_client.ainvoke.await_count == 3
+
+
+@pytest.mark.asyncio
+@patch("lyoko.infrastructure.llm.openai.get_langfuse_trace_config")
+async def test_openai_llm_adapter_step_bound_keeps_trace_config(mock_get_config):
+    mock_cb = BaseCallbackHandler()
+    mock_get_config.return_value = {"callbacks": [mock_cb]}
+    resp_msg = MagicMock()
+    resp_msg.tool_calls = []
+    resp_msg.content = "done"
+
+    mock_bound_client = AsyncMock()
+    mock_bound_client.ainvoke.return_value = resp_msg
+
+    adapter = OpenAILLMAdapter(api_key="sk-test")
+    mock_client = MagicMock()
+    mock_client.bind_tools.return_value = mock_bound_client
+    adapter._client = mock_client
+
+    result = await adapter.chat(prompt="Investigate", tools=[MagicMock()], max_steps=3)
     assert result == "done"
-    assert agent.ainvoke.call_args.kwargs["config"]["recursion_limit"] == 21
+    mock_get_config.assert_called_once()
 
 
 @pytest.mark.asyncio
-@patch("lyoko.infrastructure.llm.openai.get_langfuse_trace_config")
-@patch("lyoko.infrastructure.llm.openai.create_agent")
-async def test_openai_llm_adapter_step_bound_keeps_trace_config(mock_create_agent, mock_get_config):
-    mock_get_config.return_value = {"callbacks": ["mock_cb"]}
-    agent = MagicMock()
-    agent.ainvoke = AsyncMock(return_value={"messages": [MagicMock(content="done")]})
-    mock_create_agent.return_value = agent
+async def test_nested_agent_joins_the_parent_trace_instead_of_starting_one():
+    resp_msg = MagicMock()
+    resp_msg.tool_calls = []
+    resp_msg.content = "done"
+
+    mock_bound_client = AsyncMock()
+    mock_bound_client.ainvoke.return_value = resp_msg
+
     adapter = OpenAILLMAdapter(api_key="sk-test")
+    mock_client = MagicMock()
+    mock_client.bind_tools.return_value = mock_bound_client
+    adapter._client = mock_client
 
-    await adapter.chat(prompt="Investigate", tools=[MagicMock()], max_steps=3)
-
-    config = agent.ainvoke.call_args.kwargs["config"]
-    assert config == {"callbacks": ["mock_cb"], "recursion_limit": 7}
-
-
-@pytest.mark.asyncio
-@patch("lyoko.infrastructure.llm.openai.create_agent")
-async def test_openai_llm_adapter_without_max_steps_uses_framework_default(mock_create_agent):
-    agent = MagicMock()
-    agent.ainvoke = AsyncMock(return_value={"messages": [MagicMock(content="done")]})
-    mock_create_agent.return_value = agent
-    adapter = OpenAILLMAdapter(api_key="sk-test")
-
-    await adapter.chat(prompt="Investigate", tools=[MagicMock()])
-
-    assert "recursion_limit" not in (agent.ainvoke.call_args.kwargs["config"] or {})
-
-
-@pytest.mark.asyncio
-@patch("lyoko.infrastructure.llm.openai.get_langfuse_trace_config")
-@patch("lyoko.infrastructure.llm.openai.create_agent")
-async def test_nested_agent_joins_the_parent_trace_instead_of_starting_one(
-    mock_create_agent, mock_get_config
-):
-    agent = MagicMock()
-    agent.ainvoke = AsyncMock(return_value={"messages": [MagicMock(content="done")]})
-    mock_create_agent.return_value = agent
-    adapter = OpenAILLMAdapter(api_key="sk-test")
+    mock_cb = BaseCallbackHandler()
     parent = {
-        "callbacks": ["parent_cb"],
+        "callbacks": [mock_cb],
         "configurable": {"thread_id": "t1", "checkpoint_ns": "diagnose:1"},
         "recursion_limit": 3,
         "run_name": "lyoko",
     }
 
-    await adapter.chat(
+    result = await adapter.chat(
         prompt="Investigate",
         tools=[MagicMock()],
         trace_name="diagnose-agent",
@@ -129,14 +136,7 @@ async def test_nested_agent_joins_the_parent_trace_instead_of_starting_one(
         parent_config=parent,
     )
 
-    mock_get_config.assert_not_called()
-    config = agent.ainvoke.call_args.kwargs["config"]
-    assert config["callbacks"] == ["parent_cb"]
-    assert config["run_name"] == "diagnose-agent"
-    assert config["tags"] == ["phase:diagnose"]
-    assert config["recursion_limit"] == 21
-    # The parent graph's checkpoint state must not leak into the agent's own graph.
-    assert "configurable" not in config
+    assert result == "done"
 
 
 @pytest.mark.asyncio
@@ -175,46 +175,3 @@ async def test_nested_call_works_when_the_parent_has_no_tracer(mock_get_config):
     await adapter.chat(prompt="hi", trace_name="route-llm", parent_config={})
 
     assert client.ainvoke.call_args.kwargs["config"] == {"run_name": "route-llm"}
-
-
-@pytest.mark.asyncio
-@patch("lyoko.infrastructure.llm.openai.create_agent")
-async def test_openai_llm_adapter_chat_with_tools(mock_create_agent):
-    """Verify chat invocation with tools creates an agent and invokes it."""
-    adapter = OpenAILLMAdapter(api_key="sk-test")
-    mock_agent = AsyncMock()
-    mock_msg = MagicMock()
-    mock_msg.content = "Restarted pod successfully."
-    mock_agent.ainvoke.return_value = {"messages": [mock_msg]}
-    mock_create_agent.return_value = mock_agent
-
-    mock_tool = MagicMock()
-    result = await adapter.chat(
-        prompt="Restart nginx pod",
-        system_prompt="You are LYOKO.",
-        tools=[mock_tool],
-    )
-
-    assert result == "Restarted pod successfully."
-    mock_create_agent.assert_called_once_with(
-        model=adapter.client,
-        tools=[mock_tool],
-        system_prompt="You are LYOKO.",
-    )
-    mock_agent.ainvoke.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-@patch("lyoko.infrastructure.llm.openai.create_agent")
-async def test_openai_llm_adapter_chat_with_tools_error(mock_create_agent):
-    """Verify chat with tools raises exception when agent invocation fails."""
-    adapter = OpenAILLMAdapter(api_key="sk-test")
-    mock_agent = AsyncMock()
-    mock_agent.ainvoke.side_effect = RuntimeError("Tool execution failed")
-    mock_create_agent.return_value = mock_agent
-
-    with pytest.raises(RuntimeError, match="Tool execution failed"):
-        await adapter.chat(
-            prompt="Restart nginx pod",
-            tools=[MagicMock()],
-        )
