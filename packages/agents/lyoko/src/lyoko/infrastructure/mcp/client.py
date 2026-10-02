@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 from fastmcp import Client
+from langchain_core.runnables import RunnableLambda
 from langchain_core.tools import StructuredTool, ToolException
 from lyoko.config import settings
 from lyoko.domain.exceptions import (
@@ -14,7 +15,7 @@ from lyoko.domain.exceptions import (
     MCPGatewayError,
     MCPGatewayUnreachableError,
 )
-from lyoko.domain.interfaces import MCPClientInterface
+from lyoko.domain.interfaces import MCPClientInterface, ToolAuthorizer
 
 logger = logging.getLogger("lyoko.infrastructure.mcp.client")
 
@@ -173,8 +174,13 @@ class FastMCPClient(MCPClientInterface):
         except Exception as exc:
             raise await self._to_gateway_error("list categories", exc) from exc
 
-    async def list_tools(self, upstream: str | None = None) -> list[dict[str, Any]]:
-        """List all tools available from gateway and connected upstreams, optionally filtered.
+    async def list_tools(
+        self,
+        upstream: str | None = None,
+        query: str | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """List tools available from the gateway, optionally filtered by upstream or keyword.
 
         Raises:
             MCPGatewayError: if the gateway cannot be used (never silently returns ``[]``).
@@ -182,18 +188,41 @@ class FastMCPClient(MCPClientInterface):
         auth_token = self.token if self.token else None
         try:
             async with Client(self.server_url, auth=auth_token) as client:
-                args = {"upstream": upstream} if upstream else {}
+                args: dict[str, Any] = {}
+                if upstream:
+                    args["upstream"] = upstream
+                if query:
+                    args["query"] = query
+                if limit:
+                    args["limit"] = limit
                 res = await client.call_tool("gateway_list_tools", args)
                 return res.data if isinstance(res.data, list) else []
         except Exception as exc:
             raise await self._to_gateway_error("list tools", exc) from exc
 
-    def get_langchain_tools(self) -> list[Any]:
+    async def get_tool_schema(self, tool_name: str) -> Any:
+        """Return the full parameter schema of a gateway tool.
+
+        Raises:
+            MCPGatewayError: if the gateway cannot be used.
+        """
+        auth_token = self.token if self.token else None
+        try:
+            async with Client(self.server_url, auth=auth_token) as client:
+                res = await client.call_tool("gateway_get_tool_schema", {"tool_name": tool_name})
+                return res.data
+        except Exception as exc:
+            raise await self._to_gateway_error(f"get schema of '{tool_name}'", exc) from exc
+
+    def get_langchain_tools(self, authorizer: ToolAuthorizer | None = None) -> list[Any]:
         """Return LangChain StructuredTool instances to dynamically discover and execute homelab tools.
 
         Gateway failures are raised as ``ToolException`` so the LLM receives the real error
         message (and the trace records a failed tool call) instead of an empty result it
         could mistake for "nothing is available" and answer from imagination.
+
+        When ``authorizer`` is given it is consulted before every ``gateway_call_tool``
+        invocation; a refusal is raised as a ``ToolException`` and the tool never runs.
         """
 
         async def _gateway_list_categories() -> str:
@@ -214,14 +243,18 @@ class FastMCPClient(MCPClientInterface):
                 raise ToolException(str(exc)) from exc
             return str(categories)
 
-        async def _gateway_list_tools(upstream: str | None = None) -> str:
-            """List operational tools available in the homelab infrastructure, optionally filtered by upstream category.
+        async def _gateway_list_tools(
+            upstream: str | None = None, query: str | None = None, limit: int = 25
+        ) -> str:
+            """List operational tools available in the homelab, optionally filtered.
 
             Args:
-                upstream: Optional upstream category name to filter (e.g. 'homeassistant', 'unifi', 'kubernetes', 'grafana', 'github').
+                upstream: Optional upstream category to filter (e.g. 'homeassistant', 'unifi', 'kubernetes', 'grafana', 'github').
+                query: Optional keyword matched against tool names and descriptions (e.g. 'pod', 'restart', 'client').
+                limit: Maximum number of tools to return (default 25, max 50).
             """
             try:
-                tools = await self.list_tools(upstream=upstream)
+                tools = await self.list_tools(upstream=upstream, query=query, limit=limit)
             except MCPGatewayError as exc:
                 raise ToolException(str(exc)) from exc
             return str(
@@ -235,6 +268,17 @@ class FastMCPClient(MCPClientInterface):
                 ]
             )
 
+        async def _gateway_get_tool_schema(tool_name: str) -> str:
+            """Get the full parameter schema and description of one tool.
+
+            Args:
+                tool_name: Exact name of the tool to inspect.
+            """
+            try:
+                return str(await self.get_tool_schema(tool_name))
+            except MCPGatewayError as exc:
+                raise ToolException(str(exc)) from exc
+
         async def _gateway_call_tool(tool_name: str, arguments: dict[str, Any]) -> str:
             """Execute any operational homelab tool by its exact name with arguments.
 
@@ -242,10 +286,20 @@ class FastMCPClient(MCPClientInterface):
                 tool_name: Exact name of the tool to invoke.
                 arguments: Dictionary of parameters matching the tool schema.
             """
-            result = await self.call_tool(tool_name, arguments)
-            if isinstance(result, dict) and result.get("status") == "failed":
-                raise ToolException(str(result.get("error", "unknown MCP gateway error")))
-            return str(result)
+
+            async def _run(call_arguments: dict[str, Any]) -> str:
+                if authorizer is not None:
+                    refusal = await authorizer(tool_name, call_arguments)
+                    if refusal:
+                        raise ToolException(refusal)
+                result = await self.call_tool(tool_name, call_arguments)
+                if isinstance(result, dict) and result.get("status") == "failed":
+                    raise ToolException(str(result.get("error", "unknown MCP gateway error")))
+                return str(result)
+
+            # Every call goes through one generic tool, so name the nested run after the real
+            # gateway tool. Traces then show ``mcp:pods_log`` instead of an anonymous call.
+            return await RunnableLambda(_run, name=f"mcp:{tool_name}").ainvoke(arguments)
 
         categories_tool = StructuredTool.from_function(
             coroutine=_gateway_list_categories,
@@ -257,7 +311,7 @@ class FastMCPClient(MCPClientInterface):
         list_tool = StructuredTool.from_function(
             coroutine=_gateway_list_tools,
             name="gateway_list_tools",
-            description="List specific operational tools available in the homelab, with optional 'upstream' category filter to quickly find relevant tools without loading the entire catalog.",
+            description="List operational tools available in the homelab. Filter with 'upstream' (category) and 'query' (keyword) to find relevant tools without loading the entire catalog.",
             handle_tool_error=True,
         )
 
@@ -268,4 +322,11 @@ class FastMCPClient(MCPClientInterface):
             handle_tool_error=True,
         )
 
-        return [categories_tool, list_tool, call_tool]
+        schema_tool = StructuredTool.from_function(
+            coroutine=_gateway_get_tool_schema,
+            name="gateway_get_tool_schema",
+            description="Get the exact parameter schema of a specific tool before calling it with gateway_call_tool.",
+            handle_tool_error=True,
+        )
+
+        return [categories_tool, list_tool, schema_tool, call_tool]

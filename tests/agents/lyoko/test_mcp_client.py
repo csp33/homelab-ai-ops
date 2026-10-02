@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from langchain_core.callbacks import BaseCallbackHandler
 from lyoko.domain.exceptions import (
     MCPAuthenticationError,
     MCPEndpointNotFoundError,
@@ -166,3 +167,112 @@ async def test_startup_check_tolerates_unreachable_gateway():
     client.verify_connection.side_effect = MCPGatewayUnreachableError("still starting")
     with patch("lyoko.main.settings.mcp_fail_fast", True):
         await verify_mcp_gateway(client)
+
+
+@pytest.mark.asyncio
+async def test_langchain_tools_expose_search_and_schema_discovery():
+    tools = {t.name: t for t in FastMCPClient(server_url="http://x/mcp").get_langchain_tools()}
+
+    assert set(tools) == {
+        "gateway_list_categories",
+        "gateway_list_tools",
+        "gateway_get_tool_schema",
+        "gateway_call_tool",
+    }
+    assert {"upstream", "query", "limit"} <= set(tools["gateway_list_tools"].args)
+
+
+@pytest.mark.asyncio
+async def test_authorizer_refusal_blocks_the_call_and_reaches_the_llm():
+    client = FastMCPClient(server_url="http://x/mcp", token="")
+    client.call_tool = AsyncMock(return_value={"ok": True})
+    authorizer = AsyncMock(return_value="Refused: not allowed")
+    tools = {t.name: t for t in client.get_langchain_tools(authorizer=authorizer)}
+
+    output = await tools["gateway_call_tool"].ainvoke(
+        {"tool_name": "pods_delete", "arguments": {"name": "x"}}
+    )
+
+    assert output == "Refused: not allowed"
+    authorizer.assert_awaited_once_with("pods_delete", {"name": "x"})
+    client.call_tool.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_authorizer_allowing_the_call_lets_it_through():
+    client = FastMCPClient(server_url="http://x/mcp", token="")
+    client.call_tool = AsyncMock(return_value={"ok": True})
+    authorizer = AsyncMock(return_value=None)
+    tools = {t.name: t for t in client.get_langchain_tools(authorizer=authorizer)}
+
+    output = await tools["gateway_call_tool"].ainvoke(
+        {"tool_name": "pods_get", "arguments": {"name": "x"}}
+    )
+
+    assert output == "{'ok': True}"
+    client.call_tool.assert_awaited_once_with("pods_get", {"name": "x"})
+
+
+@pytest.mark.asyncio
+async def test_discovery_tools_are_never_gated():
+    client = FastMCPClient(server_url="http://x/mcp", token="")
+    client.list_categories = AsyncMock(return_value=[{"upstream": "kubernetes", "tool_count": 20}])
+    authorizer = AsyncMock(return_value="Refused")
+    tools = {t.name: t for t in client.get_langchain_tools(authorizer=authorizer)}
+
+    output = await tools["gateway_list_categories"].ainvoke({})
+
+    assert "kubernetes" in output
+    authorizer.assert_not_called()
+
+
+class _RunRecorder(BaseCallbackHandler):
+    """Records every chain run (name, id, parent) the way a tracing backend would see it."""
+
+    def __init__(self) -> None:
+        self.runs: list[tuple[str, object, object]] = []
+        self.tool_runs: list[tuple[str, object]] = []
+
+    def on_chain_start(self, serialized, inputs, *, run_id, parent_run_id=None, name=None, **kw):
+        self.runs.append((name or "", run_id, parent_run_id))
+
+    def on_tool_start(self, serialized, input_str, *, run_id, **kwargs):
+        self.tool_runs.append((serialized.get("name", ""), run_id))
+
+
+@pytest.mark.asyncio
+async def test_gateway_call_is_traced_under_the_name_of_the_real_tool():
+    """Traces must say `mcp:pods_log`, not just `gateway_call_tool`, to be readable."""
+    client = FastMCPClient(server_url="http://x/mcp", token="")
+    client.call_tool = AsyncMock(return_value={"ok": True})
+    tools = {t.name: t for t in client.get_langchain_tools()}
+    recorder = _RunRecorder()
+
+    await tools["gateway_call_tool"].ainvoke(
+        {"tool_name": "pods_log", "arguments": {"name": "radarr"}},
+        config={"callbacks": [recorder]},
+    )
+
+    ((tool_name, tool_run_id),) = recorder.tool_runs
+    assert tool_name == "gateway_call_tool"
+    ((span_name, _, parent),) = [r for r in recorder.runs if r[0].startswith("mcp:")]
+    assert span_name == "mcp:pods_log"
+    assert parent == tool_run_id
+
+
+@pytest.mark.asyncio
+async def test_refused_gateway_call_is_still_traced_under_the_tool_name():
+    client = FastMCPClient(server_url="http://x/mcp", token="")
+    client.call_tool = AsyncMock()
+    authorizer = AsyncMock(return_value="Refused: read-only phase")
+    tools = {t.name: t for t in client.get_langchain_tools(authorizer=authorizer)}
+    recorder = _RunRecorder()
+
+    output = await tools["gateway_call_tool"].ainvoke(
+        {"tool_name": "pods_delete", "arguments": {"name": "x"}},
+        config={"callbacks": [recorder]},
+    )
+
+    assert output == "Refused: read-only phase"
+    assert "mcp:pods_delete" in [r[0] for r in recorder.runs]
+    client.call_tool.assert_not_called()

@@ -7,7 +7,7 @@
 [![LangGraph](https://img.shields.io/badge/LangGraph-workflow-orange.svg?style=flat)](https://github.com/langchain-ai/langgraph)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Autonomous **Homelab AIOps & Operations Platform** designed for Kubernetes homelabs and smart infrastructure, powered by **FastMCP** and **LangGraph**.
+An AI operator for the whole homelab: Kubernetes, the network, the smart home, and observability. It receives incidents, works out the cause, and fixes them through a single authenticated, guardrail-protected tool gateway, with a human approving anything that is not explicitly trusted. Powered by **FastMCP** and **LangGraph**.
 
 [Architecture](#architecture) · [Packages](#packages) · [Quick Start](#quick-start) · [Security](#security)
 
@@ -24,9 +24,10 @@ flowchart LR
     subgraph LYOKO["LYOKO agent"]
         direction TB
         WH[Webhook controller]
-        LG[LangGraph workflow]
-        CHAT[Chat assistant]
+        CH[Chat handler]
+        LG["LangGraph: route, then chat or incident"]
         WH --> LG
+        CH --> LG
     end
 
     subgraph GW["homelab-mcp gateway"]
@@ -49,9 +50,8 @@ flowchart LR
     AM -->|webhook| WH
     IDE -->|HTTP or stdio| AUTH
     LG -->|MCP client| AUTH
-    CHAT -->|MCP client| AUTH
-    LG <-->|approvals| TG
-    CHAT <-->|chat| TG
+    TG <-->|messages and approvals| CH
+    LG <-->|approvals and reports| TG
     MUX --> K8S & HA & UNIFI & GRAF & GH
 
     classDef external fill:#64748b,stroke:#334155,color:#fff;
@@ -60,14 +60,14 @@ flowchart LR
     classDef upstream fill:#b45309,stroke:#78350f,color:#fff;
 
     class AM,IDE,TG external;
-    class WH,LG,CHAT agent;
+    class WH,CH,LG agent;
     class AUTH,GR,MUX gateway;
     class K8S,HA,UNIFI,GRAF,GH upstream;
 ```
 
-### Remediation flow
+### Example: an OOMKilled pod
 
-A pod is killed for exceeding its memory limit. LYOKO diagnoses it, asks a human, patches the deployment through the gateway, verifies recovery, and reports back.
+Every incident follows the same loop: investigate with read-only tools, decide on a fix, get approval for each change, apply it, verify, and report. The agent discovers tools at run time, so nothing in the loop is specific to Kubernetes. A UniFi access point that went offline or a Home Assistant integration that stopped responding takes the same path with different tools. The example below uses a pod that was killed for exceeding its memory limit.
 
 ```mermaid
 sequenceDiagram
@@ -78,29 +78,36 @@ sequenceDiagram
     participant O as Operator (Telegram)
     participant K as Kubernetes
 
-    AM->>L: POST /webhook/alertmanager (OOMKilled)
-    L->>G: k8s_get_pod_diagnostics
-    G->>K: Read pod status and logs
-    K-->>G: Exit code 137
-    G-->>L: Diagnostics
-    L->>L: LLM root-cause analysis
-    L->>O: Approval request (Approve / Deny)
+    AM->>L: POST /webhook/alertmanager (KubePodOOMKilled)
+
+    loop Read-only investigation
+        L->>G: pods_get, pods_log, events_list
+        G->>K: Read pod, logs, events
+        K-->>G: Exit code 137
+        G-->>L: Evidence
+    end
+    L->>L: Root cause and plan
+
+    L->>G: resources_create_or_update (raise memory limit)
+    Note over L,G: The tool gate holds the call
+    L->>O: Approval request with tool and arguments
 
     alt Approved
         O-->>L: Approve
-        L->>G: k8s_bump_deployment_resources (1Gi)
         G->>G: Guardrail check
-        G->>K: Patch deployment
+        G->>K: Apply change
         L->>L: Wait for stabilization
-        L->>G: k8s_get_pod_diagnostics
+        L->>G: pods_get (read-only)
         G-->>L: Pod running
     else Denied or timed out
         O-->>L: Deny
-        Note over L: No mutation, incident escalated
+        Note over L: Nothing changed, incident escalated
     end
 
     L->>O: Incident report
 ```
+
+Tool names come from the upstream servers, so they depend on your deployment. The agent finds them with `gateway_list_tools`.
 
 ## Packages
 
@@ -112,7 +119,8 @@ sequenceDiagram
 ## Features
 
 - **Guardrails**: block destructive commands (`rm -rf`, `mkfs`, fork bombs), mutations in protected namespaces (`kube-system`), and tools outside the allowlist.
-- **Self-healing**: automated diagnosis and remediation for `OOMKilled` and `CrashLoopBackOff`, with human approval before any change.
+- **Autonomous remediation**: for any alert, an agent investigates with read-only tools, proposes a fix, and applies it. Every state-changing tool call needs human approval unless you put it on the auto-approve list, and the agent cannot change anything while diagnosing or verifying.
+- **Whole-homelab assistant**: a Telegram assistant that can inspect and operate Kubernetes, Home Assistant, UniFi, and Grafana through the same gateway. It follows the same approval policy as alerts: reads run, trusted changes run, and any other change asks you first. A message that reports a broken service is handled like an alert, with investigation, fix, verification and report.
 - **One gateway**: Kubernetes, Home Assistant, UniFi, Grafana, and GitHub tools behind a single endpoint over Streamable HTTP (`/mcp`) and stdio.
 - **Authentication**: Google OIDC and bearer-token verification for users and agents.
 - **Reproducible toolchain**: Python 3.13+, `uv` workspace, `ruff`.

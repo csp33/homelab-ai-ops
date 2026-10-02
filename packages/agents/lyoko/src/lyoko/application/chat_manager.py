@@ -1,7 +1,7 @@
 import logging
 
 from lyoko.application.chat_sessions import ChatSessionTracker
-from lyoko.domain.interfaces.chat_connector import ChatConnector
+from lyoko.domain.interfaces.chat_connector import ChatConnector, MessageHandler
 from lyoko.domain.models.chat import ApprovalRequest, SentMessage
 
 logger = logging.getLogger("lyoko.application.chat_manager")
@@ -25,6 +25,11 @@ class ChatManager:
     def add_connector(self, connector: ChatConnector) -> None:
         """Register an additional ChatConnector instance."""
         self.connectors.append(connector)
+
+    def register_message_handler(self, handler: MessageHandler) -> None:
+        """Route incoming messages from every registered connector to ``handler``."""
+        for conn in self.connectors:
+            conn.register_message_handler(handler)
 
     async def start_all(self) -> None:
         """Start all registered chat connectors."""
@@ -68,11 +73,12 @@ class ChatManager:
     async def broadcast_approval_request(self, request: ApprovalRequest) -> None:
         """Send approval request across all registered connectors with fault tolerance.
 
-        Replies to the approval message continue the session identified by the incident ID.
+        Replies to the approval message continue the request's session, which defaults to the
+        incident ID.
         """
         for conn in self.connectors:
             try:
                 sent = await conn.send_approval_request(request)
-                self._link_sent_message(sent, request.incident_id)
+                self._link_sent_message(sent, request.session_id or request.incident_id)
             except Exception as e:
                 logger.error("Error broadcasting approval request via connector: %s", e)

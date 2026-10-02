@@ -13,7 +13,7 @@ from lyoko.application.chat_agent import InteractiveChatAgent
 from lyoko.application.chat_manager import ChatManager
 from lyoko.application.chat_sessions import ChatSessionTracker
 from lyoko.application.hitl import ApprovalManager
-from lyoko.application.workflow import create_remediation_workflow
+from lyoko.application.workflow import create_lyoko_graph
 from lyoko.config import settings
 from lyoko.domain.exceptions import MCPGatewayError
 from lyoko.domain.interfaces.llm import LLMClientInterface
@@ -44,12 +44,12 @@ def build_llm_adapter() -> LLMClientInterface | None:
     )
 
 
-def build_chat_manager(
-    mcp_client: FastMCPClient,
-    approval_manager: ApprovalManager,
-    llm: LLMClientInterface | None = None,
-) -> ChatManager:
-    """Instantiate and configure active chat connectors."""
+def build_chat_manager(approval_manager: ApprovalManager) -> ChatManager:
+    """Instantiate the chat connectors.
+
+    Incoming messages are wired in separately (see ``wire_chat_agent``), because the agent that
+    answers them needs the graph, and the graph needs this manager to ask for approvals.
+    """
     session_tracker = ChatSessionTracker(settings.chat_session_idle_timeout_seconds)
     chat_manager = ChatManager(session_tracker=session_tracker)
 
@@ -66,16 +66,37 @@ def build_chat_manager(
             allowed_chat_ids=settings.telegram_allowed_chat_ids,
             default_chat_id=settings.telegram_default_chat_id,
         )
-        chat_agent = InteractiveChatAgent(
-            mcp_client=mcp_client,
-            llm=llm,
-            session_tracker=session_tracker,
-        )
-        telegram_connector.register_message_handler(chat_agent.handle_message)
         telegram_connector.register_approval_handler(approval_manager.resolve_approval)
         chat_manager.add_connector(telegram_connector)
 
     return chat_manager
+
+
+def build_tracer() -> LangfuseTracer:
+    """Instantiate the Langfuse tracer (a no-op without credentials)."""
+    secret = settings.langfuse_secret_key
+    secret_value = (
+        secret.get_secret_value()
+        if secret and hasattr(secret, "get_secret_value")
+        else str(secret or "")
+    )
+    return LangfuseTracer(
+        public_key=settings.langfuse_public_key or "",
+        secret_key=secret_value,
+        host=settings.langfuse_host,
+        environment=settings.get_langfuse_environment(),
+        release=settings.langfuse_release,
+    )
+
+
+def wire_chat_agent(app: FastAPI, chat_manager: ChatManager) -> None:
+    """Send incoming chat messages to the graph stored in ``app.state.workflow_engine``."""
+    chat_agent = InteractiveChatAgent(
+        lambda: app.state.workflow_engine,
+        tracer=getattr(app.state, "tracer", None),
+        session_tracker=chat_manager.session_tracker,
+    )
+    chat_manager.register_message_handler(chat_agent.handle_message)
 
 
 async def verify_mcp_gateway(mcp_client: MCPClientInterface) -> None:
@@ -137,11 +158,14 @@ async def lifespan(app: FastAPI):
         if pool:
             await pool.close()
         raise
-    chat_manager = getattr(app.state, "chat_manager", None) or build_chat_manager(
-        mcp_client, approval_manager, llm=llm
-    )
+    chat_manager = getattr(app.state, "chat_manager", None)
+    if chat_manager is None:
+        chat_manager = build_chat_manager(approval_manager)
+        app.state.chat_manager = chat_manager
+        wire_chat_agent(app, chat_manager)
 
-    workflow_engine = create_remediation_workflow(
+    # Rebuilt now that the checkpointer exists. Everything reads the graph from app.state.
+    workflow_engine = create_lyoko_graph(
         mcp_client,
         approval_manager=approval_manager,
         chat_manager=chat_manager,
@@ -166,26 +190,13 @@ def create_app() -> FastAPI:
     llm = build_llm_adapter()
     mcp_client = FastMCPClient()
     approval_manager = ApprovalManager()
-    chat_manager = build_chat_manager(mcp_client, approval_manager, llm=llm)
-
-    secret_val = ""
-    if settings.langfuse_secret_key:
-        secret_val = (
-            settings.langfuse_secret_key.get_secret_value()
-            if hasattr(settings.langfuse_secret_key, "get_secret_value")
-            else str(settings.langfuse_secret_key)
-        )
-
-    tracer = LangfuseTracer(
-        public_key=settings.langfuse_public_key or "",
-        secret_key=secret_val,
-        host=settings.langfuse_host,
-    )
+    chat_manager = build_chat_manager(approval_manager)
+    tracer = build_tracer()
 
     app = FastAPI(title="LYOKO Auto-Remediation Agent", lifespan=lifespan)
 
-    # Initial workflow engine (without persistent checkpointer until lifespan runs)
-    workflow_engine = create_remediation_workflow(
+    # Initial graph (without persistent checkpointer until lifespan runs)
+    workflow_engine = create_lyoko_graph(
         mcp_client,
         approval_manager=approval_manager,
         chat_manager=chat_manager,
@@ -200,8 +211,11 @@ def create_app() -> FastAPI:
     app.state.checkpointer = None
     app.state.db_pool = None
 
-    webhook_router = create_webhook_router(workflow_engine, tracer=tracer)
-    app.include_router(webhook_router)
+    wire_chat_agent(app, chat_manager)
+
+    # No engine is passed: the webhook reads app.state.workflow_engine on every request, so it
+    # uses the graph rebuilt with the checkpointer in lifespan.
+    app.include_router(create_webhook_router(tracer=tracer))
 
     @app.get("/healthz")
     async def health_check():

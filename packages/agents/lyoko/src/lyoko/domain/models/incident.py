@@ -17,12 +17,19 @@ class IncidentStatus(StrEnum):
 
 @dataclass(frozen=True)
 class Incident:
+    """An alert LYOKO must investigate.
+
+    Only ``alert_name`` is required: incidents are not tied to Kubernetes. The Kubernetes
+    fields are optional conveniences filled in when the alert carries those labels.
+    """
+
     alert_name: str
-    namespace: str
-    pod_name: str
+    namespace: str = ""
+    pod_name: str = ""
     deployment_name: str | None = None
     fingerprint: str | None = None
     labels: dict[str, str] = field(default_factory=dict)
+    annotations: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

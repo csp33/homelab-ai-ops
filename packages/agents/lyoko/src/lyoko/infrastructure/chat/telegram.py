@@ -467,7 +467,10 @@ class TelegramConnector(ChatConnector):
             logger.warning("TelegramConnector not started: missing bot token")
             return
 
-        self._app = Application.builder().token(self.bot_token).build()
+        # Updates are processed one at a time by default. A message handler that waits for an
+        # approval would then block the very button click that grants it, so handle them
+        # concurrently.
+        self._app = Application.builder().token(self.bot_token).concurrent_updates(True).build()
         self._app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_telegram_message)
         )

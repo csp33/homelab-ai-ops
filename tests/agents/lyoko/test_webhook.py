@@ -134,3 +134,53 @@ def test_alertmanager_webhook_with_tracer(mock_workflow):
     assert "config" in kwargs
     assert kwargs["config"]["callbacks"] == [mock_callback]
     assert kwargs["config"]["metadata"]["langfuse_session_id"] == "incident-api-123"
+
+
+def test_alertmanager_webhook_accepts_non_kubernetes_alerts(test_client, mock_workflow):
+    payload = {
+        "status": "firing",
+        "alerts": [
+            {
+                "status": "firing",
+                "labels": {
+                    "alertname": "UnifiApOffline",
+                    "site": "home",
+                    "device": "ap-living-room",
+                },
+                "annotations": {"summary": "Access point is offline"},
+                "fingerprint": "ffee0011",
+            }
+        ],
+    }
+
+    response = test_client.post("/webhook/alertmanager", json=payload)
+
+    assert response.status_code == 200
+    mock_workflow.ainvoke.assert_called_once()
+    state = mock_workflow.ainvoke.call_args.args[0]
+    config = mock_workflow.ainvoke.call_args.kwargs["config"]
+    assert state["alert_name"] == "UnifiApOffline"
+    assert state["labels"]["device"] == "ap-living-room"
+    assert state["annotations"] == {"summary": "Access point is offline"}
+    assert state["event_id"] == "incident-ffee0011"
+    assert config["configurable"] == {"thread_id": "incident-ffee0011"}
+    assert not any(tag.startswith("ns:") for tag in config["tags"])
+
+
+def test_long_incident_keys_are_hashed_to_fit_telegram_callback_data(test_client, mock_workflow):
+    long_pod = "p" * 60
+    payload = {
+        "status": "firing",
+        "alerts": [
+            {
+                "status": "firing",
+                "labels": {"alertname": "X", "namespace": "n", "pod": long_pod},
+            }
+        ],
+    }
+
+    test_client.post("/webhook/alertmanager", json=payload)
+
+    incident_id = mock_workflow.ainvoke.call_args.args[0]["event_id"]
+    assert long_pod not in incident_id
+    assert len(f"approve:{incident_id}.99") <= 64

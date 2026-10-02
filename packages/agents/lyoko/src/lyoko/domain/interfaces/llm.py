@@ -18,24 +18,15 @@ class LLMClientInterface(ABC):
         trace_name: str | None = None,
         tags: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
+        max_steps: int | None = None,
+        parent_config: dict[str, Any] | None = None,
     ) -> str:
-        """Process a conversational or single-turn prompt with optional tools and session tracing."""
+        """Process a conversational or single-turn prompt with optional tools and session tracing.
 
-    @abstractmethod
-    async def analyze_incident(
-        self,
-        alert_name: str,
-        pod_name: str,
-        namespace: str,
-        diagnostics: Any,
-        session_id: str | None = None,
-    ) -> str:
-        """Analyze pod failure diagnostics and determine the root cause."""
+        ``max_steps`` bounds the number of tool-use iterations when ``tools`` are given.
 
-    @abstractmethod
-    async def generate_remediation_plan(
-        self,
-        context: dict[str, Any],
-        session_id: str | None = None,
-    ) -> str:
-        """Generate automated remediation steps from diagnostic incident context."""
+        ``parent_config`` is the run configuration of the graph node making the call. When it is
+        given, the call is traced as a child of that run (named ``trace_name``) instead of
+        starting a trace of its own, and ``session_id`` and ``user_id`` are ignored because the
+        enclosing trace already carries them.
+        """
