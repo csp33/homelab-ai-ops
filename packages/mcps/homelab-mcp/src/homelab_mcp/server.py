@@ -105,7 +105,6 @@ def build_gateway_application() -> tuple[MCPGatewayService, any]:
             bot_token=settings.telegram_bot_token,
             default_chat_id=settings.telegram_default_chat_id,
         )
-        )
 
     auth_verifier = GoogleAuthVerifier()
     gateway_service = MCPGatewayService(upstreams=upstreams, auth_port=auth_verifier)

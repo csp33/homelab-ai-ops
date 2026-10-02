@@ -61,13 +61,13 @@ def test_langfuse_initialization_exception_returns_none(monkeypatch):
     monkeypatch.setattr("lyoko.config.settings.langfuse_public_key", "pk-lf-test")
     monkeypatch.setattr("lyoko.config.settings.langfuse_secret_key", "sk-lf-test")
 
-    # Force an exception during CallbackHandler initialization
-    import langfuse.callback
-
     def broken_handler(*args, **kwargs):
         raise RuntimeError("Langfuse server connection failed")
 
-    monkeypatch.setattr(langfuse.callback, "CallbackHandler", broken_handler)
+    monkeypatch.setattr(
+        "lyoko.infrastructure.observability.langfuse.LangfuseTracer.get_callback_handler",
+        broken_handler,
+    )
 
     handler = get_langfuse_callback_handler()
     assert handler is None

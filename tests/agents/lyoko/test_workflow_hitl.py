@@ -10,6 +10,11 @@ from lyoko.domain.models.chat import ApprovalResponse
 @pytest.fixture(autouse=True)
 def mock_verification_delay(monkeypatch):
     monkeypatch.setattr("lyoko.application.workflow.settings.verification_delay_seconds", 0)
+    mock_llm = MagicMock()
+    mock_llm.ainvoke = AsyncMock(
+        return_value=MagicMock(content="Root cause: Pod terminated with exit code 137 (OOMKilled).")
+    )
+    monkeypatch.setattr("lyoko.application.workflow.ChatOpenAI", lambda *a, **kw: mock_llm)
 
 
 @pytest.mark.asyncio

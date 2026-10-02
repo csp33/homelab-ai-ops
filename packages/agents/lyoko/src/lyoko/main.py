@@ -47,6 +47,65 @@ def build_chat_manager(mcp_client: FastMCPClient, approval_manager: ApprovalMana
     return chat_manager
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Initializing LYOKO Auto-Remediation Agent...")
+    db_uri = settings.get_postgres_uri()
+    pool = None
+    checkpointer = None
+
+    if db_uri:
+        try:
+            logger.info(
+                f"Connecting to PostgreSQL checkpointer at {settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}..."
+            )
+            pool = AsyncConnectionPool(
+                conninfo=db_uri,
+                max_size=settings.postgres_pool_max_size,
+                kwargs={"autocommit": True},
+                open=False,
+                timeout=5.0,
+            )
+            await asyncio.wait_for(pool.open(), timeout=5.0)
+            checkpointer = AsyncPostgresSaver(pool)
+            await asyncio.wait_for(checkpointer.setup(), timeout=5.0)
+            logger.info("PostgreSQL checkpointer initialized and tables ready.")
+        except Exception as exc:
+            logger.error(f"Failed to initialize PostgreSQL checkpointer: {exc}", exc_info=True)
+            if pool:
+                await pool.close()
+                pool = None
+            checkpointer = None
+    else:
+        logger.warning(
+            "No PostgreSQL credentials configured. LYOKO running without persistent checkpointer."
+        )
+
+    mcp_client = getattr(app.state, "mcp_client", None) or FastMCPClient()
+    approval_manager = getattr(app.state, "approval_manager", None) or ApprovalManager()
+    chat_manager = getattr(app.state, "chat_manager", None) or build_chat_manager(
+        mcp_client, approval_manager
+    )
+
+    workflow_engine = create_remediation_workflow(
+        mcp_client,
+        approval_manager=approval_manager,
+        chat_manager=chat_manager,
+        checkpointer=checkpointer,
+    )
+
+    app.state.workflow_engine = workflow_engine
+    app.state.db_pool = pool
+    app.state.checkpointer = checkpointer
+
+    await chat_manager.start_all()
+    yield
+    logger.info("Shutting down LYOKO Agent...")
+    await chat_manager.stop_all()
+    if pool:
+        await pool.close()
+
+
 def create_app() -> FastAPI:
     mcp_client = FastMCPClient()
     approval_manager = ApprovalManager()
@@ -66,59 +125,6 @@ def create_app() -> FastAPI:
         host=settings.langfuse_host,
     )
 
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        logger.info("Initializing LYOKO Auto-Remediation Agent...")
-        db_uri = settings.get_postgres_uri()
-        pool = None
-        checkpointer = None
-
-        if db_uri:
-            try:
-                logger.info(
-                    f"Connecting to PostgreSQL checkpointer at {settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}..."
-                )
-                pool = AsyncConnectionPool(
-                    conninfo=db_uri,
-                    max_size=settings.postgres_pool_max_size,
-                    kwargs={"autocommit": True},
-                    open=False,
-                    timeout=5.0,
-                )
-                await asyncio.wait_for(pool.open(), timeout=5.0)
-                checkpointer = AsyncPostgresSaver(pool)
-                await asyncio.wait_for(checkpointer.setup(), timeout=5.0)
-                logger.info("PostgreSQL checkpointer initialized and tables ready.")
-            except Exception as exc:
-                logger.error(f"Failed to initialize PostgreSQL checkpointer: {exc}", exc_info=True)
-                if pool:
-                    await pool.close()
-                    pool = None
-                checkpointer = None
-        else:
-            logger.warning(
-                "No PostgreSQL credentials configured. LYOKO running without persistent checkpointer."
-            )
-
-        workflow_engine = create_remediation_workflow(
-            mcp_client,
-            approval_manager=approval_manager,
-            chat_manager=chat_manager,
-            checkpointer=checkpointer,
-        )
-
-        app.state.workflow_engine = workflow_engine
-        app.state.db_pool = pool
-        app.state.checkpointer = checkpointer
-        app.state.tracer = tracer
-
-        await chat_manager.start_all()
-        yield
-        logger.info("Shutting down LYOKO Agent...")
-        await chat_manager.stop_all()
-        if pool:
-            await pool.close()
-
     app = FastAPI(title="LYOKO Auto-Remediation Agent", lifespan=lifespan)
 
     # Initial workflow engine (without persistent checkpointer until lifespan runs)
@@ -127,6 +133,9 @@ def create_app() -> FastAPI:
         approval_manager=approval_manager,
         chat_manager=chat_manager,
     )
+    app.state.mcp_client = mcp_client
+    app.state.approval_manager = approval_manager
+    app.state.chat_manager = chat_manager
     app.state.workflow_engine = workflow_engine
     app.state.tracer = tracer
     app.state.checkpointer = None

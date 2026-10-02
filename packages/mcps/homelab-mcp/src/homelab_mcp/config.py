@@ -118,7 +118,6 @@ class GatewaySettings(BaseSettings):
     telegram_default_chat_id: str | None = Field(
         default=None, description="Default Telegram Chat ID for alerts and messages"
     )
-    )
 
     # Security & Guardrails
     allowed_tools: list[str] | str = Field(
