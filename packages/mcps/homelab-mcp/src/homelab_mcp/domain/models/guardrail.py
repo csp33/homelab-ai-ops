@@ -28,5 +28,20 @@ class GuardrailPolicy:
     blocked_namespaces: list[str] = field(
         default_factory=lambda: ["kube-system", "kube-public", "kube-node-lease"]
     )
+    # Kubernetes tools matching these glob patterns only read state. In a protected namespace,
+    # every other Kubernetes tool is treated as a mutation, so unknown tools fail closed.
+    read_only_tools: list[str] = field(
+        default_factory=lambda: [
+            "*_get",
+            "*_get_*",
+            "*_list",
+            "*_list_*",
+            "*_log",
+            "*_logs",
+            "*_top",
+            "*_stats_summary",
+            "configuration_view",
+        ]
+    )
     allowed_github_repos: list[str] = field(default_factory=lambda: ["*"])
     blocked_github_repos: list[str] = field(default_factory=list)

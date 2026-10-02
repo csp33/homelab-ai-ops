@@ -6,7 +6,7 @@ from lyoko.domain.interfaces.chat_connector import (
     MessageHandler,
 )
 from lyoko.domain.interfaces.llm import LLMClientInterface
-from lyoko.domain.interfaces.mcp import MCPClientInterface
+from lyoko.domain.interfaces.mcp import MCPClientInterface, ToolAuthorizer
 
 __all__ = [
     "ApprovalHandler",
@@ -14,4 +14,5 @@ __all__ = [
     "LLMClientInterface",
     "MCPClientInterface",
     "MessageHandler",
+    "ToolAuthorizer",
 ]

@@ -11,8 +11,29 @@ from lyoko.infrastructure.observability.langfuse import get_langfuse_trace_confi
 
 logger = logging.getLogger("lyoko.infrastructure.llm.openai")
 
-DIAGNOSTIC_SYSTEM_PROMPT = """You are LYOKO (Live Yaml Optimization & K8s Orchestration), the autonomous remediation agent.
-Analyze pod failure events, diagnose root causes (e.g., OOMKilled, CrashLoopBackOff), and provide precise recommendations."""
+
+def _child_config(
+    parent_config: dict[str, Any],
+    name: str | None,
+    tags: list[str] | None,
+    metadata: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Build the run config of a call nested in an already traced graph run.
+
+    Only the callbacks are taken from the parent, so the call becomes a child span of it. The
+    rest of the parent config (``configurable``, checkpoint state, recursion limit) belongs to the
+    parent graph and must not leak into this one.
+    """
+    config: dict[str, Any] = {}
+    if parent_config.get("callbacks") is not None:
+        config["callbacks"] = parent_config["callbacks"]
+    if name:
+        config["run_name"] = name
+    if tags:
+        config["tags"] = list(tags)
+    if metadata:
+        config["metadata"] = dict(metadata)
+    return config
 
 
 class OpenAILLMAdapter(LLMClientInterface):
@@ -50,15 +71,27 @@ class OpenAILLMAdapter(LLMClientInterface):
         trace_name: str | None = None,
         tags: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
+        max_steps: int | None = None,
+        parent_config: dict[str, Any] | None = None,
     ) -> str:
-        """Process conversational prompt with optional tools, Langfuse session, user, and tracing."""
-        config = get_langfuse_trace_config(
-            session_id=session_id,
-            user_id=user_id,
-            trace_name=trace_name or "telegram-chat-interaction",
-            tags=tags or ["telegram", "chat-agent"],
-            metadata=metadata,
-        )
+        """Process conversational prompt with optional tools, Langfuse session, user, and tracing.
+
+        ``max_steps`` bounds the tool-use iterations of the ReAct agent. When exceeded, the
+        underlying graph raises instead of looping forever.
+
+        With ``parent_config`` the call joins the trace of the enclosing graph run as a child
+        span named ``trace_name``. Without it, a new trace is started.
+        """
+        if parent_config is not None:
+            config = _child_config(parent_config, trace_name, tags, metadata)
+        else:
+            config = get_langfuse_trace_config(
+                session_id=session_id,
+                user_id=user_id,
+                trace_name=trace_name or "telegram-chat-interaction",
+                tags=tags or ["telegram", "chat-agent"],
+                metadata=metadata,
+            )
 
         if tools:
             try:
@@ -68,9 +101,13 @@ class OpenAILLMAdapter(LLMClientInterface):
                     prompt=system_prompt,
                 )
                 messages = [HumanMessage(content=prompt)]
+                agent_config = dict(config) if config else {}
+                if max_steps is not None:
+                    # Each tool-use iteration takes two graph steps (model, then tools).
+                    agent_config["recursion_limit"] = max_steps * 2 + 1
                 result = await agent.ainvoke(
                     {"messages": messages},
-                    config=config if config else None,
+                    config=agent_config or None,
                 )
                 last_message = result["messages"][-1]
                 return str(last_message.content)
@@ -87,42 +124,3 @@ class OpenAILLMAdapter(LLMClientInterface):
 
         response = await self.client.ainvoke(messages, config=config if config else None)
         return str(response.content)
-
-    async def analyze_incident(
-        self,
-        alert_name: str,
-        pod_name: str,
-        namespace: str,
-        diagnostics: Any,
-        session_id: str | None = None,
-    ) -> str:
-        """Analyze pod failure diagnostics and determine root cause."""
-        prompt = f"""
-        Alert: {alert_name}
-        Target Pod: {pod_name} (Namespace: {namespace})
-        Diagnostics: {diagnostics}
-
-        Identify the root cause in 1-2 sentences. Is it OOMKilled, Misconfiguration, CrashLoop, or Unknown?
-        """
-        return await self.chat(
-            prompt=prompt,
-            system_prompt=DIAGNOSTIC_SYSTEM_PROMPT,
-            session_id=session_id,
-            trace_name=f"incident-diagnosis-{alert_name}-{pod_name}",
-            tags=["remediation", "workflow", f"ns:{namespace}"],
-        )
-
-    async def generate_remediation_plan(
-        self,
-        context: dict[str, Any],
-        session_id: str | None = None,
-    ) -> str:
-        """Generate automated remediation steps from diagnostic incident context."""
-        prompt = f"Generate remediation plan for incident context: {context}"
-        return await self.chat(
-            prompt=prompt,
-            system_prompt=DIAGNOSTIC_SYSTEM_PROMPT,
-            session_id=session_id,
-            trace_name="incident-remediation-plan",
-            tags=["remediation", "plan"],
-        )

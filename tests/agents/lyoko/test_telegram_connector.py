@@ -323,6 +323,7 @@ async def test_telegram_connector_lifecycle():
         mock_builder = MagicMock()
         mock_app_class.builder.return_value = mock_builder
         mock_builder.token.return_value = mock_builder
+        mock_builder.concurrent_updates.return_value = mock_builder
         mock_app = MagicMock()
         mock_builder.build.return_value = mock_app
         mock_app.initialize = AsyncMock()
@@ -334,6 +335,8 @@ async def test_telegram_connector_lifecycle():
         mock_app.shutdown = AsyncMock()
 
         await connector.start()
+        # A handler waiting for an approval must not block the button click that grants it.
+        mock_builder.concurrent_updates.assert_called_once_with(True)
         mock_app.initialize.assert_called_once()
         mock_app.start.assert_called_once()
         mock_app.updater.start_polling.assert_called_once()

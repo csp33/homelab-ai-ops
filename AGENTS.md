@@ -22,14 +22,16 @@ The platform consists of two primary systems within a Python `uv` monorepo:
 2. **`LYOKO` (Autonomous Remediation Agent)**:
    - **L**ive **Y**aml **O**ptimization & **K**8s **O**rchestration.
    - Built with **LangGraph** (StateGraph / Finite State Machine) and **FastAPI**.
-   - Event-driven: Awakened by Prometheus Alertmanager webhooks or Kubernetes event watchers when pods crash (`OOMKilled`, `CrashLoopBackOff`, volume errors).
-   - Executes a deterministic ReAct / remediation workflow:
-     1. **Diagnose**: Fetches logs and pod termination reasons via `homelab-mcp`.
-     2. **Decide & Guard**: Computes required resource adjustments (e.g., memory increment from 512Mi to 1Gi) with fallback boundaries.
-     3. **Human-in-the-Loop (HITL)**: Can pause critical remediations to request approval via Telegram inline buttons.
-     4. **Remediate**: Applies live patches or triggers GitOps updates.
-     5. **Verify**: Waits for pod stabilization and confirms health.
-     6. **Notify**: Posts structured markdown reports to Telegram with full root-cause attribution.
+   - Event-driven: awakened by Prometheus Alertmanager webhooks for any alert (Kubernetes, network, smart home, observability), and by Telegram messages from the operator. Nothing in the graph is specific to Kubernetes: the agent discovers tools at run time through the `homelab-mcp` gateway.
+   - One LangGraph graph, two branches. Every event enters at **Route**: alerts always take the incident branch, and for a Telegram message an LLM decides between the two (unclear or failed ⇒ chat).
+     - **Chat**: answers the operator and carries out their requests in one tool-using run.
+     - **Incident**, a sequence of four nodes where the first three are tool-using agent runs:
+       1. **Diagnose**: Investigates with read-only tools and returns a root cause, whether it is fixable with the available tools, and a plan.
+       2. **Remediate**: Executes the plan.
+       3. **Verify**: Re-checks with read-only tools after a stabilization delay.
+       4. **Notify**: Builds a structured report from the tool calls the gate actually allowed. Alerts post it to Telegram. For a message, it is the reply.
+   - Both branches share one `ToolGate` policy: read-only tools run, `AUTO_APPROVED_TOOLS` run unattended, and everything else waits for approval via Telegram inline buttons. Diagnose and Verify are strictly read-only. Without an approval channel, changes are refused.
+   - One event is one Langfuse trace. Agent runs must receive the run config of the graph node that starts them (`parent_config`), so they nest as named child spans instead of starting traces of their own.
 
 ---
 

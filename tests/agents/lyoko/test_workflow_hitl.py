@@ -1,155 +1,163 @@
-import asyncio
+"""Human-in-the-loop behavior of the incident workflow: approve, deny, timeout, no channel."""
+
 from unittest.mock import AsyncMock
 
 import pytest
 from lyoko.application.hitl import ApprovalManager
-from lyoko.application.workflow import create_remediation_workflow
-from lyoko.domain.interfaces.llm import LLMClientInterface
-from lyoko.domain.models.chat import ApprovalResponse
+from lyoko.application.workflow import create_lyoko_graph
+from lyoko.domain.interfaces.mcp import ToolAuthorizer
+
+from tests.agents.lyoko.fakes import DIAGNOSIS_ACTIONABLE, FakeMCPClient, Operator, ScriptedLLM
+
+SCALE_ARGS = {"name": "radarr", "namespace": "media", "replicas": 2}
 
 
 @pytest.fixture(autouse=True)
-def mock_verification_delay(monkeypatch):
+def _settings(monkeypatch):
     monkeypatch.setattr("lyoko.application.workflow.settings.verification_delay_seconds", 0)
+    monkeypatch.setattr("lyoko.application.workflow.settings.auto_approved_tools", [])
+
+
+def _state() -> dict:
+    return {
+        "event_id": "incident-abc",
+        "alert_name": "KubePodCrashLooping",
+        "labels": {"alertname": "KubePodCrashLooping", "namespace": "media"},
+        "annotations": {},
+    }
+
+
+def _remediation(calls: list[dict | None]):
+    async def remediate(authorize: ToolAuthorizer) -> str:
+        refusal = await authorize("resources_scale", SCALE_ARGS)
+        calls.append(refusal)
+        return "RESULT: Scaled radarr." if refusal is None else "RESULT: Stopped."
+
+    return remediate
 
 
 @pytest.mark.asyncio
-async def test_workflow_oom_approval_and_remediation():
-    mock_mcp = AsyncMock()
-    mock_mcp.call_tool.side_effect = [
-        {"phase": "CrashLoopBackOff", "logs": "OOMKilled exit 137"},  # diagnose
-        {"status": "patched"},  # remediate
-        {"phase": "Running"},  # verify
-    ]
-    mock_chat = AsyncMock()
-    approval_mgr = ApprovalManager()
-
-    mock_llm = AsyncMock(spec=LLMClientInterface)
-    mock_llm.analyze_incident.return_value = (
-        "Root cause: Pod terminated with exit code 137 (OOMKilled)."
+async def test_approved_change_runs_and_is_verified():
+    manager = ApprovalManager()
+    operator = Operator(manager, approve=True)
+    chat = AsyncMock()
+    chat.broadcast_approval_request = operator.broadcast_approval_request
+    outcomes: list = []
+    llm = ScriptedLLM(
+        diagnose=DIAGNOSIS_ACTIONABLE,
+        remediate=_remediation(outcomes),
+        verify="RESOLVED\nPod is healthy.",
+    )
+    workflow = create_lyoko_graph(
+        mcp_client=FakeMCPClient(), approval_manager=manager, chat_manager=chat, llm=llm
     )
 
-    workflow = create_remediation_workflow(
-        mcp_client=mock_mcp,
-        approval_manager=approval_mgr,
-        chat_manager=mock_chat,
-        llm=mock_llm,
-    )
+    final_state = await workflow.ainvoke(_state())
 
-    async def auto_approve():
-        await asyncio.sleep(0.05)
-        approval_mgr.resolve_approval(
-            ApprovalResponse(
-                incident_id="test-inc",
-                approved=True,
-                user_id="admin",
-            )
-        )
-
-    asyncio.create_task(auto_approve())
-
-    initial_state = {
-        "incident_id": "test-inc",
-        "namespace": "default",
-        "pod_name": "web-app-12345",
-        "deployment_name": "web-app",
-        "alert_name": "KubePodCrashLooping",
-        "messages": [],
-    }
-
-    final_state = await workflow.ainvoke(initial_state)
+    assert outcomes == [None]
+    assert [a["outcome"] for a in final_state["actions"]] == ["approved"]
     assert final_state["is_resolved"] is True
-    assert "Bumped memory" in final_state["action_taken"]
-    mock_chat.broadcast_approval_request.assert_called_once()
-    mock_chat.broadcast_message.assert_called_once()
+    assert final_state["requires_escalation"] is False
+    chat.broadcast_message.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_workflow_oom_approval_rejected():
-    mock_mcp = AsyncMock()
-    mock_mcp.call_tool.side_effect = [
-        {"phase": "CrashLoopBackOff", "logs": "OOMKilled exit 137"},  # diagnose
-    ]
-    mock_chat = AsyncMock()
-    approval_mgr = ApprovalManager()
-
-    mock_llm = AsyncMock(spec=LLMClientInterface)
-    mock_llm.analyze_incident.return_value = (
-        "Root cause: Pod terminated with exit code 137 (OOMKilled)."
+async def test_approval_request_shows_the_exact_tool_and_arguments():
+    manager = ApprovalManager()
+    operator = Operator(manager, approve=True)
+    chat = AsyncMock()
+    chat.broadcast_approval_request = operator.broadcast_approval_request
+    llm = ScriptedLLM(diagnose=DIAGNOSIS_ACTIONABLE, remediate=_remediation([]), verify="RESOLVED")
+    workflow = create_lyoko_graph(
+        mcp_client=FakeMCPClient(), approval_manager=manager, chat_manager=chat, llm=llm
     )
 
-    workflow = create_remediation_workflow(
-        mcp_client=mock_mcp,
-        approval_manager=approval_mgr,
-        chat_manager=mock_chat,
-        llm=mock_llm,
-    )
+    await workflow.ainvoke(_state())
 
-    async def auto_reject():
-        await asyncio.sleep(0.05)
-        approval_mgr.resolve_approval(
-            ApprovalResponse(
-                incident_id="test-reject-inc",
-                approved=False,
-                user_id="admin",
-                reason="Manual denial by operator",
-            )
-        )
-
-    asyncio.create_task(auto_reject())
-
-    initial_state = {
-        "incident_id": "test-reject-inc",
-        "namespace": "prod",
-        "pod_name": "api-service-9999",
-        "deployment_name": "api-service",
-        "alert_name": "KubePodCrashLooping",
-        "messages": [],
-    }
-
-    final_state = await workflow.ainvoke(initial_state)
-    assert final_state["is_resolved"] is False
-    assert final_state["requires_escalation"] is True
-    assert "aborted" in final_state["action_taken"].lower()
-    mock_chat.broadcast_approval_request.assert_called_once()
-    mock_chat.broadcast_message.assert_called_once()
-    assert mock_mcp.call_tool.await_count == 1  # Only diagnose was called
+    (request,) = operator.requests
+    assert "resources_scale" in request.details
+    assert '"replicas": 2' in request.details
+    assert "KubePodCrashLooping" in request.details
+    assert request.session_id == "incident-abc"
+    assert request.incident_id.startswith("incident-abc.")
+    assert [a.label for a in request.actions] == ["✅ Approve", "❌ Deny"]
 
 
 @pytest.mark.asyncio
-async def test_workflow_oom_approval_timeout():
-    mock_mcp = AsyncMock()
-    mock_mcp.call_tool.side_effect = [
-        {"phase": "CrashLoopBackOff", "logs": "OOMKilled exit 137"},  # diagnose
-    ]
-    mock_chat = AsyncMock()
-    approval_mgr = ApprovalManager(default_timeout_seconds=0.05)
-
-    mock_llm = AsyncMock(spec=LLMClientInterface)
-    mock_llm.analyze_incident.return_value = (
-        "Root cause: Pod terminated with exit code 137 (OOMKilled)."
+async def test_denied_change_does_not_run_and_escalates():
+    manager = ApprovalManager()
+    operator = Operator(manager, approve=False, reason="Manual denial by operator")
+    chat = AsyncMock()
+    chat.broadcast_approval_request = operator.broadcast_approval_request
+    outcomes: list = []
+    llm = ScriptedLLM(diagnose=DIAGNOSIS_ACTIONABLE, remediate=_remediation(outcomes))
+    workflow = create_lyoko_graph(
+        mcp_client=FakeMCPClient(), approval_manager=manager, chat_manager=chat, llm=llm
     )
 
-    workflow = create_remediation_workflow(
-        mcp_client=mock_mcp,
-        approval_manager=approval_mgr,
-        chat_manager=mock_chat,
-        llm=mock_llm,
-    )
+    final_state = await workflow.ainvoke(_state())
 
-    initial_state = {
-        "incident_id": "test-timeout-inc",
-        "namespace": "prod",
-        "pod_name": "api-service-9999",
-        "deployment_name": "api-service",
-        "alert_name": "KubePodCrashLooping",
-        "messages": [],
-    }
-
-    final_state = await workflow.ainvoke(initial_state)
-    assert final_state["is_resolved"] is False
+    assert outcomes[0] is not None
+    assert "did not approve" in outcomes[0]
     assert final_state["requires_escalation"] is True
+    assert final_state["is_resolved"] is False
     assert "aborted" in final_state["action_taken"].lower()
-    mock_chat.broadcast_approval_request.assert_called_once()
-    mock_chat.broadcast_message.assert_called_once()
-    assert mock_mcp.call_tool.await_count == 1
+    assert "Manual denial by operator" in final_state["action_taken"]
+    assert [a["outcome"] for a in final_state["actions"]] == ["denied"]
+    assert "verify" not in llm.prompts
+
+
+@pytest.mark.asyncio
+async def test_unanswered_request_times_out_and_escalates():
+    manager = ApprovalManager(default_timeout_seconds=0.05)
+    chat = AsyncMock()
+    outcomes: list = []
+    llm = ScriptedLLM(diagnose=DIAGNOSIS_ACTIONABLE, remediate=_remediation(outcomes))
+    workflow = create_lyoko_graph(
+        mcp_client=FakeMCPClient(), approval_manager=manager, chat_manager=chat, llm=llm
+    )
+
+    final_state = await workflow.ainvoke(_state())
+
+    chat.broadcast_approval_request.assert_awaited_once()
+    assert outcomes[0] is not None
+    assert final_state["requires_escalation"] is True
+    assert "timed out" in final_state["action_taken"]
+
+
+@pytest.mark.asyncio
+async def test_without_an_approval_channel_changes_are_refused_not_auto_approved():
+    outcomes: list = []
+    llm = ScriptedLLM(diagnose=DIAGNOSIS_ACTIONABLE, remediate=_remediation(outcomes))
+    workflow = create_lyoko_graph(mcp_client=FakeMCPClient(), llm=llm)
+
+    final_state = await workflow.ainvoke(_state())
+
+    assert outcomes[0] is not None
+    assert "no approval channel" in outcomes[0]
+    assert final_state["requires_escalation"] is True
+    assert [a["outcome"] for a in final_state["actions"]] == ["refused"]
+
+
+@pytest.mark.asyncio
+async def test_each_change_gets_its_own_approval():
+    manager = ApprovalManager()
+    operator = Operator(manager, approve=True)
+    chat = AsyncMock()
+    chat.broadcast_approval_request = operator.broadcast_approval_request
+
+    async def two_changes(authorize: ToolAuthorizer) -> str:
+        await authorize("resources_scale", SCALE_ARGS)
+        await authorize("pods_delete", {"name": "radarr-1"})
+        return "RESULT: Scaled and restarted."
+
+    llm = ScriptedLLM(diagnose=DIAGNOSIS_ACTIONABLE, remediate=two_changes, verify="RESOLVED")
+    workflow = create_lyoko_graph(
+        mcp_client=FakeMCPClient(), approval_manager=manager, chat_manager=chat, llm=llm
+    )
+
+    final_state = await workflow.ainvoke(_state())
+
+    assert len(operator.requests) == 2
+    assert len({r.incident_id for r in operator.requests}) == 2
+    assert [a["tool"] for a in final_state["actions"]] == ["resources_scale", "pods_delete"]

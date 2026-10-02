@@ -1,10 +1,27 @@
 """FastAPI webhook controller in infrastructure layer."""
 
+import hashlib
+import json
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from lyoko.domain.interfaces.tracer import TracerInterface
 from lyoko.domain.models import Incident
+
+_MAX_KEY_LENGTH = 24
+
+
+def _incident_key(incident: Incident) -> str:
+    """Short, stable identifier for an incident.
+
+    The key ends up in Telegram button callback data, which Telegram limits to 64 bytes, so a
+    long value (for example a pod name) is replaced by a hash of the alert's labels.
+    """
+    key = incident.fingerprint or incident.pod_name
+    if key and len(key) <= _MAX_KEY_LENGTH:
+        return key
+    digest_input = json.dumps(incident.labels, sort_keys=True) + (key or "")
+    return hashlib.sha1(digest_input.encode(), usedforsecurity=False).hexdigest()[:16]
 
 
 def create_webhook_router(
@@ -31,40 +48,44 @@ def create_webhook_router(
         alerts = data.get("alerts", [])
         for alert in alerts:
             if alert.get("status") == "firing":
-                labels = alert.get("labels", {})
+                labels = {str(k): str(v) for k, v in (alert.get("labels") or {}).items()}
+                annotations = {str(k): str(v) for k, v in (alert.get("annotations") or {}).items()}
                 incident = Incident(
                     alert_name=labels.get("alertname", "UnknownAlert"),
-                    namespace=labels.get("namespace", "default"),
-                    pod_name=labels.get("pod", "unknown-pod"),
+                    namespace=labels.get("namespace", ""),
+                    pod_name=labels.get("pod", ""),
                     deployment_name=labels.get("deployment") or labels.get("app"),
                     fingerprint=alert.get("fingerprint"),
                     labels=labels,
+                    annotations=annotations,
                 )
 
-                thread_id = f"incident-{incident.fingerprint or incident.pod_name}"
+                thread_id = f"incident-{_incident_key(incident)}"
 
                 initial_state = {
-                    "incident_id": thread_id,
-                    "namespace": incident.namespace,
-                    "pod_name": incident.pod_name,
-                    "deployment_name": incident.deployment_name or "",
+                    "event_type": "alert",
+                    "event_id": thread_id,
+                    "session_id": thread_id,
                     "alert_name": incident.alert_name,
-                    "messages": [],
-                    "diagnostics": {},
+                    "labels": labels,
+                    "annotations": annotations,
                     "root_cause": "",
                     "action_taken": "",
                     "is_resolved": False,
                     "requires_escalation": False,
                 }
 
-                trace_name = f"lyoko-{incident.alert_name}-{incident.pod_name}"
-                tags = ["lyoko", f"ns:{incident.namespace}", f"alert:{incident.alert_name}"]
+                trace_name = f"lyoko-{incident.alert_name}-{_incident_key(incident)}"
+                tags = ["lyoko", f"alert:{incident.alert_name}"]
                 metadata = {
-                    "namespace": incident.namespace,
-                    "pod_name": incident.pod_name,
                     "alert_name": incident.alert_name,
                     "fingerprint": incident.fingerprint or "",
                 }
+                if incident.namespace:
+                    tags.insert(1, f"ns:{incident.namespace}")
+                    metadata["namespace"] = incident.namespace
+                if incident.pod_name:
+                    metadata["pod_name"] = incident.pod_name
 
                 if active_tracer:
                     config = active_tracer.get_trace_config(

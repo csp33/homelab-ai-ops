@@ -7,6 +7,28 @@ from urllib.parse import quote_plus
 from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Tools whose names indicate they only read state. Matching is conservative on purpose: a tool
+# that does not match needs operator approval, so an unknown or ambiguous name fails safe.
+DEFAULT_READ_ONLY_TOOLS: tuple[str, ...] = (
+    "gateway_list_categories",
+    "gateway_list_tools",
+    "gateway_get_tool_schema",
+    "get_*",
+    "list_*",
+    "search_*",
+    "*_get",
+    "*_get_*",
+    "*_list",
+    "*_list_*",
+    "*_log",
+    "*_logs",
+    "*_top",
+    "*_search",
+    "*_search_*",
+    "*_stats_summary",
+    "*_tool_index",
+)
+
 
 class AgentSettings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -69,6 +91,25 @@ class AgentSettings(BaseSettings):
     verification_delay_seconds: int = Field(
         default=10, description="Seconds to wait before verifying pod health"
     )
+    read_only_tools: list[str] | str = Field(
+        default_factory=lambda: list(DEFAULT_READ_ONLY_TOOLS),
+        description=(
+            "Glob patterns of gateway tools the incident agent may call freely because they only "
+            "inspect state. Any tool not matching here or in AUTO_APPROVED_TOOLS needs approval."
+        ),
+    )
+    auto_approved_tools: list[str] | str = Field(
+        default_factory=list,
+        description=(
+            "Glob patterns of state-changing gateway tools the incident agent may call without "
+            "human approval (e.g. 'resources_scale'). Empty means every change needs approval."
+        ),
+    )
+    max_agent_steps: int = Field(
+        default=25,
+        ge=1,
+        description="Maximum tool-use iterations of each incident investigation or remediation",
+    )
 
     # General Environment
     environment: str = Field(
@@ -118,7 +159,13 @@ class AgentSettings(BaseSettings):
         default=20, description="PostgreSQL connection pool max size"
     )
 
-    @field_validator("telegram_allowed_user_ids", "telegram_allowed_chat_ids", mode="before")
+    @field_validator(
+        "telegram_allowed_user_ids",
+        "telegram_allowed_chat_ids",
+        "read_only_tools",
+        "auto_approved_tools",
+        mode="before",
+    )
     @classmethod
     def parse_allowed_ids(cls, v: Any) -> list[str]:
         if isinstance(v, (int, float)):

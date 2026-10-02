@@ -1,37 +1,22 @@
-"""Interactive conversational agent for LYOKO."""
+"""Entry point of operator messages into the LYOKO graph."""
 
 import logging
+import uuid
+from collections.abc import Callable
 from typing import Any
 
 from lyoko.application.chat_sessions import (
     DEFAULT_SESSION_IDLE_TIMEOUT_SECONDS,
     ChatSessionTracker,
 )
-from lyoko.domain.interfaces.llm import LLMClientInterface
+from lyoko.application.workflow import EVENT_MESSAGE
+from lyoko.domain.interfaces.tracer import TracerInterface
 from lyoko.domain.models.chat import IncomingMessage
 
 logger = logging.getLogger("lyoko.chat_agent")
 
-SYSTEM_PROMPT = """You are LYOKO, the autonomous Homelab AIOps & SRE Engineer.
-You are the central expert operating the user's homelab infrastructure, Kubernetes clusters, smart home (Home Assistant), network stack (UniFi), and observability platform (Grafana/Prometheus).
-
-Your core responsibilities:
-1. INFRASTRUCTURE EXPERT & INSPECTION: Answer administrative questions about current live state, IP addresses, workloads, IoT devices, topology, and metrics.
-2. TROUBLESHOOTING & ROOT CAUSE ANALYSIS: When the user reports an incident, error, or degradation, investigate live logs, pod states, events, and metrics to diagnose the root cause and propose clear fixes.
-3. OPERATIONS & REMEDIATION: Safely execute changes, rollout restarts, resource adjustments, and service calls when requested.
-
-Tool Usage & Token Efficiency Rules:
-- ALWAYS inspect live infrastructure with your tools before answering questions about real-world entities, IPs, or states. NEVER guess or hallucinate.
-- Use `gateway_list_categories` to discover active upstream categories.
-- TARGETED TOOL SEARCH: Use `gateway_list_tools(query="keyword", upstream="category")` with specific keywords (e.g. `query="client"`, `query="blind"`, `query="light"`, `query="pod"`, `query="restart"`, `query="service"`). AVOID dumping entire upstream categories without a query.
-- Use `gateway_get_tool_schema(tool_name="...")` if you need the exact parameter schema before calling a specific tool.
-- Use `gateway_call_tool(tool_name="...", arguments={...})` to execute tools.
-- Multi-Source Resolution: If a device or entity cannot be found in one system (e.g. Home Assistant entity), cross-reference related systems (e.g. UniFi network clients or devices) to find network details like IP or MAC addresses.
-- NEVER mention or invent nonexistent functions (like `ha_search()`); only call tools discovered via `gateway_list_tools`.
-- Format all technical output in crisp, clean Markdown (use code blocks and bullet points where helpful). Telegram cannot render wide tables: prefer bullet lists, and only use a Markdown table when it has at most 3 short columns. Respond in the language used by the administrator (e.g. Spanish)."""
-
-
 NEW_SESSION_COMMAND = "/new"
+TRACE_NAME = "telegram-chat-interaction"
 
 
 def is_new_session_command(text: str) -> bool:
@@ -41,52 +26,73 @@ def is_new_session_command(text: str) -> bool:
 
 
 class InteractiveChatAgent:
-    """Conversational assistant handling interactive user queries via chat connectors."""
+    """Turns each chat message into one run of the LYOKO graph and returns the reply.
+
+    The graph decides what the message is (a conversation or an incident to work through) and
+    answers it. This class only handles what is specific to chat: sessions, the ``/new``
+    command, and the trace each message starts.
+
+    ``graph_provider`` returns the compiled graph. It is a callable because the composition root
+    replaces the graph at startup, once the database checkpointer is available.
+    """
 
     def __init__(
         self,
-        mcp_client: Any,
-        llm: LLMClientInterface | None = None,
+        graph_provider: Callable[[], Any],
+        tracer: TracerInterface | None = None,
         session_idle_timeout_seconds: float = DEFAULT_SESSION_IDLE_TIMEOUT_SECONDS,
         session_tracker: ChatSessionTracker | None = None,
     ) -> None:
-        self.mcp_client = mcp_client
-        self.llm = llm
+        self._graph_provider = graph_provider
+        self.tracer = tracer
         self.session_tracker = session_tracker or ChatSessionTracker(session_idle_timeout_seconds)
 
     async def handle_message(self, message: IncomingMessage) -> str:
-        """Process incoming chat query and return conversational response."""
+        """Process an incoming chat message and return the reply for the operator."""
         logger.info("Processing chat message from user %s: %s", message.user.user_id, message.text)
         if is_new_session_command(message.text):
             session_id = self.session_tracker.start_new(message.chat_id)
             logger.info("Started new session %s for chat %s", session_id, message.chat_id)
             return "🆕 Started a new session. Previous context will not be grouped with this one."
-        if self.llm is None:
-            return f"Received message: '{message.text}'. (LLM provider not configured)"
-
-        tools = []
-        if self.mcp_client and hasattr(self.mcp_client, "get_langchain_tools"):
-            tools = self.mcp_client.get_langchain_tools()
 
         session_id = self.session_tracker.get_session_id(
             message.chat_id, reply_to_message_id=message.reply_to_message_id
         )
+        # Short on purpose: the id prefixes approval ids, which Telegram limits to 64 bytes.
+        event_id = f"chat-{uuid.uuid4().hex[:8]}"
+
+        state = {
+            "event_type": EVENT_MESSAGE,
+            "event_id": event_id,
+            "session_id": session_id,
+            "chat_id": message.chat_id,
+            "text": message.text,
+            "labels": {},
+            "annotations": {},
+        }
+        config = self._trace_config(message, session_id)
+        config.setdefault("configurable", {})["thread_id"] = event_id
 
         try:
-            return await self.llm.chat(
-                prompt=message.text,
-                system_prompt=SYSTEM_PROMPT,
-                tools=tools if tools else None,
+            result = await self._graph_provider().ainvoke(state, config=config)
+        except Exception as exc:
+            logger.error("Failed to process chat message: %s", exc, exc_info=True)
+            return f"⚠️ Error processing your question: {exc}"
+        return str(result.get("reply") or "")
+
+    def _trace_config(self, message: IncomingMessage, session_id: str) -> dict[str, Any]:
+        tags = ["telegram", "interactive-chat", f"chat:{message.chat_id}"]
+        metadata = {
+            "chat_id": message.chat_id,
+            "username": message.user.username,
+            "message_id": message.message_id,
+        }
+        if self.tracer is not None:
+            return self.tracer.get_trace_config(
                 session_id=session_id,
                 user_id=str(message.user.user_id),
-                trace_name="telegram-chat-interaction",
-                tags=["telegram", "interactive-chat", f"chat:{message.chat_id}"],
-                metadata={
-                    "chat_id": message.chat_id,
-                    "username": message.user.username,
-                    "message_id": message.message_id,
-                },
+                trace_name=TRACE_NAME,
+                tags=tags,
+                metadata=metadata,
             )
-        except Exception as exc:
-            logger.error("Failed to generate LLM response: %s", exc)
-            return f"⚠️ Error processing your question: {exc}"
+        return {"run_name": TRACE_NAME, "tags": tags, "metadata": metadata}

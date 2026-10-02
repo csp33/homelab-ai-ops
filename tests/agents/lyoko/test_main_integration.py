@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 from lyoko.application.hitl import ApprovalManager
-from lyoko.infrastructure.mcp.client import FastMCPClient
 from lyoko.main import build_chat_manager, create_app
 
 
@@ -22,9 +21,8 @@ async def test_app_health_endpoint():
 @pytest.mark.asyncio
 async def test_build_chat_manager_disabled(monkeypatch):
     monkeypatch.setattr("lyoko.config.settings.telegram_enabled", False)
-    mcp_client = FastMCPClient()
     approval_mgr = ApprovalManager()
-    mgr = build_chat_manager(mcp_client, approval_mgr)
+    mgr = build_chat_manager(approval_mgr)
     assert len(mgr.connectors) == 0
 
 
@@ -35,9 +33,8 @@ async def test_build_chat_manager_enabled(monkeypatch):
     monkeypatch.setattr("lyoko.config.settings.telegram_allowed_user_ids", "111,222")
     monkeypatch.setattr("lyoko.config.settings.telegram_default_chat_id", "111")
 
-    mcp_client = FastMCPClient()
     approval_mgr = ApprovalManager()
-    mgr = build_chat_manager(mcp_client, approval_mgr)
+    mgr = build_chat_manager(approval_mgr)
     assert len(mgr.connectors) == 1
     assert mgr.connectors[0].is_user_authorized("111") is True
     assert mgr.connectors[0].is_user_authorized("999") is False
@@ -59,3 +56,52 @@ async def test_app_lifespan_lifecycle():
 
         mock_start.assert_called_once()
         mock_stop.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_webhook_and_chat_use_the_graph_stored_in_app_state():
+    """Lifespan replaces the graph (to add the checkpointer); every entry point must follow."""
+    from unittest.mock import MagicMock
+
+    from lyoko.domain.models.chat import ChatUser, IncomingMessage
+
+    app = create_app()
+    replacement = MagicMock()
+    replacement.ainvoke = AsyncMock(return_value={"reply": "from the replacement graph"})
+    app.state.workflow_engine = replacement
+
+    alert = {"alerts": [{"status": "firing", "labels": {"alertname": "HighLatency"}}]}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.post("/webhook/alertmanager", json=alert)
+    assert resp.status_code == 200
+    replacement.ainvoke.assert_awaited_once()
+    assert replacement.ainvoke.call_args.args[0]["event_type"] == "alert"
+
+    replacement.ainvoke.reset_mock()
+    chat_manager = app.state.chat_manager
+    assert chat_manager.session_tracker is not None
+    from lyoko.application.chat_agent import InteractiveChatAgent
+    from lyoko.main import wire_chat_agent
+
+    class _Connector:
+        handlers: list = []
+
+        def register_message_handler(self, handler):
+            self.handlers.append(handler)
+
+    connector = _Connector()
+    chat_manager.connectors.append(connector)
+    wire_chat_agent(app, chat_manager)
+    (handler,) = connector.handlers
+    assert isinstance(handler.__self__, InteractiveChatAgent)
+
+    reply = await handler(
+        IncomingMessage(
+            message_id="1",
+            chat_id="42",
+            user=ChatUser(user_id="42", username="admin"),
+            text="hello",
+        )
+    )
+    assert reply == "from the replacement graph"
+    assert replacement.ainvoke.call_args.args[0]["event_type"] == "message"

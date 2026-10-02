@@ -1,4 +1,4 @@
-"""Unit tests for LYOKO InteractiveChatAgent."""
+"""Unit tests for LYOKO InteractiveChatAgent: chat messages entering the graph."""
 
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
@@ -6,80 +6,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from lyoko.application.chat_agent import InteractiveChatAgent
 from lyoko.application.chat_sessions import ChatSessionTracker
-from lyoko.domain.interfaces.llm import LLMClientInterface
+from lyoko.application.workflow import create_lyoko_graph
 from lyoko.domain.models.chat import ChatUser, IncomingMessage
 
-
-@pytest.mark.asyncio
-async def test_interactive_chat_agent_answers_query():
-    """Verify that InteractiveChatAgent receives a message and returns LLM response."""
-    mock_mcp = AsyncMock()
-    mock_llm = AsyncMock(spec=LLMClientInterface)
-    mock_llm.chat.return_value = "All 5 pods are healthy in default namespace."
-
-    agent = InteractiveChatAgent(mcp_client=mock_mcp, llm=mock_llm)
-    msg = IncomingMessage(
-        message_id="1",
-        chat_id="12345",
-        user=ChatUser(user_id="12345", username="admin"),
-        text="How is the cluster?",
-    )
-    reply = await agent.handle_message(msg)
-
-    assert "healthy" in reply
-    assert reply == "All 5 pods are healthy in default namespace."
-    mock_llm.chat.assert_awaited_once()
-    call_kwargs = mock_llm.chat.call_args[1]
-    assert call_kwargs.get("prompt") == "How is the cluster?"
-    assert call_kwargs.get("session_id").startswith("telegram-12345-")
-    assert call_kwargs.get("user_id") == "12345"
-    assert call_kwargs.get("trace_name") == "telegram-chat-interaction"
-    assert "telegram" in call_kwargs.get("tags", [])
-
-
-@pytest.mark.asyncio
-async def test_interactive_chat_agent_handles_error():
-    """Verify that InteractiveChatAgent catches exceptions and returns error message."""
-    mock_mcp = AsyncMock()
-    mock_llm = AsyncMock(spec=LLMClientInterface)
-    mock_llm.chat.side_effect = RuntimeError("OpenAI API rate limit exceeded")
-
-    agent = InteractiveChatAgent(mcp_client=mock_mcp, llm=mock_llm)
-    msg = IncomingMessage(
-        message_id="2",
-        chat_id="12345",
-        user=ChatUser(user_id="12345", username="admin"),
-        text="Can you restart nginx?",
-    )
-    reply = await agent.handle_message(msg)
-
-    assert "⚠️ Error processing your question:" in reply
-    assert "OpenAI API rate limit exceeded" in reply
-
-
-@pytest.mark.asyncio
-async def test_interactive_chat_agent_without_llm():
-    """Verify behavior when LLM is not configured."""
-    mock_mcp = AsyncMock()
-    agent = InteractiveChatAgent(mcp_client=mock_mcp, llm=None)
-    msg = IncomingMessage(
-        message_id="3",
-        chat_id="12345",
-        user=ChatUser(user_id="12345", username="admin"),
-        text="Ping",
-    )
-    reply = await agent.handle_message(msg)
-    assert "LLM provider not configured" in reply
-
-
-def _make_agent_with_clock(now: list[datetime]) -> tuple[InteractiveChatAgent, AsyncMock]:
-    mock_llm = AsyncMock(spec=LLMClientInterface)
-    mock_llm.chat.return_value = "ok"
-    tracker = ChatSessionTracker(idle_timeout_seconds=900, clock=lambda: now[0])
-    mcp_client = MagicMock()
-    mcp_client.get_langchain_tools.return_value = []
-    agent = InteractiveChatAgent(mcp_client=mcp_client, llm=mock_llm, session_tracker=tracker)
-    return agent, mock_llm
+from tests.agents.lyoko.fakes import FakeMCPClient, ScriptedLLM
 
 
 def _msg(text: str, message_id: str = "1", reply_to: str | None = None) -> IncomingMessage:
@@ -92,49 +22,178 @@ def _msg(text: str, message_id: str = "1", reply_to: str | None = None) -> Incom
     )
 
 
+def _agent(llm, *, tracer=None, tracker=None) -> InteractiveChatAgent:
+    graph = create_lyoko_graph(mcp_client=FakeMCPClient(), llm=llm)
+    return InteractiveChatAgent(lambda: graph, tracer=tracer, session_tracker=tracker)
+
+
+@pytest.mark.asyncio
+async def test_message_is_answered_by_the_graph():
+    llm = ScriptedLLM(route="CHAT", chat="All 5 pods are healthy in default namespace.")
+    agent = _agent(llm)
+
+    reply = await agent.handle_message(_msg("How is the cluster?"))
+
+    assert reply == "All 5 pods are healthy in default namespace."
+    assert llm.prompts["chat"] == "How is the cluster?"
+
+
+@pytest.mark.asyncio
+async def test_incident_message_gets_the_report_as_the_reply():
+    llm = ScriptedLLM(
+        route="INCIDENT",
+        diagnose="ROOT_CAUSE: Disk full.\nACTIONABLE: no\nPLAN: free space",
+    )
+    agent = _agent(llm)
+
+    reply = await agent.handle_message(_msg("the NAS is unreachable"))
+
+    assert "Incident Report" in reply
+    assert "Disk full." in reply
+
+
+@pytest.mark.asyncio
+async def test_graph_errors_become_an_error_reply():
+    graph = MagicMock()
+    graph.ainvoke = AsyncMock(side_effect=RuntimeError("checkpointer down"))
+    agent = InteractiveChatAgent(lambda: graph)
+
+    reply = await agent.handle_message(_msg("Can you restart nginx?"))
+
+    assert "⚠️ Error processing your question:" in reply
+    assert "checkpointer down" in reply
+
+
+@pytest.mark.asyncio
+async def test_without_llm_the_reply_says_so():
+    agent = _agent(None)
+
+    reply = await agent.handle_message(_msg("Ping"))
+
+    assert "LLM provider not configured" in reply
+
+
+@pytest.mark.asyncio
+async def test_each_message_starts_a_trace_with_session_user_and_tags():
+    tracer = MagicMock()
+    tracer.get_trace_config.return_value = {"tags": ["from-tracer"]}
+    graph = MagicMock()
+    graph.ainvoke = AsyncMock(return_value={"reply": "ok"})
+    agent = InteractiveChatAgent(lambda: graph, tracer=tracer)
+
+    await agent.handle_message(_msg("How is the cluster?", message_id="77"))
+
+    kwargs = tracer.get_trace_config.call_args.kwargs
+    assert kwargs["session_id"].startswith("telegram-42-")
+    assert kwargs["user_id"] == "42"
+    assert kwargs["trace_name"] == "telegram-chat-interaction"
+    assert "interactive-chat" in kwargs["tags"]
+    assert "chat:42" in kwargs["tags"]
+    assert kwargs["metadata"] == {"chat_id": "42", "username": "admin", "message_id": "77"}
+
+
+@pytest.mark.asyncio
+async def test_graph_run_carries_event_identity_and_a_checkpoint_thread():
+    graph = MagicMock()
+    graph.ainvoke = AsyncMock(return_value={"reply": "ok"})
+    agent = InteractiveChatAgent(lambda: graph)
+
+    await agent.handle_message(_msg("hello"))
+
+    state = graph.ainvoke.call_args.args[0]
+    config = graph.ainvoke.call_args.kwargs["config"]
+    assert state["event_type"] == "message"
+    assert state["text"] == "hello"
+    assert state["chat_id"] == "42"
+    assert state["session_id"].startswith("telegram-42-")
+    # Short enough for "approve:<event>.<n>" to fit Telegram's 64 byte callback data.
+    assert state["event_id"].startswith("chat-")
+    assert len(f"approve:{state['event_id']}.99".encode()) <= 64
+    assert config["configurable"]["thread_id"] == state["event_id"]
+    assert config["run_name"] == "telegram-chat-interaction"
+
+
+@pytest.mark.asyncio
+async def test_every_message_gets_its_own_event_id():
+    graph = MagicMock()
+    graph.ainvoke = AsyncMock(return_value={"reply": "ok"})
+    agent = InteractiveChatAgent(lambda: graph)
+
+    await agent.handle_message(_msg("one", message_id="1"))
+    await agent.handle_message(_msg("two", message_id="2"))
+
+    first, second = (c.args[0]["event_id"] for c in graph.ainvoke.call_args_list)
+    assert first != second
+
+
+@pytest.mark.asyncio
+async def test_graph_is_looked_up_on_every_message():
+    """The composition root replaces the graph at startup, so it must not be cached."""
+    graphs = [MagicMock(ainvoke=AsyncMock(return_value={"reply": "old"}))]
+    agent = InteractiveChatAgent(lambda: graphs[-1])
+    await agent.handle_message(_msg("a"))
+
+    graphs.append(MagicMock(ainvoke=AsyncMock(return_value={"reply": "new"})))
+
+    assert await agent.handle_message(_msg("b")) == "new"
+
+
+def _clocked_agent(now: list[datetime]) -> tuple[InteractiveChatAgent, ScriptedLLM, list[str]]:
+    llm = ScriptedLLM(route="CHAT", chat="ok")
+    sessions: list[str] = []
+    graph = create_lyoko_graph(mcp_client=FakeMCPClient(), llm=llm)
+    inner = graph.ainvoke
+
+    async def spy(state, config=None):
+        sessions.append(state["session_id"])
+        return await inner(state, config=config)
+
+    graph.ainvoke = spy
+    tracker = ChatSessionTracker(idle_timeout_seconds=900, clock=lambda: now[0])
+    return InteractiveChatAgent(lambda: graph, session_tracker=tracker), llm, sessions
+
+
 @pytest.mark.asyncio
 async def test_new_command_starts_fresh_session_without_calling_llm():
     """/new rotates the session and does not spend an LLM call."""
     now = [datetime(2026, 10, 2, 20, 0, 0, tzinfo=UTC)]
-    agent, llm = _make_agent_with_clock(now)
+    agent, llm, sessions = _clocked_agent(now)
 
     await agent.handle_message(_msg("first topic"))
-    first_session = llm.chat.call_args[1]["session_id"]
-
     now[0] += timedelta(seconds=30)
     reply = await agent.handle_message(_msg("/new"))
     assert "new session" in reply.lower()
-    assert llm.chat.await_count == 1
+    assert llm.calls == ["route", "chat"]
 
     now[0] += timedelta(seconds=30)
     await agent.handle_message(_msg("second topic"))
-    second_session = llm.chat.call_args[1]["session_id"]
 
-    assert first_session != second_session
+    assert len(sessions) == 2
+    assert sessions[0] != sessions[1]
 
 
 @pytest.mark.asyncio
 async def test_new_command_with_bot_mention_is_recognized():
     now = [datetime(2026, 10, 2, 20, 0, 0, tzinfo=UTC)]
-    agent, llm = _make_agent_with_clock(now)
+    agent, llm, _ = _clocked_agent(now)
 
     reply = await agent.handle_message(_msg("/new@lyoko_bot"))
 
     assert "new session" in reply.lower()
-    llm.chat.assert_not_awaited()
+    assert llm.calls == []
 
 
 @pytest.mark.asyncio
 async def test_reply_to_linked_alert_message_uses_incident_session():
     """Replying to an alert message continues that incident's session."""
     now = [datetime(2026, 10, 2, 20, 0, 0, tzinfo=UTC)]
-    agent, llm = _make_agent_with_clock(now)
+    agent, _, sessions = _clocked_agent(now)
     agent.session_tracker.link_message("42", "900", "incident-abc123")
 
     await agent.handle_message(_msg("why did it die?", message_id="901", reply_to="900"))
-    assert llm.chat.call_args[1]["session_id"] == "incident-abc123"
+    assert sessions[-1] == "incident-abc123"
 
     # A follow-up without an explicit reply stays in the incident session.
     now[0] += timedelta(minutes=2)
     await agent.handle_message(_msg("and the logs?", message_id="902"))
-    assert llm.chat.call_args[1]["session_id"] == "incident-abc123"
+    assert sessions[-1] == "incident-abc123"

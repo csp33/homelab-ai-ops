@@ -36,6 +36,7 @@ class ApprovalRequest(BaseModel):
     details: str
     chat_id: str
     actions: list[ApprovalAction] = Field(default_factory=list)
+    session_id: str | None = None
 
 
 class ApprovalResponse(BaseModel):
