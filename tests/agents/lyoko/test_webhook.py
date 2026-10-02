@@ -89,7 +89,12 @@ def test_alertmanager_webhook_invalid_json(test_client):
 def test_alertmanager_webhook_with_tracer(mock_workflow):
     mock_tracer = MagicMock()
     mock_callback = MagicMock()
-    mock_tracer.get_callback_handler.return_value = mock_callback
+    mock_tracer.get_trace_config.return_value = {
+        "callbacks": [mock_callback],
+        "tags": ["lyoko", "ns:default", "alert:OOMKilled"],
+        "metadata": {"langfuse_session_id": "incident-api-123"},
+        "run_name": "lyoko-OOMKilled-api-123",
+    }
 
     app = FastAPI()
     router = create_webhook_router(mock_workflow, tracer=mock_tracer)
@@ -112,8 +117,20 @@ def test_alertmanager_webhook_with_tracer(mock_workflow):
 
     response = client.post("/webhook/alertmanager", json=payload)
     assert response.status_code == 200
+    mock_tracer.get_trace_config.assert_called_once_with(
+        session_id="incident-api-123",
+        user_id="alert:OOMKilled",
+        trace_name="lyoko-OOMKilled-api-123",
+        tags=["lyoko", "ns:default", "alert:OOMKilled"],
+        metadata={
+            "namespace": "default",
+            "pod_name": "api-123",
+            "alert_name": "OOMKilled",
+            "fingerprint": "",
+        },
+    )
     mock_workflow.ainvoke.assert_called_once()
     _, kwargs = mock_workflow.ainvoke.call_args
     assert "config" in kwargs
     assert kwargs["config"]["callbacks"] == [mock_callback]
-    assert "lyoko" in kwargs["config"]["tags"]
+    assert kwargs["config"]["metadata"]["langfuse_session_id"] == "incident-api-123"

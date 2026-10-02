@@ -38,4 +38,7 @@ def test_postgres_uri_with_special_characters():
         postgres_password="p+w/d=123",
         postgres_db="testdb",
     )
-    assert settings.get_postgres_uri() == "postgresql://user%2Fname:p%2Bw%2Fd%3D123@pg.internal:5432/testdb"
+    assert (
+        settings.get_postgres_uri()
+        == "postgresql://user%2Fname:p%2Bw%2Fd%3D123@pg.internal:5432/testdb"
+    )

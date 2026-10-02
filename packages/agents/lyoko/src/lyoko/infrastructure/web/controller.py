@@ -55,22 +55,31 @@ def create_webhook_router(
                 }
 
                 thread_id = f"incident-{incident.fingerprint or incident.pod_name}"
-                config: dict[str, Any] = {
-                    "configurable": {"thread_id": thread_id},
-                    "tags": ["lyoko", f"ns:{incident.namespace}", f"alert:{incident.alert_name}"],
-                    "metadata": {
-                        "namespace": incident.namespace,
-                        "pod_name": incident.pod_name,
-                        "alert_name": incident.alert_name,
-                        "fingerprint": incident.fingerprint or "",
-                    },
-                    "run_name": f"lyoko-{incident.alert_name}-{incident.pod_name}",
+                trace_name = f"lyoko-{incident.alert_name}-{incident.pod_name}"
+                tags = ["lyoko", f"ns:{incident.namespace}", f"alert:{incident.alert_name}"]
+                metadata = {
+                    "namespace": incident.namespace,
+                    "pod_name": incident.pod_name,
+                    "alert_name": incident.alert_name,
+                    "fingerprint": incident.fingerprint or "",
                 }
 
                 if active_tracer:
-                    callback = active_tracer.get_callback_handler()
-                    if callback:
-                        config["callbacks"] = [callback]
+                    config = active_tracer.get_trace_config(
+                        session_id=thread_id,
+                        user_id=f"alert:{incident.alert_name}",
+                        trace_name=trace_name,
+                        tags=tags,
+                        metadata=metadata,
+                    )
+                    config.setdefault("configurable", {})["thread_id"] = thread_id
+                else:
+                    config = {
+                        "configurable": {"thread_id": thread_id},
+                        "tags": tags,
+                        "metadata": metadata,
+                        "run_name": trace_name,
+                    }
 
                 background_tasks.add_task(engine.ainvoke, initial_state, config=config)
 
