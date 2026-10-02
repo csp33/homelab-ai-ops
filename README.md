@@ -23,7 +23,7 @@ flowchart TD
     subgraph Autonomous_Agent ["2. Cognitive Loop — LYOKO"]
         direction TB
         WH["⚡ FastAPI Webhook Controller<br/><code>/webhook/alertmanager</code>"]
-        LG{"🤖 LangGraph StateGraph<br/>(Diagnose ➔ Remediate ➔ Verify ➔ Notify)"}
+        LG{"🤖 LangGraph StateGraph<br/>(Diagnose ➔ Request Approval ➔ Remediate ➔ Verify ➔ Notify)"}
         WH --> LG
     end
 
@@ -45,7 +45,7 @@ flowchart TD
         K8S[("☸️ Kubernetes Cluster<br/>(Pods, Deployments, RBAC)")]
         HASS[("🏠 Home Assistant<br/>(Sensors, Lights, Automations)")]
         UDM[("🌐 UniFi Network / UDM<br/>(Gateways, APs, Switches)")]
-        TG["📱 Telegram Messenger<br/>(Incident Reports & HITL)"]
+        TG["📱 Telegram Messenger<br/>(Incident Reports, Assistant & HITL)"]
     end
 
     AM -->|POST JSON Webhook| WH
@@ -55,7 +55,7 @@ flowchart TD
     MUX -->|Process Stdio Proxy| K8S_MCP --> K8S
     MUX -->|Process Stdio Proxy| HA_MCP --> HASS
     MUX -->|Process Stdio Proxy| UNIFI_MCP --> UDM
-    LG -.->|Structured Alert Summaries| TG
+    LG <-->|HITL Approvals & Chat| TG
 
     classDef client fill:#e1f5fe,stroke:#0288d1,stroke-width:1px,color:#01579b;
     classDef agent fill:#ede7f6,stroke:#7e57c2,stroke-width:1px,color:#311b92;
@@ -72,7 +72,7 @@ flowchart TD
 
 ---
 
-## ⚡ Incident Remediation Lifecycle
+## ⚡ Incident Remediation Lifecycle (with HITL Approval)
 
 ```mermaid
 sequenceDiagram
@@ -80,8 +80,8 @@ sequenceDiagram
     actor Alertmanager as 🔔 Alertmanager
     participant LYOKO as 🤖 LYOKO Agent
     participant Gateway as 🛡️ homelab-mcp Gateway
+    actor Operator as 👤 Homelab Operator (Telegram)
     participant K8s as ☸️ Kubernetes Cluster
-    actor Operator as 👤 Homelab Operator
 
     Alertmanager->>LYOKO: Webhook: Pod OOMKilled / CrashLoop (Target: memory-hungry-app)
     activate LYOKO
@@ -92,6 +92,8 @@ sequenceDiagram
     Gateway-->>LYOKO: Return Diagnostic Payload
     
     LYOKO->>LYOKO: LLM Analysis: Diagnose root cause as OOMKilled
+    LYOKO->>Operator: Telegram HITL Prompt: [✅ Approve (1Gi Bump)] [❌ Deny]
+    Operator-->>LYOKO: Inline Button Click: Approved
     LYOKO->>Gateway: call_tool("k8s_bump_deployment_resources", {memory_limit: "1Gi"})
     Gateway->>Gateway: Guardrail Check: Namespace != kube-system & Resource within limits
     Gateway->>K8s: Apply Live Patch (Limits: 1Gi, Requests: 512Mi)
@@ -106,6 +108,7 @@ sequenceDiagram
 
     LYOKO->>Operator: Telegram Incident Report: Incident Resolved (1Gi BUMP)
     deactivate LYOKO
+
 ```
 
 ---
