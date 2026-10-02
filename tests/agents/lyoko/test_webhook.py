@@ -78,3 +78,36 @@ def test_alertmanager_webhook_invalid_json(test_client):
         headers={"Content-Type": "application/json"},
     )
     assert response.status_code == 400
+
+
+def test_alertmanager_webhook_with_tracer(mock_workflow):
+    mock_tracer = MagicMock()
+    mock_callback = MagicMock()
+    mock_tracer.get_callback_handler.return_value = mock_callback
+
+    app = FastAPI()
+    router = create_webhook_router(mock_workflow, tracer=mock_tracer)
+    app.include_router(router)
+    client = TestClient(app)
+
+    payload = {
+        "status": "firing",
+        "alerts": [
+            {
+                "status": "firing",
+                "labels": {
+                    "alertname": "OOMKilled",
+                    "namespace": "default",
+                    "pod": "api-123",
+                },
+            }
+        ],
+    }
+
+    response = client.post("/webhook/alertmanager", json=payload)
+    assert response.status_code == 200
+    mock_workflow.ainvoke.assert_called_once()
+    _, kwargs = mock_workflow.ainvoke.call_args
+    assert "config" in kwargs
+    assert kwargs["config"]["callbacks"] == [mock_callback]
+    assert "lyoko" in kwargs["config"]["tags"]

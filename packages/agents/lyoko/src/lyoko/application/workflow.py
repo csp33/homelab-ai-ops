@@ -32,7 +32,11 @@ Analyze pod failure events, diagnose root causes (e.g., OOMKilled, CrashLoopBack
 
 def create_remediation_workflow(mcp_client: Any) -> Any:
     """Build LangGraph StateGraph workflow for incident diagnosis and auto-remediation."""
-    model = ChatOpenAI(model=settings.openai_model, temperature=0)
+    model = ChatOpenAI(
+        model=settings.openai_model,
+        temperature=0,
+        api_key=settings.openai_api_key or None,
+    )
 
     async def diagnose_node(state: RemediationGraphState) -> dict[str, Any]:
         """Fetch diagnostics from homelab-mcp."""

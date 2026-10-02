@@ -3,10 +3,14 @@
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from lyoko.domain.interfaces.tracer import TracerInterface
 from lyoko.domain.models import Incident
 
 
-def create_webhook_router(workflow_app: Any) -> APIRouter:
+def create_webhook_router(
+    workflow_app: Any,
+    tracer: TracerInterface | None = None,
+) -> APIRouter:
     router = APIRouter(prefix="/webhook", tags=["webhooks"])
 
     @router.post("/alertmanager")
@@ -44,7 +48,23 @@ def create_webhook_router(workflow_app: Any) -> APIRouter:
                     "requires_escalation": False,
                 }
 
-                background_tasks.add_task(workflow_app.ainvoke, initial_state)
+                config: dict[str, Any] = {
+                    "tags": ["lyoko", f"ns:{incident.namespace}", f"alert:{incident.alert_name}"],
+                    "metadata": {
+                        "namespace": incident.namespace,
+                        "pod_name": incident.pod_name,
+                        "alert_name": incident.alert_name,
+                        "fingerprint": incident.fingerprint or "",
+                    },
+                    "run_name": f"lyoko-{incident.alert_name}-{incident.pod_name}",
+                }
+
+                if tracer:
+                    callback = tracer.get_callback_handler()
+                    if callback:
+                        config["callbacks"] = [callback]
+
+                background_tasks.add_task(workflow_app.ainvoke, initial_state, config=config)
 
         return {"status": "accepted", "message": f"Processing {len(alerts)} alerts in background."}
 
