@@ -27,10 +27,12 @@ from lyoko.domain.exceptions import MCPGatewayError
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.mcp import MCPClientInterface
 from lyoko.infrastructure.chat.telegram import TelegramConnector
+from lyoko.infrastructure.db.memory_repository import PostgresMemoryRepository
+from lyoko.infrastructure.embeddings import EmbeddingsService
 from lyoko.infrastructure.llm.openai import OpenAILLMAdapter
 from lyoko.infrastructure.mcp.client import FastMCPClient
 from lyoko.infrastructure.observability.langfuse import LangfuseTracer
-from lyoko.infrastructure.web.controller import create_webhook_router
+from lyoko.infrastructure.web.controller import create_feedback_router, create_webhook_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("lyoko")
@@ -97,7 +99,11 @@ def build_supervisor(
     return SupervisorAgent(specialists=specialists, llm=llm)
 
 
-def build_chat_manager(approval_manager: ApprovalManager) -> ChatManager:
+def build_chat_manager(
+    approval_manager: ApprovalManager,
+    memory_repo: PostgresMemoryRepository | None = None,
+    embeddings_service: EmbeddingsService | None = None,
+) -> ChatManager:
     """Instantiate the chat connectors.
 
     Incoming messages are wired in separately (see ``wire_chat_agent``), because the agent that
@@ -118,6 +124,8 @@ def build_chat_manager(approval_manager: ApprovalManager) -> ChatManager:
             allowed_user_ids=settings.telegram_allowed_user_ids,
             allowed_chat_ids=settings.telegram_allowed_chat_ids,
             default_chat_id=settings.telegram_default_chat_id,
+            memory_repository=memory_repo,
+            embeddings_service=embeddings_service,
         )
         telegram_connector.register_approval_handler(approval_manager.resolve_approval)
         chat_manager.add_connector(telegram_connector)
@@ -174,6 +182,8 @@ async def lifespan(app: FastAPI):
     db_uri = settings.get_postgres_uri()
     pool = None
     checkpointer = None
+    memory_repo = None
+    embeddings_service = EmbeddingsService()
 
     if db_uri:
         try:
@@ -188,18 +198,30 @@ async def lifespan(app: FastAPI):
                 timeout=5.0,
             )
             await asyncio.wait_for(pool.open(), timeout=5.0)
+
+            # Setup LangGraph checkpointer
             checkpointer = AsyncPostgresSaver(pool)
             await asyncio.wait_for(checkpointer.setup(), timeout=5.0)
             logger.info("PostgreSQL checkpointer initialized and tables ready.")
+
+            # Setup Memory repository & run migrations
+            memory_repo = PostgresMemoryRepository(pool)
+            try:
+                memory_repo.run_migrations()
+            except Exception as exc:
+                logger.warning(f"Alembic auto-migration warning: {exc}")
+
+            logger.info("PostgreSQL memory repository initialized.")
         except Exception as exc:
-            logger.error(f"Failed to initialize PostgreSQL checkpointer: {exc}", exc_info=True)
+            logger.error(f"Failed to initialize PostgreSQL components: {exc}", exc_info=True)
             if pool:
                 await pool.close()
                 pool = None
             checkpointer = None
+            memory_repo = None
     else:
         logger.warning(
-            "No PostgreSQL credentials configured. LYOKO running without persistent checkpointer."
+            "No PostgreSQL credentials configured. LYOKO running without persistent memory & checkpointer."
         )
 
     llm = getattr(app.state, "llm", None) or build_llm_adapter()
@@ -213,7 +235,11 @@ async def lifespan(app: FastAPI):
         raise
     chat_manager = getattr(app.state, "chat_manager", None)
     if chat_manager is None:
-        chat_manager = build_chat_manager(approval_manager)
+        chat_manager = build_chat_manager(
+            approval_manager,
+            memory_repo=memory_repo,
+            embeddings_service=embeddings_service,
+        )
         app.state.chat_manager = chat_manager
         wire_chat_agent(app, chat_manager)
 
@@ -231,6 +257,8 @@ async def lifespan(app: FastAPI):
         llm=llm,
         supervisor=supervisor,
         specialists=specialists,
+        memory_repository=memory_repo,
+        embeddings_service=embeddings_service,
     )
 
     app.state.llm = llm
@@ -239,6 +267,8 @@ async def lifespan(app: FastAPI):
     app.state.workflow_engine = workflow_engine
     app.state.db_pool = pool
     app.state.checkpointer = checkpointer
+    app.state.memory_repository = memory_repo
+    app.state.embeddings_service = embeddings_service
 
     await chat_manager.start_all()
     yield
@@ -278,6 +308,8 @@ def create_app() -> FastAPI:
     app.state.tracer = tracer
     app.state.checkpointer = None
     app.state.db_pool = None
+    app.state.memory_repository = None
+    app.state.embeddings_service = None
 
     wire_chat_agent(app, chat_manager)
 
@@ -285,10 +317,19 @@ def create_app() -> FastAPI:
     # uses the graph rebuilt with the checkpointer in lifespan.
     app.include_router(create_webhook_router(tracer=tracer))
 
+    feedback_router = create_feedback_router()
+    app.include_router(feedback_router)
+
     @app.get("/healthz")
     async def health_check():
         has_db = getattr(app.state, "checkpointer", None) is not None
-        return {"status": "healthy", "service": "lyoko-agent", "postgres_checkpointer": has_db}
+        has_memory = getattr(app.state, "memory_repository", None) is not None
+        return {
+            "status": "healthy",
+            "service": "lyoko-agent",
+            "postgres_checkpointer": has_db,
+            "agent_memory": has_memory,
+        }
 
     return app
 

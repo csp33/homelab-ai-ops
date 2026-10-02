@@ -81,6 +81,8 @@ class LyokoState(TypedDict, total=False):
     verification: str
     is_resolved: bool
     requires_escalation: bool
+    matched_memories: list[dict[str, Any]]
+    lessons_context: str
 
 
 def _format_pairs(pairs: dict[str, str]) -> str:
@@ -125,6 +127,8 @@ def create_lyoko_graph(
     llm: LLMClientInterface | None = None,
     supervisor: Any = None,
     specialists: dict[str, Any] | None = None,
+    memory_repository: Any = None,
+    embeddings_service: Any = None,
 ) -> Any:
     """Build the LangGraph StateGraph that routes, answers, investigates and remediates."""
 
@@ -241,16 +245,61 @@ def create_lyoko_graph(
                 "requires_escalation": True,
             }
 
+        matched_memories: list[dict[str, Any]] = []
+        lessons_context = ""
+
+        # Query semantic memory for relevant past experiences / operator feedback
+        if memory_repository is not None:
+            try:
+                alert_name = state.get("alert_name", "UnknownAlert")
+                labels = state.get("labels") or {}
+                namespace = labels.get("namespace")
+                service_name = labels.get("deployment") or labels.get("app") or labels.get("container")
+                incident_query = f"{alert_name} {namespace} {service_name} {state.get('text', '')}"
+                query_embedding = None
+                if embeddings_service is not None:
+                    query_embedding = await embeddings_service.embed_text(incident_query)
+
+                memories = await memory_repository.search_memories(
+                    query_embedding=query_embedding,
+                    namespace=namespace,
+                    service_name=service_name,
+                    limit=3,
+                )
+
+                if memories:
+                    lessons_lines = []
+                    for m in memories:
+                        matched_memories.append(m.memory.model_dump())
+                        lessons_lines.append(
+                            f"- [Relevance: {m.similarity:.0%}] Pattern: {m.memory.incident_pattern} | "
+                            f"Operator Rule: '{m.memory.operator_feedback}'"
+                            + (
+                                f" | Recommended Action: {m.memory.action_rule}"
+                                if m.memory.action_rule
+                                else ""
+                            )
+                        )
+                    lessons_context = (
+                        "\n\n--- PRIOR OPERATOR FEEDBACK & LESSONS LEARNED ---\n"
+                        + "\n".join(lessons_lines)
+                        + "\n------------------------------------------------\n"
+                    )
+                    logger.info(f"Retrieved {len(memories)} relevant past lessons for {service_name or namespace}")
+            except Exception as exc:
+                logger.warning("Failed to query semantic memory: %s", exc, exc_info=True)
+
         logger.info("Diagnosing %s...", _origin(state))
         gate = make_gate(state, GateMode.READ_ONLY)
         try:
+            prompt_content = f"Investigate this.\n\n{_incident_context(state)}{lessons_context}"
             answer = await run_agent(
                 state,
                 gate,
                 config,
                 phase="diagnose",
                 system_prompt=DIAGNOSE_SYSTEM_PROMPT,
-                prompt=f"Investigate this.\n\n{_incident_context(state)}",
+                prompt=prompt_content,
             )
         except Exception as exc:
             logger.error("Investigation failed: %s", exc, exc_info=True)
@@ -261,6 +310,8 @@ def create_lyoko_graph(
             "root_cause": diagnosis.root_cause,
             "plan": diagnosis.plan,
             "requires_escalation": not diagnosis.actionable,
+            "matched_memories": matched_memories,
+            "lessons_context": lessons_context,
         }
 
     async def remediate_node(state: LyokoState, config: RunnableConfig) -> dict[str, Any]:
@@ -279,7 +330,7 @@ def create_lyoko_graph(
                 phase="remediate",
                 system_prompt=REMEDIATE_SYSTEM_PROMPT,
                 prompt=(
-                    f"Fix this incident.\n\n{_incident_context(state)}\n\n"
+                    f"Carry out this remediation plan.\n\n{_incident_context(state)}\n\n"
                     f"Root cause: {state.get('root_cause', 'Unknown')}\n\n"
                     f"Plan:\n{state.get('plan', '')}"
                 ),
@@ -336,6 +387,8 @@ def create_lyoko_graph(
                 lines.append(f"• *Target:* {target}")
         lines.append(f"• *Root Cause:* {state.get('root_cause', 'Unknown')}")
         lines.append(f"• *Action Taken:* {state.get('action_taken', 'None')}")
+        if state.get("matched_memories"):
+            lines.append(f"• *Memories Applied:* {len(state['matched_memories'])}")
         actions = state.get("actions") or []
         if actions:
             lines.append("• *Tool Calls:* " + ", ".join(_describe_call(a) for a in actions))
@@ -371,6 +424,10 @@ def create_lyoko_graph(
     workflow.add_edge("notify", END)
 
     return workflow.compile(checkpointer=checkpointer)
+
+
+# Backward compatibility alias for tests and external callers
+create_remediation_workflow = create_lyoko_graph
 
 
 def _remediation_outcome(
