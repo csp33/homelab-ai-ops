@@ -1,9 +1,10 @@
 """Unit tests for LYOKO InteractiveChatAgent."""
 
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
-from lyoko.application.chat_agent import InteractiveChatAgent
+from lyoko.application.chat_agent import ChatSessionTracker, InteractiveChatAgent
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.models.chat import ChatUser, IncomingMessage
 
@@ -29,7 +30,7 @@ async def test_interactive_chat_agent_answers_query():
     mock_llm.chat.assert_awaited_once()
     call_kwargs = mock_llm.chat.call_args[1]
     assert call_kwargs.get("prompt") == "How is the cluster?"
-    assert call_kwargs.get("session_id") == "telegram-12345"
+    assert call_kwargs.get("session_id").startswith("telegram-12345-")
     assert call_kwargs.get("user_id") == "12345"
     assert call_kwargs.get("trace_name") == "telegram-chat-interaction"
     assert "telegram" in call_kwargs.get("tags", [])
@@ -68,3 +69,37 @@ async def test_interactive_chat_agent_without_llm():
     )
     reply = await agent.handle_message(msg)
     assert "LLM provider not configured" in reply
+
+
+def test_session_tracker_reuses_session_within_idle_window():
+    """Messages in the same chat within the idle timeout share one session."""
+    now = [datetime(2026, 10, 2, 20, 0, 0, tzinfo=UTC)]
+    tracker = ChatSessionTracker(idle_timeout_seconds=1800, clock=lambda: now[0])
+
+    first = tracker.get_session_id("42")
+    now[0] += timedelta(minutes=20)
+    second = tracker.get_session_id("42")
+    now[0] += timedelta(minutes=20)  # 20 min since last activity, still within window
+    third = tracker.get_session_id("42")
+
+    assert first == second == third
+    assert first == "telegram-42-20261002-200000"
+
+
+def test_session_tracker_rotates_session_after_idle_timeout():
+    """A gap longer than the idle timeout starts a new session."""
+    now = [datetime(2026, 10, 2, 20, 0, 0, tzinfo=UTC)]
+    tracker = ChatSessionTracker(idle_timeout_seconds=1800, clock=lambda: now[0])
+
+    first = tracker.get_session_id("42")
+    now[0] += timedelta(minutes=31)
+    second = tracker.get_session_id("42")
+
+    assert first != second
+    assert second == "telegram-42-20261002-203100"
+
+
+def test_session_tracker_isolates_chats():
+    """Different chats never share a session."""
+    tracker = ChatSessionTracker()
+    assert tracker.get_session_id("1") != tracker.get_session_id("2")

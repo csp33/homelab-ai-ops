@@ -10,6 +10,7 @@ from lyoko.domain.models.chat import (
     ApprovalResponse,
     ChatUser,
     IncomingMessage,
+    SentMessage,
 )
 from pydantic import SecretStr
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -23,6 +24,17 @@ from telegram.ext import (
 )
 
 logger = logging.getLogger("lyoko.chat.telegram")
+
+
+def _to_sent_message(result: object, fallback_chat_id: str) -> SentMessage | None:
+    """Convert a python-telegram-bot ``Message`` into a domain ``SentMessage`` reference."""
+    message_id = getattr(result, "message_id", None)
+    if not isinstance(message_id, int) or isinstance(message_id, bool):
+        return None
+    chat_id = getattr(result, "chat_id", None)
+    if not isinstance(chat_id, (int, str)) or isinstance(chat_id, bool):
+        chat_id = fallback_chat_id
+    return SentMessage(chat_id=str(chat_id), message_id=str(message_id))
 
 
 # Telegram has no table support. Tables narrower than this many characters are rendered as
@@ -285,7 +297,7 @@ class TelegramConnector(ChatConnector):
             return
 
         # 1. React with an emoji (e.g. "👀") to acknowledge and indicate active processing
-        with contextlib.suppress(Exception):
+        try:
             if hasattr(msg, "set_reaction"):
                 await msg.set_reaction(reaction="👀")
             elif (
@@ -298,6 +310,15 @@ class TelegramConnector(ChatConnector):
                     message_id=msg.message_id,
                     reaction="👀",
                 )
+        except Exception as reaction_err:
+            # A missing reaction must never block the reply, but it should not fail silently.
+            logger.warning(
+                "Failed to set 👀 reaction on message %s in chat %s: %s: %s",
+                getattr(msg, "message_id", None),
+                chat_id,
+                type(reaction_err).__name__,
+                reaction_err,
+            )
 
         # 2. Trigger typing status in chat
         with contextlib.suppress(Exception):
@@ -330,6 +351,12 @@ class TelegramConnector(ChatConnector):
         elif chat and getattr(chat, "title", None) and not hasattr(chat.title, "_mock_name"):
             first_name = str(chat.title)
 
+        reply_to_message_id: str | None = None
+        replied = getattr(msg, "reply_to_message", None)
+        replied_id = getattr(replied, "message_id", None) if replied is not None else None
+        if isinstance(replied_id, int) and not isinstance(replied_id, bool):
+            reply_to_message_id = str(replied_id)
+
         incoming = IncomingMessage(
             message_id=str(msg.message_id),
             chat_id=chat_id,
@@ -339,6 +366,7 @@ class TelegramConnector(ChatConnector):
                 first_name=first_name,
             ),
             text=text,
+            reply_to_message_id=reply_to_message_id,
         )
 
         for handler in self._message_handlers:

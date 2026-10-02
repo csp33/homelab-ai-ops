@@ -92,6 +92,15 @@ class AgentSettings(BaseSettings):
         description="Release version identifier for Langfuse tracing",
     )
 
+    chat_session_idle_timeout_seconds: int = Field(
+        default=1800,
+        ge=1,
+        description=(
+            "Seconds of chat inactivity after which a new Langfuse session is started "
+            "for the next message in the same chat"
+        ),
+    )
+
     # PostgreSQL Checkpointer (Persistent LangGraph state)
     postgres_uri: str | None = Field(
         default=None,

@@ -64,7 +64,11 @@ def build_chat_manager(
             allowed_chat_ids=settings.telegram_allowed_chat_ids,
             default_chat_id=settings.telegram_default_chat_id,
         )
-        chat_agent = InteractiveChatAgent(mcp_client=mcp_client, llm=llm)
+        chat_agent = InteractiveChatAgent(
+            mcp_client=mcp_client,
+            llm=llm,
+            session_idle_timeout_seconds=settings.chat_session_idle_timeout_seconds,
+        )
         telegram_connector.register_message_handler(chat_agent.handle_message)
         telegram_connector.register_approval_handler(approval_manager.resolve_approval)
         chat_manager.add_connector(telegram_connector)

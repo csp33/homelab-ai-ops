@@ -72,6 +72,36 @@ async def test_telegram_connector_incoming_message_handler():
 
 
 @pytest.mark.asyncio
+async def test_telegram_connector_reaction_failure_is_logged_and_does_not_block_reply(caplog):
+    connector = TelegramConnector(
+        bot_token="fake:token", allowed_user_ids={"12345"}, default_chat_id="12345"
+    )
+
+    async def handler(msg: IncomingMessage) -> str:
+        return "Acknowledged"
+
+    connector.register_message_handler(handler)
+
+    mock_update = MagicMock()
+    mock_update.effective_user.id = 12345
+    mock_update.effective_user.username = "admin"
+    mock_update.effective_user.first_name = "Admin"
+    mock_update.effective_chat.id = 12345
+    mock_update.message.message_id = 43
+    mock_update.message.text = "top 10 clients"
+    mock_update.message.set_reaction = AsyncMock(side_effect=RuntimeError("REACTION_INVALID"))
+    mock_update.message.reply_text = AsyncMock()
+
+    with caplog.at_level("WARNING", logger="lyoko.chat.telegram"):
+        await connector._handle_telegram_message(mock_update, MagicMock())
+
+    assert "Failed to set" in caplog.text
+    assert "REACTION_INVALID" in caplog.text
+    assert "43" in caplog.text
+    mock_update.message.reply_text.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_telegram_connector_unauthorized_message():
     connector = TelegramConnector(
         bot_token="fake:token", allowed_user_ids={"12345"}, default_chat_id="12345"
