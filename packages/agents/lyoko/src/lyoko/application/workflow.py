@@ -8,12 +8,18 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
+from lyoko.application.hitl import ApprovalManager
 from lyoko.config import settings
+from lyoko.domain.models.chat import ApprovalAction, ApprovalRequest
+from lyoko.infrastructure.chat.manager import ChatManager
+from lyoko.infrastructure.observability.langfuse import get_langfuse_callback_handler
 
 logger = logging.getLogger("lyoko.workflow")
 
 
-class RemediationGraphState(TypedDict):
+class RemediationGraphState(TypedDict, total=False):
+    incident_id: str
+    chat_id: str
     messages: Annotated[list[BaseMessage], add_messages]
     namespace: str
     pod_name: str
@@ -24,21 +30,34 @@ class RemediationGraphState(TypedDict):
     action_taken: str
     is_resolved: bool
     requires_escalation: bool
+    approval_granted: bool
 
 
 SYSTEM_PROMPT = """You are LYOKO (Live Yaml Optimization & K8s Orchestration), the autonomous remediation agent.
 Analyze pod failure events, diagnose root causes (e.g., OOMKilled, CrashLoopBackOff), and provide precise recommendations."""
 
 
-def create_remediation_workflow(mcp_client: Any, checkpointer: Any = None) -> Any:
+def create_remediation_workflow(
+    mcp_client: Any,
+    approval_manager: ApprovalManager | None = None,
+    chat_manager: ChatManager | None = None,
+    checkpointer: Any = None,
+    llm: Any | None = None,
+) -> Any:
     """Build LangGraph StateGraph workflow for incident diagnosis and auto-remediation."""
-    api_key = settings.openai_api_key or "sk-dummy"
-    model = ChatOpenAI(model=settings.openai_model, temperature=0, api_key=api_key)
+    model = llm
+    if model is None:
+        try:
+            api_key = settings.openai_api_key or "sk-dummy"
+            model = ChatOpenAI(model=settings.openai_model, temperature=0, api_key=api_key)
+        except Exception as exc:
+            logger.debug("ChatOpenAI could not be initialized: %s", exc)
+            model = None
 
     async def diagnose_node(state: RemediationGraphState) -> dict[str, Any]:
         """Fetch diagnostics from homelab-mcp."""
-        namespace = state["namespace"]
-        pod_name = state["pod_name"]
+        namespace = state.get("namespace", "default")
+        pod_name = state.get("pod_name", "")
         logger.info(f"Diagnosing pod {pod_name} in namespace {namespace}...")
 
         diag = await mcp_client.call_tool(
@@ -47,26 +66,108 @@ def create_remediation_workflow(mcp_client: Any, checkpointer: Any = None) -> An
         )
 
         prompt = f"""
-        Alert: {state["alert_name"]}
+        Alert: {state.get("alert_name", "")}
         Target Pod: {pod_name} (Namespace: {namespace})
         Diagnostics: {diag}
 
         Identify the root cause in 1-2 sentences. Is it OOMKilled, Misconfiguration, CrashLoop, or Unknown?
         """
-        response = await model.ainvoke(
-            [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=prompt)]
-        )
-        root_cause = response.content
+
+        root_cause = ""
+        if model is not None:
+            try:
+                cb = get_langfuse_callback_handler()
+                config: dict[str, Any] = {}
+                if cb:
+                    config["callbacks"] = [cb]
+                response = await model.ainvoke(
+                    [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=prompt)],
+                    config=config if config else None,
+                )
+                root_cause = str(response.content)
+            except Exception as e:
+                logger.warning(
+                    "LLM root cause analysis failed: %s; falling back to diagnostic inspection", e
+                )
+
+        if not root_cause:
+            logs = str(diag.get("logs", "")) if isinstance(diag, dict) else str(diag)
+            phase = str(diag.get("phase", "")) if isinstance(diag, dict) else ""
+            if "OOMKilled" in logs or "137" in logs or "OOMKilled" in phase:
+                root_cause = "Pod terminated with exit code 137 (OOMKilled)."
+            else:
+                root_cause = f"Pod in {phase} state. Logs: {logs[:100]}"
 
         return {"diagnostics": diag, "root_cause": root_cause}
 
+    async def request_approval_node(state: RemediationGraphState) -> dict[str, Any]:
+        """Request human-in-the-loop approval before applying mutation."""
+        root_cause = state.get("root_cause", "")
+        is_oom = "OOMKilled" in root_cause or "137" in root_cause
+        if not is_oom or state.get("requires_escalation"):
+            return {}
+
+        incident_id = (
+            state.get("incident_id")
+            or f"{state.get('namespace', 'default')}-{state.get('pod_name', 'pod')}"
+        )
+
+        if approval_manager is None:
+            return {"incident_id": incident_id, "approval_granted": True}
+
+        chat_id = state.get("chat_id") or settings.telegram_default_chat_id or ""
+        req = ApprovalRequest(
+            incident_id=incident_id,
+            title=f"Remediation Approval Required: {state.get('pod_name', '')}",
+            details=(
+                f"Pod: `{state.get('pod_name', '')}`\n"
+                f"Namespace: `{state.get('namespace', '')}`\n"
+                f"Alert: {state.get('alert_name', '')}\n"
+                f"Root Cause: {state.get('root_cause', 'Unknown')}\n"
+                f"Proposed Action: Bump memory to 1Gi"
+            ),
+            chat_id=chat_id,
+            actions=[
+                ApprovalAction(action_id="approve", label="✅ Approve (1Gi Bump)", style="primary"),
+                ApprovalAction(action_id="reject", label="❌ Deny", style="danger"),
+            ],
+        )
+
+        if chat_manager is not None:
+            await chat_manager.broadcast_approval_request(req)
+
+        response = await approval_manager.wait_for_approval(incident_id)
+        if not response.approved:
+            logger.warning(
+                "Remediation approval rejected for incident %s: %s",
+                incident_id,
+                response.reason,
+            )
+            return {
+                "incident_id": incident_id,
+                "approval_granted": False,
+                "requires_escalation": True,
+                "action_taken": f"Remediation aborted: {response.reason or 'Approval rejected'}",
+            }
+
+        return {"incident_id": incident_id, "approval_granted": True}
+
     async def remediate_node(state: RemediationGraphState) -> dict[str, Any]:
-        """Apply safe remediation if root cause is OOMKilled."""
-        namespace = state["namespace"]
-        dep_name = state.get("deployment_name") or state["pod_name"].rsplit("-", 2)[0]
-        root_cause = state["root_cause"]
+        """Apply safe remediation if root cause is OOMKilled and approval granted."""
+        namespace = state.get("namespace", "default")
+        pod_name = state.get("pod_name", "")
+        dep_name = state.get("deployment_name") or pod_name.rsplit("-", 2)[0]
+        root_cause = state.get("root_cause", "")
 
         if "OOMKilled" in root_cause or "137" in root_cause:
+            if state.get("requires_escalation") or state.get("approval_granted") is False:
+                return {
+                    "action_taken": state.get(
+                        "action_taken", "Remediation aborted: approval rejected or timed out"
+                    ),
+                    "requires_escalation": True,
+                }
+
             logger.info(f"Applying memory bump to {dep_name} in {namespace}...")
             res = await mcp_client.call_tool(
                 "k8s_bump_deployment_resources",
@@ -94,34 +195,46 @@ def create_remediation_workflow(mcp_client: Any, checkpointer: Any = None) -> An
 
         diag = await mcp_client.call_tool(
             "k8s_get_pod_diagnostics",
-            {"namespace": state["namespace"], "pod_name": state["pod_name"], "tail_lines": 10},
+            {
+                "namespace": state.get("namespace", "default"),
+                "pod_name": state.get("pod_name", ""),
+                "tail_lines": 10,
+            },
         )
-        is_running = diag.get("phase") in ["Running", "Pending"]
+        is_running = (
+            diag.get("phase") in ["Running", "Pending"] if isinstance(diag, dict) else False
+        )
         return {"is_resolved": is_running}
 
     async def notify_node(state: RemediationGraphState) -> dict[str, Any]:
-        """Log final structured incident report."""
+        """Log final structured incident report and broadcast via chat connector."""
         status_icon = "RESOLVED" if state.get("is_resolved") else "ESCALATED / REQUIRES ACTION"
-        logger.info(
-            f"[LYOKO Incident Summary]\n"
-            f"Status: {status_icon}\n"
-            f"Namespace: {state['namespace']}\n"
-            f"Pod: {state['pod_name']}\n"
-            f"Alert: {state['alert_name']}\n"
-            f"Root Cause: {state.get('root_cause', 'Unknown')}\n"
-            f"Action: {state.get('action_taken', 'None')}"
+        summary = (
+            f"📋 *[LYOKO Incident Report]*\n\n"
+            f"• *Status:* {status_icon}\n"
+            f"• *Namespace:* `{state.get('namespace', '')}`\n"
+            f"• *Pod:* `{state.get('pod_name', '')}`\n"
+            f"• *Alert:* {state.get('alert_name', '')}\n"
+            f"• *Root Cause:* {state.get('root_cause', 'Unknown')}\n"
+            f"• *Action Taken:* {state.get('action_taken', 'None')}"
         )
+        logger.info(summary)
+        if chat_manager is not None:
+            chat_id = state.get("chat_id") or settings.telegram_default_chat_id or ""
+            await chat_manager.broadcast_message(chat_id=chat_id, text=summary)
         return {}
 
     # Assemble StateGraph
     workflow = StateGraph(RemediationGraphState)
     workflow.add_node("diagnose", diagnose_node)
+    workflow.add_node("request_approval", request_approval_node)
     workflow.add_node("remediate", remediate_node)
     workflow.add_node("verify", verify_node)
     workflow.add_node("notify", notify_node)
 
     workflow.add_edge(START, "diagnose")
-    workflow.add_edge("diagnose", "remediate")
+    workflow.add_edge("diagnose", "request_approval")
+    workflow.add_edge("request_approval", "remediate")
     workflow.add_edge("remediate", "verify")
     workflow.add_edge("verify", "notify")
     workflow.add_edge("notify", END)
