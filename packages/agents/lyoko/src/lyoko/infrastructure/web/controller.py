@@ -6,7 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from lyoko.domain.models import Incident
 
 
-def create_webhook_router(workflow_app: Any) -> APIRouter:
+def create_webhook_router(workflow_app: Any = None) -> APIRouter:
     router = APIRouter(prefix="/webhook", tags=["webhooks"])
 
     @router.post("/alertmanager")
@@ -17,6 +17,10 @@ def create_webhook_router(workflow_app: Any) -> APIRouter:
             data = await request.json()
         except Exception as exc:
             raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
+
+        engine = workflow_app or getattr(request.app.state, "workflow_engine", None)
+        if not engine:
+            raise HTTPException(status_code=503, detail="Workflow engine is not initialized")
 
         alerts = data.get("alerts", [])
         for alert in alerts:
@@ -44,7 +48,10 @@ def create_webhook_router(workflow_app: Any) -> APIRouter:
                     "requires_escalation": False,
                 }
 
-                background_tasks.add_task(workflow_app.ainvoke, initial_state)
+                thread_id = f"incident-{incident.fingerprint or incident.pod_name}"
+                config = {"configurable": {"thread_id": thread_id}}
+
+                background_tasks.add_task(engine.ainvoke, initial_state, config=config)
 
         return {"status": "accepted", "message": f"Processing {len(alerts)} alerts in background."}
 
