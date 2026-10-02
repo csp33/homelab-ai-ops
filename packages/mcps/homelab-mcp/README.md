@@ -53,16 +53,14 @@ The response cache applies to `list_tools` (300s TTL). Each upstream can be swit
 Every tool call is evaluated by the `GuardrailEngine` before it is dispatched upstream. The first failing check rejects the call.
 
 ```mermaid
-flowchart TD
-    REQ([Tool call]) --> C1{Tool allowed?}
-    C1 -->|no| X1[Rejected: not in allowlist]
-    C1 -->|yes| C2{Non read-only tool in protected namespace?}
-    C2 -->|yes| X2[Rejected: protected namespace]
-    C2 -->|no| C3{GitHub repo permitted?}
-    C3 -->|no| X3[Rejected: repository policy]
-    C3 -->|yes| C4{Dangerous command?}
-    C4 -->|yes| X4[Rejected: blocked command]
-    C4 -->|no| OK[Dispatch to upstream]
+flowchart LR
+    REQ([Tool call]) --> C1[Tool allowlist]
+    subgraph GE["GuardrailEngine, checked in order"]
+        direction LR
+        C1 --> C2[Protected namespaces] --> C3[GitHub repos] --> C4[Exec commands]
+    end
+    C4 --> OK([Dispatch upstream])
+    GE -.->|first failing check| X([Rejected])
 
     classDef check fill:#0f766e,stroke:#134e4a,color:#fff;
     classDef reject fill:#b91c1c,stroke:#7f1d1d,color:#fff;
@@ -70,7 +68,7 @@ flowchart TD
     classDef entry fill:#64748b,stroke:#334155,color:#fff;
 
     class C1,C2,C3,C4 check;
-    class X1,X2,X3,X4 reject;
+    class X reject;
     class OK pass;
     class REQ entry;
 ```
