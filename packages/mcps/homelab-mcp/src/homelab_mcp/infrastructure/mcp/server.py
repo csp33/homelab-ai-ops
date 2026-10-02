@@ -115,37 +115,16 @@ def create_gateway_mcp_server(
         upstream: str | None = None,
         limit: int = 25,
     ) -> list[dict[str, Any]]:
-        """List operational tools aggregated from connected upstream MCP servers with optional keyword search and category filtering.
+        """List operational tools aggregated from connected upstream MCP servers with relevance scoring, multi-keyword search, and category alias filtering.
 
         Args:
-            query: Optional keyword to search tool names and descriptions (e.g. 'client', 'pod', 'light', 'blind').
-            upstream: Optional upstream name to filter tools by category (e.g. 'homeassistant', 'unifi', 'kubernetes', 'grafana', 'github').
+            query: Optional keyword or intent to search tool names and descriptions (e.g. 'top client traffic', 'pod logs', 'turn off light', 'restart workload').
+            upstream: Optional upstream name or alias to filter tools by category (e.g. 'unifi' / 'network', 'homeassistant' / 'iot', 'kubernetes' / 'k8s', 'grafana' / 'metrics', 'github').
             limit: Maximum number of tools to return (default: 25, max: 50).
         """
-        tools = await service.discover_tools()
-        if upstream:
-            target = upstream.strip().lower()
-            tools = [
-                t
-                for t in tools
-                if target == str(t.upstream_type).lower()
-                or target in str(t.upstream_type).lower()
-                or target in t.name.lower()
-            ]
-
-        if query:
-            q = query.strip().lower()
-            tools = [
-                t
-                for t in tools
-                if q in t.name.lower()
-                or (t.description and q in t.description.lower())
-                or (t.upstream_type and q in str(t.upstream_type).lower())
-            ]
-
-        bounded_limit = max(1, min(limit, 50))
+        tools = await service.search_tools(query=query, upstream=upstream, limit=limit)
         results = []
-        for t in tools[:bounded_limit]:
+        for t in tools:
             desc = (t.description or "").strip()
             first_line = desc.split("\n")[0].strip()
             short_desc = first_line[:160] + "..." if len(first_line) > 160 else first_line

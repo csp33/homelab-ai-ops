@@ -179,3 +179,60 @@ async def test_gateway_fastmcp_tools_and_truncation(mock_auth):
     call_data = call_res.structured_content.get("result", call_res.structured_content)
     assert "Output truncated" in call_data["content"]
     assert len(call_data["content"]) < 13000
+
+
+@pytest.mark.asyncio
+async def test_gateway_search_tools_ranking_and_aliases(mock_auth):
+    mock_unifi = MagicMock(spec=UpstreamMCPInterface)
+    mock_unifi.list_tools = AsyncMock(
+        return_value=[
+            ToolDefinition(
+                name="unifi_delete_client_group",
+                description="Delete a client group by ID. Requires confirmation.",
+                upstream_type=UpstreamType.UNIFI,
+            ),
+            ToolDefinition(
+                name="unifi_create_client_group",
+                description="Create a client group.",
+                upstream_type=UpstreamType.UNIFI,
+            ),
+            ToolDefinition(
+                name="unifi_get_top_clients",
+                description="Get a list of top clients by network traffic usage sorted by total bytes",
+                upstream_type=UpstreamType.UNIFI,
+            ),
+            ToolDefinition(
+                name="unifi_list_clients",
+                description="Returns connected clients with mac, name, hostname, ip, status",
+                upstream_type=UpstreamType.UNIFI,
+            ),
+        ]
+    )
+
+    gateway = MCPGatewayService(
+        upstreams={UpstreamType.UNIFI: mock_unifi},
+        auth_port=mock_auth,
+    )
+
+    # 1. Test alias mapping: 'network' -> 'unifi'
+    tools_alias = await gateway.search_tools(upstream="network")
+    assert len(tools_alias) == 4
+    assert all(t.upstream_type == UpstreamType.UNIFI for t in tools_alias)
+
+    # 2. Test multi-token relevance scoring: 'top client traffic' should rank unifi_get_top_clients first
+    top_search = await gateway.search_tools(query="top client traffic", upstream="network")
+    assert len(top_search) > 0
+    assert top_search[0].name == "unifi_get_top_clients"
+
+    # 3. Test read vs mutation preference: searching 'client' should rank list/get tools above delete/create tools
+    client_search = await gateway.search_tools(query="client", upstream="unifi")
+    assert len(client_search) == 4
+    top_two_names = [t.name for t in client_search[:2]]
+    assert "unifi_get_top_clients" in top_two_names
+    assert "unifi_list_clients" in top_two_names
+    # Destructive/creation tools should rank lower
+    assert client_search[-1].name in ["unifi_delete_client_group", "unifi_create_client_group"]
+
+    # 4. Test explicit mutation query: searching 'delete client' should rank unifi_delete_client_group first
+    delete_search = await gateway.search_tools(query="delete client")
+    assert delete_search[0].name == "unifi_delete_client_group"
