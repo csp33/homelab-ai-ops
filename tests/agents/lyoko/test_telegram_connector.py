@@ -482,3 +482,40 @@ def test_markdown_to_telegram_html():
         markdown_to_telegram_html("[Grafana](http://grafana.local)")
         == '<a href="http://grafana.local">Grafana</a>'
     )
+
+
+def test_markdown_table_narrow_becomes_monospace_block():
+    from lyoko.infrastructure.chat.telegram import markdown_to_telegram_html
+
+    table = "| Name | State |\n|------|-------|\n| **WLAN** | OK |\n| LAN | `Down` |"
+    result = markdown_to_telegram_html(table)
+
+    assert result.startswith("<pre><code>")
+    assert "|" not in result
+    assert "WLAN  OK" in result
+    assert "LAN   Down" in result
+
+
+def test_markdown_table_wide_becomes_cards():
+    from lyoko.infrastructure.chat.telegram import markdown_to_telegram_html
+
+    table = (
+        "| Subsystem | Status | Active Users | Bytes Received (Rx) | Bytes Sent (Tx) |\n"
+        "|-----------|--------|--------------|---------------------|-----------------|\n"
+        "| WLAN | OK | 36 | 9,465 | 2,500 |\n"
+        "| VPN | OK | - | - | - |"
+    )
+    result = markdown_to_telegram_html(table)
+
+    assert "|" not in result
+    assert "<pre>" not in result
+    assert "<b>WLAN</b>\n• Status: OK\n• Active Users: 36" in result
+    assert "<b>VPN</b>\n• Status: OK" in result
+    assert "VPN</b>\n• Status: OK\n•" not in result  # empty "-" values are skipped
+
+
+def test_markdown_table_inside_code_block_is_untouched():
+    from lyoko.infrastructure.chat.telegram import markdown_to_telegram_html
+
+    text = "```\n| a | b |\n|---|---|\n| 1 | 2 |\n```"
+    assert "| a | b |" in markdown_to_telegram_html(text)

@@ -24,7 +24,7 @@ Tool Usage & Token Efficiency Rules:
 - Use `gateway_call_tool(tool_name="...", arguments={...})` to execute tools.
 - Multi-Source Resolution: If a device or entity cannot be found in one system (e.g. Home Assistant entity), cross-reference related systems (e.g. UniFi network clients or devices) to find network details like IP or MAC addresses.
 - NEVER mention or invent nonexistent functions (like `ha_search()`); only call tools discovered via `gateway_list_tools`.
-- Format all technical output in crisp, clean Markdown (use code blocks, tables, and bullet points where helpful). Respond in the language used by the administrator (e.g. Spanish)."""
+- Format all technical output in crisp, clean Markdown (use code blocks and bullet points where helpful). Telegram cannot render wide tables: prefer bullet lists, and only use a Markdown table when it has at most 3 short columns. Respond in the language used by the administrator (e.g. Spanish)."""
 
 
 class InteractiveChatAgent:
