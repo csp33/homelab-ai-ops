@@ -1,8 +1,10 @@
 """Configuration settings for LYOKO agent."""
 
+import json
+from typing import Any
 from urllib.parse import quote_plus
 
-from pydantic import Field
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,6 +31,21 @@ class AgentSettings(BaseSettings):
         default="", description="Bearer token to authenticate against homelab-mcp"
     )
 
+    # Telegram Bot settings
+    telegram_enabled: bool = Field(
+        default=False, description="Enable Telegram private assistant and HITL notifications"
+    )
+    telegram_bot_token: SecretStr | None = Field(
+        default=None, description="Telegram Bot Token from @BotFather"
+    )
+    telegram_allowed_user_ids: list[str] | str = Field(
+        default_factory=list,
+        description="List of authorized Telegram user IDs allowed to interact with the bot",
+    )
+    telegram_default_chat_id: str | None = Field(
+        default=None, description="Default Telegram Chat ID for broadcast notifications"
+    )
+
     # Guardrails
     max_remediation_retries: int = Field(
         default=2, description="Maximum automated remediation retry loops"
@@ -38,8 +55,9 @@ class AgentSettings(BaseSettings):
     )
 
     # Observability (Langfuse / OpenTelemetry)
-    langfuse_public_key: str = Field(default="", description="Langfuse Public Key")
-    langfuse_secret_key: str = Field(default="", description="Langfuse Secret Key")
+    langfuse_enabled: bool = Field(default=False, description="Enable Langfuse tracing")
+    langfuse_public_key: str | None = Field(default=None, description="Langfuse Public Key")
+    langfuse_secret_key: SecretStr | None = Field(default=None, description="Langfuse Secret Key")
     langfuse_host: str = Field(
         default="https://cloud.langfuse.com", description="Langfuse Host URL"
     )
@@ -60,6 +78,21 @@ class AgentSettings(BaseSettings):
     postgres_pool_max_size: int = Field(
         default=20, description="PostgreSQL connection pool max size"
     )
+
+    @field_validator("telegram_allowed_user_ids", mode="before")
+    @classmethod
+    def parse_allowed_user_ids(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    return [str(x) for x in json.loads(v)]
+                except Exception:
+                    pass
+            return [item.strip() for item in v.split(",") if item.strip()]
+        if isinstance(v, list):
+            return [str(x) for x in v]
+        return v or []
 
     def get_postgres_uri(self) -> str | None:
         """Construct PostgreSQL connection URI if configured."""

@@ -1,8 +1,9 @@
-"""Langfuse implementation of tracer interface."""
+"""Langfuse implementation of tracer interface and callback handler factory."""
 
 import logging
 from typing import Any
 
+from lyoko.config import settings
 from lyoko.domain.interfaces.tracer import TracerInterface
 
 logger = logging.getLogger("lyoko.observability.langfuse")
@@ -62,18 +63,7 @@ class LangfuseTracer(TracerInterface):
         tags: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Build a LangChain / LangGraph RunnableConfig dict with Langfuse tracing, session, and metadata.
-
-        Args:
-            session_id: Session identifier to group traces into conversational threads or incident runs.
-            user_id: User or actor identifier.
-            trace_name: Custom name for the root trace.
-            tags: List of tags for categorizing traces in Langfuse.
-            metadata: Custom key-value metadata.
-
-        Returns:
-            RunnableConfig dict configured with Langfuse callback, tags, and session metadata.
-        """
+        """Build a LangChain / LangGraph RunnableConfig dict with Langfuse tracing, session, and metadata."""
         config: dict[str, Any] = {}
         handler = self.get_callback_handler()
         if handler:
@@ -97,3 +87,29 @@ class LangfuseTracer(TracerInterface):
             config["run_name"] = trace_name
 
         return config
+
+
+def get_langfuse_callback_handler() -> Any | None:
+    """Create and return a Langfuse CallbackHandler if tracing is enabled and configured."""
+    if not settings.langfuse_enabled:
+        return None
+
+    if not settings.langfuse_public_key or not settings.langfuse_secret_key:
+        logger.warning("Langfuse is enabled but missing public/secret keys; tracing disabled")
+        return None
+
+    try:
+        secret_val = (
+            settings.langfuse_secret_key.get_secret_value()
+            if hasattr(settings.langfuse_secret_key, "get_secret_value")
+            else str(settings.langfuse_secret_key)
+        )
+        tracer = LangfuseTracer(
+            public_key=settings.langfuse_public_key,
+            secret_key=secret_val,
+            host=settings.langfuse_host,
+        )
+        return tracer.get_callback_handler()
+    except Exception as e:
+        logger.error("Failed to initialize Langfuse callback handler: %s", e)
+        return None
