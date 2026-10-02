@@ -64,6 +64,39 @@ class MCPGatewayService:
                 if self.guardrail.is_tool_allowed(t.name):
                     routing[t.name] = (upstream_name, upstream_port)
                     aggregated_tools.append(t)
+
+            # If upstream provides unifi_tool_index, expand domain tools for transparent discovery
+            if any(t.name == "unifi_tool_index" for t in tools):
+                try:
+                    import json
+
+                    index_res = await upstream_port.call_tool("unifi_tool_index", {})
+                    if index_res and not index_res.is_error:
+                        content = index_res.content
+                        if isinstance(content, str):
+                            content = json.loads(content)
+                        if isinstance(content, dict):
+                            for sub_tool in content.get("tools", []):
+                                st_name = sub_tool.get("name")
+                                if (
+                                    st_name
+                                    and st_name not in routing
+                                    and self.guardrail.is_tool_allowed(st_name)
+                                ):
+                                    routing[st_name] = (upstream_name, upstream_port)
+                                    aggregated_tools.append(
+                                        ToolDefinition(
+                                            name=st_name,
+                                            description=sub_tool.get("description", ""),
+                                            parameters={},
+                                            upstream_type=tools[0].upstream_type
+                                            if tools
+                                            else "unifi",
+                                        )
+                                    )
+                except Exception as exc:
+                    logger.warning(f"Failed to expand UniFi domain tools from tool_index: {exc}")
+
             logger.info(
                 f"Discovered {len(tools)} tools from upstream '{upstream_name}' (allowed: {sum(1 for t in tools if t.name in routing)})."
             )
@@ -78,6 +111,18 @@ class MCPGatewayService:
             # Re-attempt quick discovery in case tools were registered dynamically
             await self.discover_tools()
 
+        if (
+            name not in self._tool_routing
+            and name.startswith("unifi_")
+            and "unifi_execute" in self._tool_routing
+        ):
+            upstream_name, upstream_client = self._tool_routing["unifi_execute"]
+            self.guardrail.validate_tool_call(name, arguments, upstream_name=upstream_name)
+            logger.info(f"Routing '{name}' via 'unifi_execute'...")
+            return await upstream_client.call_tool(
+                "unifi_execute", {"tool": name, "arguments": arguments}
+            )
+
         if name not in self._tool_routing:
             raise ToolNotFoundError(
                 f"Tool '{name}' not found on any upstream MCP server or blocked by policy."
@@ -87,6 +132,24 @@ class MCPGatewayService:
 
         # Enforce all active security guardrails (namespace, command exec whitelist/blacklist, tool rules)
         self.guardrail.validate_tool_call(name, arguments, upstream_name=upstream_name)
+
+        if (
+            name.startswith("unifi_")
+            and name
+            not in [
+                "unifi_tool_index",
+                "unifi_execute",
+                "unifi_batch",
+                "unifi_batch_status",
+                "unifi_load_tools",
+                "unifi_get_support_bundle",
+            ]
+            and "unifi_execute" in self._tool_routing
+        ):
+            logger.info(f"Routing UniFi sub-tool '{name}' via 'unifi_execute'...")
+            return await upstream_client.call_tool(
+                "unifi_execute", {"tool": name, "arguments": arguments}
+            )
 
         logger.info(f"Routing tool '{name}' to upstream '{upstream_name}'...")
         return await upstream_client.call_tool(name, arguments)
