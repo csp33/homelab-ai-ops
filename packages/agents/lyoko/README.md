@@ -3,15 +3,20 @@
 [![LangGraph](https://img.shields.io/badge/LangGraph-StateGraph-orange.svg?style=flat)](https://github.com/langchain-ai/langgraph)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Webhook-009688.svg?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Langfuse](https://img.shields.io/badge/Langfuse-Observability-black.svg?style=flat)](https://langfuse.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**LYOKO** (**L**ive **Y**aml **O**ptimization & **K**8s **O**rchestration) is an event-driven autonomous incident remediation agent built with **LangGraph** and **FastAPI**. It intercepts Kubernetes failure alerts from Prometheus Alertmanager, performs root-cause analysis via the `homelab-mcp` tool gateway, applies safe live adjustments, and verifies service recovery.
+**LYOKO** (**L**ive **Y**aml **O**ptimization & **K**8s **O**rchestration) is an event-driven autonomous incident remediation and operations agent built with **LangGraph**, **FastAPI**, and **python-telegram-bot**.
+
+It serves two primary roles:
+1. **Autonomous Incident Remediation**: Intercepts Kubernetes failure alerts from Prometheus Alertmanager, diagnoses root causes via `homelab-mcp`, pauses for Human-in-the-Loop (HITL) approval via Telegram inline buttons, applies safe live adjustments, and verifies recovery.
+2. **Interactive Homelab Chat Assistant**: Provides a conversational Telegram interface powered by FastMCP tools to answer infrastructure queries, manage smart home entities (Home Assistant), inspect network topology (UniFi), and execute administrative operations.
 
 ---
 
-## 🤖 Remediation State Machine
+## 🤖 Remediation State Machine (HITL)
 
-LYOKO's cognitive loop is implemented as a deterministic **LangGraph StateGraph** finite state machine:
+LYOKO's cognitive auto-remediation loop is implemented as a deterministic **LangGraph StateGraph** finite state machine with PostgreSQL checkpoint persistence:
 
 ```mermaid
 stateDiagram-v2
@@ -25,14 +30,25 @@ stateDiagram-v2
         LLMAnalysis --> [*] : Identify Root Cause
     }
 
-    Diagnose --> Remediate : Root Cause Determined
+    Diagnose --> RequestApproval : Root Cause Identified
+
+    state RequestApproval {
+        [*] --> CheckPolicy : Is OOM or Dangerous Mutation?
+        CheckPolicy --> AutoProceed : Unattended Mode / Safe Action
+        CheckPolicy --> PromptOperator : Send Telegram Inline Buttons
+        PromptOperator --> AwaitResponse : Async Poll / Callback (Timeout 10m)
+        AwaitResponse --> Approved : User Clicks Approve
+        AwaitResponse --> Denied : User Clicks Reject / Timeout
+        Approved --> [*] : Approval Granted
+        Denied --> [*] : Requires Escalation
+    }
+
+    RequestApproval --> Remediate : Approval Granted
+    RequestApproval --> Notify : Rejected / Escalation Needed
 
     state Remediate {
-        [*] --> CheckPolicy
-        CheckPolicy --> AutoBump : Root Cause = OOMKilled
-        CheckPolicy --> Escalate : Other Cause / Unknown
-        AutoBump --> PatchDeployment : call_tool(k8s_bump_deployment_resources)
-        Escalate --> [*] : Mark Requires Escalation
+        [*] --> CheckSafetyGuard
+        CheckSafetyGuard --> PatchDeployment : call_tool(k8s_bump_deployment_resources)
         PatchDeployment --> [*] : Apply Resource Increase
     }
 
@@ -48,7 +64,7 @@ stateDiagram-v2
 
     state Notify {
         [*] --> FormatReport
-        FormatReport --> TelegramAlert : Structured Incident Markdown
+        FormatReport --> TelegramAlert : Structured Incident HTML Report
         TelegramAlert --> [*] : Completed
     }
 
@@ -70,26 +86,31 @@ flowchart TD
     subgraph LangGraph_Agent ["2. LYOKO State Machine (Async Background Task)"]
         direction TB
         N1["🔍 Node: diagnose<br/>• Query homelab-mcp for pod diagnostics & logs<br/>• LLM determines failure pattern"]
-        N2["🔧 Node: remediate<br/>• Evaluate OOM condition<br/>• Bump memory limit/request via homelab-mcp"]
-        N3["⏱️ Node: verify<br/>• Wait stabilization window (e.g. 5s)<br/>• Probe pod status & restart counter"]
-        N4["📢 Node: notify<br/>• Emit structured incident audit summary<br/>• Post notification to Telegram"]
+        N2["🛡️ Node: request_approval<br/>• Emit Telegram inline buttons<br/>• Pause execution for operator response"]
+        N3["🔧 Node: remediate<br/>• Apply memory bump via homelab-mcp"]
+        N4["⏱️ Node: verify<br/>• Wait stabilization window<br/>• Probe pod status & restart counter"]
+        N5["📢 Node: notify<br/>• Emit structured incident audit summary<br/>• Post resolution to Telegram"]
 
-        N1 --> N2 --> N3 --> N4
+        N1 --> N2 --> N3 --> N4 --> N5
     end
 
-    subgraph Tool_Gateway ["3. Tool Execution Layer"]
+    subgraph Operator ["3. Human-in-the-Loop"]
+        TG_UI["📱 Telegram Inline Buttons<br/>[✅ Approve (1Gi Bump)] [❌ Deny]"]
+    end
+
+    subgraph Tool_Gateway ["4. Tool Execution Layer"]
         MCP["🛡️ homelab-mcp Gateway<br/>(k8s_get_pod_diagnostics, k8s_bump_deployment_resources)"]
     end
 
-    subgraph Cluster ["4. Cluster & Operators"]
+    subgraph Cluster ["5. Cluster Infrastructure"]
         K8S[("☸️ Kubernetes Cluster")]
-        TG["📱 Telegram Chat"]
     end
 
     EP -->|Enqueue State| N1
-    N1 & N2 & N3 <-->|Tool Protocol| MCP
+    N2 <-->|Send / Await Callback| TG_UI
+    N1 & N3 & N4 <-->|Tool Protocol| MCP
     MCP <-->|Cluster API| K8S
-    N4 -.->|Publish Report| TG
+    N5 -.->|Publish Report| TG_UI
 
     classDef trigger fill:#fff3e0,stroke:#ff9800,stroke-width:1px,color:#e65100;
     classDef agent fill:#ede7f6,stroke:#7e57c2,stroke-width:1px,color:#311b92;
@@ -97,10 +118,28 @@ flowchart TD
     classDef target fill:#eceff1,stroke:#607d8b,stroke-width:1px,color:#263238;
 
     class PROM,AM,EP trigger;
-    class N1,N2,N3,N4 agent;
+    class N1,N2,N3,N4,N5 agent;
     class MCP gateway;
-    class K8S,TG target;
+    class K8S,TG_UI target;
 ```
+
+---
+
+## 💬 Interactive Telegram Chat Assistant
+
+LYOKO connects directly to Telegram as a bidirectional operations assistant:
+- **RBAC Authorization**: Restricts access via `TELEGRAM_ALLOWED_USER_IDS` and `TELEGRAM_ALLOWED_CHAT_IDS`.
+- **Targeted Tool Discovery**: Queries tools on demand using `gateway_list_tools(query="...")` and `gateway_get_tool_schema` to maintain lean context windows (<2,000 tokens per turn).
+- **Clean HTML Formatting**: Automatically converts LLM Markdown into Telegram-compliant HTML tags without mangling underscore identifiers (`MOVISTAR_25EO_IOT`).
+
+---
+
+## 🔭 Observability & Tracing (Langfuse)
+
+All LLM runs, ReAct agent turns, and StateGraph checkpoints are natively traced in **Langfuse**:
+- **Sessions**: Threaded per Telegram chat (`telegram-{chat_id}`) and incident ID (`inc-{id}`).
+- **Environments**: Explicitly segregated (`ENVIRONMENT=local` vs `ENVIRONMENT=homelab`).
+- **Cost & Token Tracking**: Real-time token usage and cost accounting across all generations.
 
 ---
 
@@ -110,14 +149,23 @@ Configure LYOKO using environment variables (in `.env` or Kubernetes ConfigMap/S
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
-| `LYOKO_HOST` | `0.0.0.0` | Webhook receiver interface. |
-| `LYOKO_PORT` | `9000` | Webhook receiver port. |
+| `ENVIRONMENT` | `local` | Operational environment tag (`local`, `homelab`, `production`). |
+| `LYOKO_HOST` | `0.0.0.0` | Webhook receiver bind host. |
+| `LYOKO_PORT` | `9000` | Webhook receiver bind port. |
+| `OPENAI_API_KEY` | `""` | OpenAI API key for LLM diagnosis and chat. |
+| `OPENAI_MODEL` | `gpt-4o-mini` | LLM model used for chat and remediation reasoning. |
 | `MCP_SERVER_URL` | `http://localhost:8000/mcp` | URL of the `homelab-mcp` gateway endpoint. |
-| `OPENAI_API_KEY` | `""` | OpenAI API key for LLM diagnosis. |
-| `OPENAI_MODEL` | `gpt-4o-mini` | LLM model used for root-cause inference. |
-| `VERIFICATION_DELAY_SECONDS` | `5` | Stabilization wait time (in seconds) before post-remediation verification. |
-| `TELEGRAM_BOT_TOKEN` | `""` | Telegram bot token for alerting. |
-| `TELEGRAM_CHAT_ID` | `""` | Telegram chat ID for incident reports. |
+| `SERVICE_TOKEN` | `""` | Bearer token for authenticating against `homelab-mcp`. |
+| `TELEGRAM_ENABLED` | `false` | Enable Telegram assistant, channel posting, and HITL approvals. |
+| `TELEGRAM_BOT_TOKEN` | `""` | Telegram Bot Token from `@BotFather`. |
+| `TELEGRAM_ALLOWED_USER_IDS` | `[]` | List of authorized Telegram user IDs. |
+| `TELEGRAM_ALLOWED_CHAT_IDS` | `[]` | List of authorized Telegram channel/group IDs. |
+| `TELEGRAM_DEFAULT_CHAT_ID` | `""` | Default chat ID for broadcast notifications and alerts. |
+| `LANGFUSE_ENABLED` | `false` | Enable Langfuse tracing and observability. |
+| `LANGFUSE_PUBLIC_KEY` | `""` | Langfuse Project Public API Key. |
+| `LANGFUSE_SECRET_KEY` | `""` | Langfuse Project Secret API Key. |
+| `LANGFUSE_HOST` | `https://cloud.langfuse.com` | Langfuse instance host URL. |
+| `POSTGRES_CHECKPOINTER_URL` | `""` | PostgreSQL connection string for LangGraph persistent state checkpointing. |
 
 ---
 
@@ -155,36 +203,11 @@ route:
 uv run --package lyoko python -m lyoko.main
 ```
 
-### Triggering a Test Webhook
-
-Simulate a firing Alertmanager event:
-
-```bash
-curl -X POST http://localhost:9000/webhook/alertmanager \
-  -H "Content-Type: application/json" \
-  -d '{
-    "alerts": [
-      {
-        "status": "firing",
-        "labels": {
-          "alertname": "KubePodOOMKilled",
-          "namespace": "default",
-          "pod": "web-service-6789abcd-ef123",
-          "deployment": "web-service"
-        },
-        "annotations": {
-          "summary": "Pod terminated with OOMKilled exit code 137"
-        }
-      }
-    ]
-  }'
-```
-
 ---
 
 ## 🧪 Testing
 
 ```bash
-# Run LYOKO workflow and webhook test suites
+# Run LYOKO workflow, webhook, and connector test suites
 uv run pytest tests/agents/lyoko/
 ```

@@ -1,8 +1,10 @@
 """Configuration settings for LYOKO agent."""
 
+import json
+from typing import Any
 from urllib.parse import quote_plus
 
-from pydantic import Field
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,6 +31,30 @@ class AgentSettings(BaseSettings):
         default="", description="Bearer token to authenticate against homelab-mcp"
     )
 
+    # Telegram Bot settings
+    telegram_enabled: bool = Field(
+        default=False,
+        description="Enable Telegram private assistant, channel, and HITL notifications",
+    )
+    telegram_bot_token: SecretStr | None = Field(
+        default=None, description="Telegram Bot Token from @BotFather"
+    )
+    telegram_allowed_user_ids: list[str] | str = Field(
+        default_factory=list,
+        description="List of authorized Telegram user IDs allowed to interact with the bot",
+    )
+    telegram_allowed_chat_ids: list[str] | str = Field(
+        default_factory=list,
+        description="List of authorized Telegram channel or group chat IDs (e.g. -1001234567890)",
+    )
+    telegram_default_chat_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "telegram_default_chat_id", "telegram_chat_id", "telegram_channel_id"
+        ),
+        description="Default Telegram Chat/Channel ID for broadcast notifications and alerts",
+    )
+
     # Guardrails
     max_remediation_retries: int = Field(
         default=2, description="Maximum automated remediation retry loops"
@@ -37,11 +63,26 @@ class AgentSettings(BaseSettings):
         default=10, description="Seconds to wait before verifying pod health"
     )
 
+    # General Environment
+    environment: str = Field(
+        default="local",
+        description="Deployment environment (e.g. 'local', 'homelab', 'development', 'production')",
+    )
+
     # Observability (Langfuse / OpenTelemetry)
-    langfuse_public_key: str = Field(default="", description="Langfuse Public Key")
-    langfuse_secret_key: str = Field(default="", description="Langfuse Secret Key")
+    langfuse_enabled: bool = Field(default=True, description="Enable Langfuse tracing")
+    langfuse_public_key: str | None = Field(default=None, description="Langfuse Public Key")
+    langfuse_secret_key: SecretStr | None = Field(default=None, description="Langfuse Secret Key")
     langfuse_host: str = Field(
         default="https://cloud.langfuse.com", description="Langfuse Host URL"
+    )
+    langfuse_environment: str | None = Field(
+        default=None,
+        description="Langfuse environment tag override (defaults to environment setting if not set)",
+    )
+    langfuse_release: str | None = Field(
+        default=None,
+        description="Release version identifier for Langfuse tracing",
     )
 
     # PostgreSQL Checkpointer (Persistent LangGraph state)
@@ -60,6 +101,27 @@ class AgentSettings(BaseSettings):
     postgres_pool_max_size: int = Field(
         default=20, description="PostgreSQL connection pool max size"
     )
+
+    @field_validator("telegram_allowed_user_ids", "telegram_allowed_chat_ids", mode="before")
+    @classmethod
+    def parse_allowed_ids(cls, v: Any) -> list[str]:
+        if isinstance(v, (int, float)):
+            return [str(v)]
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    return [str(x) for x in json.loads(v)]
+                except Exception:
+                    pass
+            return [item.strip() for item in v.split(",") if item.strip()]
+        if isinstance(v, (list, tuple, set)):
+            return [str(x) for x in v]
+        return v or []
+
+    def get_langfuse_environment(self) -> str:
+        """Return the effective Langfuse environment string."""
+        return self.langfuse_environment or self.environment
 
     def get_postgres_uri(self) -> str | None:
         """Construct PostgreSQL connection URI if configured."""
