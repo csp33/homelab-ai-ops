@@ -11,6 +11,12 @@ from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 from homelab_mcp.application.service import MCPGatewayService
 from homelab_mcp.config import settings
+from homelab_mcp.domain.interfaces.telegram import TelegramClientInterface
+from homelab_mcp.domain.models.telegram import (
+    TelegramAlertRequest,
+    TelegramMessageRequest,
+    TelegramSeverity,
+)
 from homelab_mcp.infrastructure.auth.google import GoogleJWTVerifier
 
 logger = logging.getLogger("homelab_mcp.gateway_server")
@@ -39,7 +45,10 @@ class GatewayTokenVerifier(TokenVerifier):
         return None
 
 
-def create_gateway_mcp_server(service: MCPGatewayService) -> FastMCP:
+def create_gateway_mcp_server(
+    service: MCPGatewayService,
+    telegram_client: TelegramClientInterface | None = None,
+) -> FastMCP:
     """Create FastMCP Gateway server aggregating upstream tools."""
     auth_provider = None
     if settings.auth_enabled:
@@ -117,5 +126,60 @@ def create_gateway_mcp_server(service: MCPGatewayService) -> FastMCP:
             "content": result.content,
             "is_error": result.is_error,
         }
+
+    if telegram_client is not None:
+
+        @mcp.tool()
+        async def telegram_send_message(
+            text: str,
+            chat_id: str | None = None,
+            parse_mode: str = "Markdown",
+        ) -> dict[str, Any]:
+            """Send a text message to Telegram via the configured bot.
+
+            Args:
+                text: Message text to send.
+                chat_id: Optional target Telegram chat ID (falls back to default if not set).
+                parse_mode: Text format parsing mode (e.g. 'Markdown', 'HTML').
+            """
+            request = TelegramMessageRequest(
+                text=text,
+                chat_id=chat_id,
+                parse_mode=parse_mode,
+            )
+            return await telegram_client.send_message(request)
+
+        @mcp.tool()
+        async def telegram_send_alert(
+            title: str,
+            message: str,
+            severity: str = "warning",
+            chat_id: str | None = None,
+        ) -> dict[str, Any]:
+            """Send a formatted alert message with severity indicator to Telegram.
+
+            Args:
+                title: Alert title.
+                message: Alert description or message body.
+                severity: Severity level ('info', 'warning', 'critical', 'ok').
+                chat_id: Optional target Telegram chat ID (falls back to default if not set).
+            """
+            if isinstance(severity, TelegramSeverity):
+                parsed_severity = severity
+            elif isinstance(severity, str):
+                try:
+                    parsed_severity = TelegramSeverity(severity.lower())
+                except ValueError:
+                    parsed_severity = TelegramSeverity.WARNING
+            else:
+                parsed_severity = TelegramSeverity.WARNING
+
+            request = TelegramAlertRequest(
+                title=title,
+                message=message,
+                severity=parsed_severity,
+                chat_id=chat_id,
+            )
+            return await telegram_client.send_alert(request)
 
     return mcp

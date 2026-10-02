@@ -7,6 +7,7 @@ from homelab_mcp.config import settings
 from homelab_mcp.domain.models import UpstreamType
 from homelab_mcp.infrastructure.auth.google import GoogleAuthVerifier
 from homelab_mcp.infrastructure.mcp.server import create_gateway_mcp_server
+from homelab_mcp.infrastructure.telegram.client import TelegramClient
 from homelab_mcp.infrastructure.upstream.client import ProcessUpstreamClient
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -97,9 +98,18 @@ def build_gateway_application() -> tuple[MCPGatewayService, any]:
             upstream_type=UpstreamType.GITHUB,
         )
 
+    # 6. Telegram Bot Client
+    telegram_client = None
+    if settings.telegram_enabled and settings.telegram_bot_token:
+        telegram_client = TelegramClient(
+            bot_token=settings.telegram_bot_token,
+            default_chat_id=settings.telegram_default_chat_id,
+        )
+        )
+
     auth_verifier = GoogleAuthVerifier()
     gateway_service = MCPGatewayService(upstreams=upstreams, auth_port=auth_verifier)
-    mcp_app = create_gateway_mcp_server(gateway_service)
+    mcp_app = create_gateway_mcp_server(gateway_service, telegram_client=telegram_client)
 
     return gateway_service, mcp_app
 
