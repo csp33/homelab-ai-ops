@@ -254,7 +254,9 @@ def create_lyoko_graph(
                 alert_name = state.get("alert_name", "UnknownAlert")
                 labels = state.get("labels") or {}
                 namespace = labels.get("namespace")
-                service_name = labels.get("deployment") or labels.get("app") or labels.get("container")
+                service_name = (
+                    labels.get("deployment") or labels.get("app") or labels.get("container")
+                )
                 incident_query = f"{alert_name} {namespace} {service_name} {state.get('text', '')}"
                 query_embedding = None
                 if embeddings_service is not None:
@@ -285,7 +287,9 @@ def create_lyoko_graph(
                         + "\n".join(lessons_lines)
                         + "\n------------------------------------------------\n"
                     )
-                    logger.info(f"Retrieved {len(memories)} relevant past lessons for {service_name or namespace}")
+                    logger.info(
+                        f"Retrieved {len(memories)} relevant past lessons for {service_name or namespace}"
+                    )
             except Exception as exc:
                 logger.warning("Failed to query semantic memory: %s", exc, exc_info=True)
 

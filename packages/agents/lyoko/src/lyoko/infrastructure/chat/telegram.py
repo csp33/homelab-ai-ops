@@ -1,8 +1,11 @@
+"""Telegram chat connector adapter implementation using python-telegram-bot."""
+
 import contextlib
 import html
 import logging
 import re
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 from lyoko.domain.interfaces.chat_connector import ChatConnector
 from lyoko.domain.models.chat import (
@@ -12,6 +15,7 @@ from lyoko.domain.models.chat import (
     IncomingMessage,
     SentMessage,
 )
+from lyoko.domain.models.memory import MemoryEntry
 from pydantic import SecretStr
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -183,7 +187,7 @@ class TelegramConnector(ChatConnector):
     """Telegram adapter implementing ChatConnector port using python-telegram-bot.
 
     Supports private 1-on-1 chats, group chats, and Telegram channels for
-    interactive assistant communication, alert broadcasting, and HITL approvals.
+    interactive assistant communication, alert broadcasting, HITL approvals, and memory feedback.
     """
 
     def __init__(
@@ -192,6 +196,8 @@ class TelegramConnector(ChatConnector):
         allowed_user_ids: set[str] | list[str] | str | None = None,
         allowed_chat_ids: set[str] | list[str] | str | None = None,
         default_chat_id: str | None = None,
+        memory_repository: Any = None,
+        embeddings_service: Any = None,
     ) -> None:
         if isinstance(bot_token, SecretStr):
             self.bot_token = bot_token.get_secret_value()
@@ -225,6 +231,9 @@ class TelegramConnector(ChatConnector):
         self.default_chat_id = str(default_chat_id).strip() if default_chat_id else None
         if self.default_chat_id:
             self.allowed_chat_ids.add(self.default_chat_id)
+
+        self.memory_repository = memory_repository
+        self.embeddings_service = embeddings_service
 
         self._message_handlers: list[Callable[[IncomingMessage], Awaitable[str | None]]] = []
         self._approval_handlers: list[Callable[[ApprovalResponse], Awaitable[None]]] = []
@@ -334,7 +343,13 @@ class TelegramConnector(ChatConnector):
                     action="typing",
                 )
 
-        text = str(msg.text)
+        text = str(msg.text).strip()
+
+        # 3. Handle /feedback or /teach command
+        if text.startswith("/feedback") or text.startswith("/teach"):
+            await self._handle_feedback_command(msg, text)
+            return
+
         username = None
         if user and getattr(user, "username", None) and not hasattr(user.username, "_mock_name"):
             username = str(user.username)
@@ -404,6 +419,84 @@ class TelegramConnector(ChatConnector):
                         allow_sending_without_reply=True,
                     )
 
+    async def _handle_feedback_command(self, msg: Any, text: str) -> None:
+        """Process /feedback or /teach operator instruction and persist to PostgreSQL."""
+        feedback_content = text.removeprefix("/feedback").removeprefix("/teach").strip()
+        if not feedback_content:
+            help_text = (
+                "ℹ️ <b>Uso de retroalimentación:</b>\n"
+                "<code>/feedback &lt;regla o indicación para LYOKO&gt;</code>\n\n"
+                "<i>Ejemplo:</i> <code>/feedback Para influxdb no aumentar RAM, compactar logs primero</code>\n"
+                "<i>Tip:</i> Puedes responder a cualquier reporte de incidente con <code>/feedback &lt;regla&gt;</code> para asociarlo automáticamente a ese pod/servicio."
+            )
+            await msg.reply_text(
+                help_text,
+                parse_mode="HTML",
+                reply_to_message_id=msg.message_id,
+                allow_sending_without_reply=True,
+            )
+            return
+
+        if not self.memory_repository:
+            await msg.reply_text(
+                "⚠️ La base de datos de memoria persistente (PostgreSQL) no está disponible.",
+                reply_to_message_id=msg.message_id,
+                allow_sending_without_reply=True,
+            )
+            return
+
+        # Extract context if replying to an incident alert/report
+        namespace = "default"
+        service_name = "general"
+        alert_name = "OperatorRule"
+        incident_pattern = feedback_content
+
+        reply_to = getattr(msg, "reply_to_message", None)
+        if reply_to and getattr(reply_to, "text", None):
+            quoted_text = reply_to.text
+            ns_match = re.search(r"Namespace:?\s*`?([a-zA-Z0-9_\-]+)`?", quoted_text, re.IGNORECASE)
+            pod_match = re.search(r"Pod:?\s*`?([a-zA-Z0-9_\-]+)`?", quoted_text, re.IGNORECASE)
+            alert_match = re.search(r"Alert:?\s*`?([a-zA-Z0-9_\-]+)`?", quoted_text, re.IGNORECASE)
+
+            if ns_match:
+                namespace = ns_match.group(1)
+            if pod_match:
+                pod_name = pod_match.group(1)
+                service_name = pod_name.rsplit("-", 2)[0]
+            if alert_match:
+                alert_name = alert_match.group(1)
+            incident_pattern = f"Context: {quoted_text[:200]}..."
+
+        embedding = None
+        if self.embeddings_service:
+            text_to_embed = (
+                f"{alert_name} {service_name} {namespace} {incident_pattern} {feedback_content}"
+            )
+            embedding = await self.embeddings_service.embed_text(text_to_embed)
+
+        entry = MemoryEntry(
+            namespace=namespace,
+            service_name=service_name,
+            alert_name=alert_name,
+            incident_pattern=incident_pattern,
+            operator_feedback=feedback_content,
+            action_rule=feedback_content,
+        )
+
+        memory_id = await self.memory_repository.save_memory(entry, embedding=embedding)
+        success_msg = (
+            f"🧠 <b>Regla aprendida y registrada en PostgreSQL</b> (ID: <code>{memory_id}</code>)\n\n"
+            f"• <b>Servicio:</b> <code>{html.escape(service_name)}</code> ({html.escape(namespace)})\n"
+            f"• <b>Regla:</b> <i>{html.escape(feedback_content)}</i>\n\n"
+            f"LYOKO aplicará esta directriz semántica en los próximos incidentes."
+        )
+        await msg.reply_text(
+            success_msg,
+            parse_mode="HTML",
+            reply_to_message_id=msg.message_id,
+            allow_sending_without_reply=True,
+        )
+
     async def _handle_callback_query(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -427,17 +520,24 @@ class TelegramConnector(ChatConnector):
         action_type = parts[0]
         incident_id = parts[1] if len(parts) > 1 else ""
         approved = action_type.lower() == "approve"
+        is_feedback = action_type.lower() in ["feedback", "teach", "redirect"]
+
+        reason = (
+            "User confirmed via Telegram button"
+            if approved
+            else (
+                "User requested redirection / teaching new rule"
+                if is_feedback
+                else "User rejected via Telegram button"
+            )
+        )
 
         response = ApprovalResponse(
             incident_id=incident_id,
             approved=approved,
             user_id=user_id,
             action_id=action_type,
-            reason=(
-                "User confirmed via Telegram button"
-                if approved
-                else "User rejected via Telegram button"
-            ),
+            reason=reason,
         )
 
         for handler in self._approval_handlers:
@@ -446,16 +546,27 @@ class TelegramConnector(ChatConnector):
             except Exception as exc:
                 logger.error("Error executing approval handler: %s", exc)
 
-        status_text = "✅ Approved" if approved else "❌ Rejected"
+        user_name = html.escape(update.effective_user.first_name or user_id)
+        if approved:
+            status_text = f"✅ <b>Approved</b> by admin ({user_name})."
+        elif is_feedback:
+            status_text = (
+                f"💡 <b>Redirection / Teaching mode activated</b> by {user_name}.\n\n"
+                f"👉 <i>Responde a este mensaje o escribe:</i>\n"
+                f"<code>/feedback &lt;tu corrección o regla para este servicio&gt;</code>"
+            )
+        else:
+            status_text = f"❌ <b>Rejected</b> by admin ({user_name})."
+
         current_text = (
             query.message.text
             if query.message and hasattr(query.message, "text") and query.message.text
             else ""
         )
         if current_text:
-            new_text = f"{current_text}\n\n<b>Result:</b> {status_text} by admin ({html.escape(update.effective_user.first_name or user_id)})."
+            new_text = f"{current_text}\n\n<b>Result:</b> {status_text}"
         else:
-            new_text = f"<b>Result:</b> {status_text} by admin ({html.escape(update.effective_user.first_name or user_id)})."
+            new_text = f"<b>Result:</b> {status_text}"
         try:
             await query.edit_message_text(new_text, parse_mode="HTML")
         except Exception as edit_err:
@@ -476,8 +587,9 @@ class TelegramConnector(ChatConnector):
         )
         self._app.add_handler(CommandHandler("start", self._handle_telegram_message))
         self._app.add_handler(CommandHandler("help", self._handle_telegram_message))
-        self._app.add_handler(CommandHandler("status", self._handle_telegram_message))
         self._app.add_handler(CommandHandler("new", self._handle_telegram_message))
+        self._app.add_handler(CommandHandler("feedback", self._handle_telegram_message))
+        self._app.add_handler(CommandHandler("teach", self._handle_telegram_message))
         self._app.add_handler(MessageHandler(filters.COMMAND, self._handle_telegram_message))
         self._app.add_handler(CallbackQueryHandler(self._handle_callback_query))
 
