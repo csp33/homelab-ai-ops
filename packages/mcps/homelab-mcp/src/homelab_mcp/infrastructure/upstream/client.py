@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import shlex
 from contextlib import AsyncExitStack
 from typing import Any
 
@@ -33,9 +34,12 @@ class ProcessUpstreamClient(UpstreamMCPInterface):
         self._exit_stack: AsyncExitStack | None = None
 
     def _get_server_params(self) -> StdioServerParameters:
+        parts = shlex.split(self.command) if self.command else []
+        cmd = parts[0] if parts else self.command
+        args = parts[1:] + self.args
         return StdioServerParameters(
-            command=self.command,
-            args=self.args,
+            command=cmd,
+            args=args,
             env=self.env,
         )
 
