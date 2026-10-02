@@ -4,7 +4,7 @@ import json
 from typing import Any
 from urllib.parse import quote_plus
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -43,7 +43,9 @@ class AgentSettings(BaseSettings):
         description="List of authorized Telegram user IDs allowed to interact with the bot",
     )
     telegram_default_chat_id: str | None = Field(
-        default=None, description="Default Telegram Chat ID for broadcast notifications"
+        default=None,
+        validation_alias=AliasChoices("telegram_default_chat_id", "telegram_chat_id"),
+        description="Default Telegram Chat ID for broadcast notifications and alerts",
     )
 
     # Guardrails
