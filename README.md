@@ -9,130 +9,115 @@
 
 Autonomous **Homelab AIOps & Operations Platform** designed for Kubernetes homelabs and smart infrastructure, powered by **FastMCP** and **LangGraph**.
 
----
+[Architecture](#architecture) · [Packages](#packages) · [Quick Start](#quick-start) · [Security](#security)
 
-## 🏛️ System Architecture
+## Architecture
+
+Two packages, one trust boundary. Every tool call, whether it comes from the LYOKO agent or from an IDE, goes through the `homelab-mcp` gateway, where authentication and guardrails are enforced before anything reaches an upstream system.
 
 ```mermaid
-flowchart TD
-    subgraph Trigger_Layer ["1. Trigger & Client Layer"]
-        AM["🔔 Prometheus Alertmanager<br/>(Firing Alerts / OOMKilled)"]
-        IDE["💻 Developer IDEs / Agents<br/>(Antigravity, Cursor, Claude)"]
-    end
+flowchart LR
+    AM([Alertmanager])
+    IDE([IDEs and MCP clients])
+    TG([Telegram operator])
 
-    subgraph Autonomous_Agent ["2. Cognitive Loop — LYOKO"]
+    subgraph LYOKO["LYOKO agent"]
         direction TB
-        WH["⚡ FastAPI Webhook Controller<br/><code>/webhook/alertmanager</code>"]
-        LG{"🤖 LangGraph StateGraph<br/>(Diagnose ➔ Request Approval ➔ Remediate ➔ Verify ➔ Notify)"}
+        WH[Webhook controller]
+        LG[LangGraph workflow]
+        CHAT[Chat assistant]
         WH --> LG
     end
 
-    subgraph Gateway_Layer ["3. Tool Gateway & Safety Harness — homelab-mcp"]
+    subgraph GW["homelab-mcp gateway"]
         direction TB
-        SEC["🔐 Auth & OIDC Verifier<br/>(Google JWT / Bearer Token)"]
-        GR["🛡️ Guardrail Engine<br/>(Namespace Protection, Command Regex, Tool Allowlist)"]
-        MUX["🔀 Upstream Process Multiplexer<br/>(Parallel Tool Discovery & Routing)"]
-        SEC --> GR --> MUX
+        AUTH[Auth verifier]
+        GR[Guardrail engine]
+        MUX[Upstream router]
+        AUTH --> GR --> MUX
     end
 
-    subgraph Upstream_Servers ["4. Upstream MCP Adapters"]
-        K8S_MCP["☸️ kubernetes-mcp-server"]
-        HA_MCP["🏠 homeassistant-ai/ha-mcp"]
-        UNIFI_MCP["🌐 sirkirby/unifi-mcp"]
+    subgraph UP["Upstream MCP servers"]
+        direction TB
+        K8S[Kubernetes]
+        HA[Home Assistant]
+        UNIFI[UniFi]
+        GRAF[Grafana]
+        GH[GitHub]
     end
 
-    subgraph Homelab_Infra ["5. Physical & Virtual Homelab Infrastructure"]
-        K8S[("☸️ Kubernetes Cluster<br/>(Pods, Deployments, RBAC)")]
-        HASS[("🏠 Home Assistant<br/>(Sensors, Lights, Automations)")]
-        UDM[("🌐 UniFi Network / UDM<br/>(Gateways, APs, Switches)")]
-        TG["📱 Telegram Messenger<br/>(Incident Reports, Assistant & HITL)"]
-    end
+    AM -->|webhook| WH
+    IDE -->|HTTP or stdio| AUTH
+    LG -->|MCP client| AUTH
+    CHAT -->|MCP client| AUTH
+    LG <-->|approvals| TG
+    CHAT <-->|chat| TG
+    MUX --> K8S & HA & UNIFI & GRAF & GH
 
-    AM -->|POST JSON Webhook| WH
-    IDE -->|Streamable HTTP / stdio| SEC
-    LG -->|FastMCP Client Calls| SEC
+    classDef external fill:#64748b,stroke:#334155,color:#fff;
+    classDef agent fill:#7c3aed,stroke:#4c1d95,color:#fff;
+    classDef gateway fill:#0f766e,stroke:#134e4a,color:#fff;
+    classDef upstream fill:#b45309,stroke:#78350f,color:#fff;
 
-    MUX -->|Process Stdio Proxy| K8S_MCP --> K8S
-    MUX -->|Process Stdio Proxy| HA_MCP --> HASS
-    MUX -->|Process Stdio Proxy| UNIFI_MCP --> UDM
-    LG <-->|HITL Approvals & Chat| TG
-
-    classDef client fill:#e1f5fe,stroke:#0288d1,stroke-width:1px,color:#01579b;
-    classDef agent fill:#ede7f6,stroke:#7e57c2,stroke-width:1px,color:#311b92;
-    classDef gateway fill:#e0f2f1,stroke:#26a69a,stroke-width:1px,color:#004d40;
-    classDef upstream fill:#fff3e0,stroke:#ff9800,stroke-width:1px,color:#e65100;
-    classDef infra fill:#eceff1,stroke:#607d8b,stroke-width:1px,color:#263238;
-
-    class AM,IDE client;
-    class WH,LG agent;
-    class SEC,GR,MUX gateway;
-    class K8S_MCP,HA_MCP,UNIFI_MCP upstream;
-    class K8S,HASS,UDM,TG infra;
+    class AM,IDE,TG external;
+    class WH,LG,CHAT agent;
+    class AUTH,GR,MUX gateway;
+    class K8S,HA,UNIFI,GRAF,GH upstream;
 ```
 
----
+### Remediation flow
 
-## ⚡ Incident Remediation Lifecycle (with HITL Approval)
+A pod is killed for exceeding its memory limit. LYOKO diagnoses it, asks a human, patches the deployment through the gateway, verifies recovery, and reports back.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Alertmanager as 🔔 Alertmanager
-    participant LYOKO as 🤖 LYOKO Agent
-    participant Gateway as 🛡️ homelab-mcp Gateway
-    actor Operator as 👤 Homelab Operator (Telegram)
-    participant K8s as ☸️ Kubernetes Cluster
+    participant AM as Alertmanager
+    participant L as LYOKO
+    participant G as homelab-mcp
+    participant O as Operator (Telegram)
+    participant K as Kubernetes
 
-    Alertmanager->>LYOKO: Webhook: Pod OOMKilled / CrashLoop (Target: memory-hungry-app)
-    activate LYOKO
-    LYOKO->>Gateway: call_tool("k8s_get_pod_diagnostics", {namespace, pod})
-    Gateway->>Gateway: Validate Guardrail Policy (Allowed Tool & Namespace)
-    Gateway->>K8s: Fetch Pod Logs & Exit Codes (137 OOM)
-    K8s-->>Gateway: Return Pod Diagnostics & Logs
-    Gateway-->>LYOKO: Return Diagnostic Payload
-    
-    LYOKO->>LYOKO: LLM Analysis: Diagnose root cause as OOMKilled
-    LYOKO->>Operator: Telegram HITL Prompt: [✅ Approve (1Gi Bump)] [❌ Deny]
-    Operator-->>LYOKO: Inline Button Click: Approved
-    LYOKO->>Gateway: call_tool("k8s_bump_deployment_resources", {memory_limit: "1Gi"})
-    Gateway->>Gateway: Guardrail Check: Namespace != kube-system & Resource within limits
-    Gateway->>K8s: Apply Live Patch (Limits: 1Gi, Requests: 512Mi)
-    K8s-->>Gateway: Patch Acknowledged
-    Gateway-->>LYOKO: Deployment Updated
+    AM->>L: POST /webhook/alertmanager (OOMKilled)
+    L->>G: k8s_get_pod_diagnostics
+    G->>K: Read pod status and logs
+    K-->>G: Exit code 137
+    G-->>L: Diagnostics
+    L->>L: LLM root-cause analysis
+    L->>O: Approval request (Approve / Deny)
 
-    LYOKO->>LYOKO: Sleep verification interval (e.g. 5s)
-    LYOKO->>Gateway: call_tool("k8s_get_pod_diagnostics", {namespace, pod})
-    Gateway->>K8s: Probe Pod Status
-    K8s-->>Gateway: Status: Running (0 Restarts)
-    Gateway-->>LYOKO: Healthy
+    alt Approved
+        O-->>L: Approve
+        L->>G: k8s_bump_deployment_resources (1Gi)
+        G->>G: Guardrail check
+        G->>K: Patch deployment
+        L->>L: Wait for stabilization
+        L->>G: k8s_get_pod_diagnostics
+        G-->>L: Pod running
+    else Denied or timed out
+        O-->>L: Deny
+        Note over L: No mutation, incident escalated
+    end
 
-    LYOKO->>Operator: Telegram Incident Report: Incident Resolved (1Gi BUMP)
-    deactivate LYOKO
-
+    L->>O: Incident report
 ```
 
----
+## Packages
 
-## 📦 Packages in this Monorepo
+| Package | Role | Description |
+| :--- | :--- | :--- |
+| [`homelab-mcp`](packages/mcps/homelab-mcp) | Tool gateway | FastMCP gateway that aggregates upstream MCP servers behind authentication and safety guardrails. |
+| [`lyoko`](packages/agents/lyoko) | Autonomous agent | Event-driven remediation agent built with LangGraph and FastAPI, with a Telegram chat assistant. |
 
-| Package | Path | Type | Description |
-| :--- | :--- | :--- | :--- |
-| **`homelab-mcp`** | [`packages/mcps/homelab-mcp`](packages/mcps/homelab-mcp) | **Gateway & Safety Harness** | Aggregated **FastMCP Gateway** proxying upstream tools (`ha-mcp`, `unifi-mcp`, `kubernetes-mcp-server`) with multi-tenant auth and safety guardrails. |
-| **`lyoko`** | [`packages/agents/lyoko`](packages/agents/lyoko) | **Autonomous Agent** | Event-driven auto-remediation agent built with **LangGraph** StateGraph state machine and **FastAPI**. |
+## Features
 
----
+- **Guardrails**: block destructive commands (`rm -rf`, `mkfs`, fork bombs), mutations in protected namespaces (`kube-system`), and tools outside the allowlist.
+- **Self-healing**: automated diagnosis and remediation for `OOMKilled` and `CrashLoopBackOff`, with human approval before any change.
+- **One gateway**: Kubernetes, Home Assistant, UniFi, Grafana, and GitHub tools behind a single endpoint over Streamable HTTP (`/mcp`) and stdio.
+- **Authentication**: Google OIDC and bearer-token verification for users and agents.
+- **Reproducible toolchain**: Python 3.13+, `uv` workspace, `ruff`.
 
-## ✨ Key Features
-
-- **🛡️ Strict Safety Guardrails**: Built-in engine preventing destructive commands (`rm -rf`, `mkfs`, fork bombs), mutation in protected namespaces (`kube-system`), and unapproved tool invocations.
-- **🔄 Event-Driven Self-Healing**: Automated diagnosis and remediation loops for common Kubernetes incident classes (`OOMKilled`, `CrashLoopBackOff`).
-- **🔀 Unified FastMCP Gateway**: Single endpoint exposing Kubernetes, Home Assistant, and UniFi Network tools over Streamable HTTP (`/mcp`) and stdio.
-- **🔐 Enterprise-Grade Authentication**: Google OIDC and token verification ensuring only authorized users and agents can execute infrastructure tools.
-- **⚡ Modern Python Toolchain**: Built on Python 3.13+, managed deterministically via `uv` workspaces, and styled with `ruff`.
-
----
-
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Prerequisites
 
@@ -203,9 +188,7 @@ uv run pytest
 uv run ruff check .
 ```
 
----
-
-## 🔒 Security & Safety Harness
+## Security
 
 > [!IMPORTANT]
 > This platform executes real operations on physical infrastructure and Kubernetes clusters. Safety guardrails are enforced at the gateway application layer before any upstream tool execution.
