@@ -3,7 +3,7 @@
 import json
 from typing import Any
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -106,6 +106,18 @@ class GatewaySettings(BaseSettings):
     github_blocked_repos: list[str] | str = Field(
         default_factory=list,
         description="Blocked repositories glob patterns (e.g. ['*/secrets-*'])",
+    )
+
+    # Telegram Bot settings
+    telegram_enabled: bool = Field(
+        default=False, description="Enable Telegram notifications and alerts"
+    )
+    telegram_bot_token: SecretStr | None = Field(
+        default=None, description="Telegram Bot Token from @BotFather"
+    )
+    telegram_default_chat_id: str | None = Field(
+        default=None, description="Default Telegram Chat ID for alerts and messages"
+    )
     )
 
     # Security & Guardrails
