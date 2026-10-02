@@ -99,9 +99,32 @@ def create_gateway_mcp_server(
     )
 
     @mcp.tool()
-    async def gateway_list_tools() -> list[dict[str, Any]]:
-        """List all operational tools aggregated from connected upstream MCP servers."""
+    async def gateway_list_categories() -> list[dict[str, Any]]:
+        """List all connected upstream MCP categories and their available tool counts."""
         tools = await service.discover_tools()
+        counts: dict[str, int] = {}
+        for t in tools:
+            key = str(t.upstream_type)
+            counts[key] = counts.get(key, 0) + 1
+        return [{"upstream": k, "tool_count": v} for k, v in sorted(counts.items())]
+
+    @mcp.tool()
+    async def gateway_list_tools(upstream: str | None = None) -> list[dict[str, Any]]:
+        """List operational tools aggregated from connected upstream MCP servers, optionally filtered by upstream category (e.g. 'homeassistant', 'unifi', 'kubernetes', 'grafana', 'github').
+
+        Args:
+            upstream: Optional upstream name to filter tools by category.
+        """
+        tools = await service.discover_tools()
+        if upstream:
+            target = upstream.strip().lower()
+            tools = [
+                t
+                for t in tools
+                if target == str(t.upstream_type).lower()
+                or target in str(t.upstream_type).lower()
+                or target in t.name.lower()
+            ]
         return [
             {
                 "name": t.name,
