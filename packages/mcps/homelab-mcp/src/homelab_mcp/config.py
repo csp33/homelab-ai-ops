@@ -95,7 +95,8 @@ class GatewaySettings(BaseSettings):
     # Upstream: GitHub MCP (github.com/github/github-mcp-server or modelcontextprotocol/server-github)
     github_enabled: bool = Field(default=True, description="Enable GitHub MCP upstream")
     github_command: str = Field(
-        default="github-mcp-server", description="Command to launch github-mcp-server"
+        default="npx -y @modelcontextprotocol/server-github",
+        description="Command to launch GitHub MCP server",
     )
     github_token: str = Field(default="", description="GitHub Personal Access Token")
     github_owner: str = Field(default="", description="Default GitHub owner or organization")

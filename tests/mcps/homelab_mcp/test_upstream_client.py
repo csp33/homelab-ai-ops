@@ -26,6 +26,29 @@ def test_process_upstream_client_params():
     assert params.env["KUBECONFIG"] == "/tmp/kubeconfig"
 
 
+def test_process_upstream_client_params_multi_word_command():
+    client = ProcessUpstreamClient(
+        command="npx -y @grafana/mcp-server@latest",
+        upstream_type=UpstreamType.GRAFANA,
+    )
+
+    params = client._get_server_params()
+    assert params.command == "npx"
+    assert params.args == ["-y", "@grafana/mcp-server@latest"]
+
+
+def test_process_upstream_client_params_multi_word_with_args():
+    client = ProcessUpstreamClient(
+        command="npx -y @modelcontextprotocol/server-github",
+        args=["--verbose"],
+        upstream_type=UpstreamType.GITHUB,
+    )
+
+    params = client._get_server_params()
+    assert params.command == "npx"
+    assert params.args == ["-y", "@modelcontextprotocol/server-github", "--verbose"]
+
+
 @pytest.mark.asyncio
 async def test_list_tools_reads_input_schema():
     client = ProcessUpstreamClient(

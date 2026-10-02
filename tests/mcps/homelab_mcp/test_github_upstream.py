@@ -63,6 +63,13 @@ async def test_github_tools_discovery_and_execution(mock_auth):
     )
 
 
+def test_gateway_settings_github_defaults():
+    settings = GatewaySettings()
+    assert settings.github_enabled is True
+    assert "server-github" in settings.github_command
+    assert settings.github_token == ""
+
+
 def test_build_gateway_application_with_github():
     custom_settings = GatewaySettings(
         ha_enabled=False,
@@ -70,7 +77,7 @@ def test_build_gateway_application_with_github():
         k8s_enabled=False,
         github_enabled=True,
         github_token="ghp_mock_token_12345",
-        github_command="github-mcp-server",
+        github_command="npx -y @modelcontextprotocol/server-github",
         github_owner="csp33",
     )
 
@@ -78,7 +85,7 @@ def test_build_gateway_application_with_github():
         service, app = build_gateway_application()
         assert UpstreamType.GITHUB in service.upstreams
         client = service.upstreams[UpstreamType.GITHUB]
-        assert client.command == "github-mcp-server"
+        assert client.command == "npx -y @modelcontextprotocol/server-github"
         assert client.upstream_type == UpstreamType.GITHUB
         assert client.env.get("GITHUB_PERSONAL_ACCESS_TOKEN") == "ghp_mock_token_12345"
         assert client.env.get("GITHUB_OWNER") == "csp33"
