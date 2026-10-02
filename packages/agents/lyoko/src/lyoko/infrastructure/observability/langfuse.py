@@ -29,7 +29,15 @@ class LangfuseTracer(TracerInterface):
 
     def _init_client(self) -> None:
         try:
+            import os
             from langfuse import Langfuse
+
+            if self._public_key:
+                os.environ["LANGFUSE_PUBLIC_KEY"] = self._public_key
+            if self._secret_key:
+                os.environ["LANGFUSE_SECRET_KEY"] = self._secret_key
+            if self._host:
+                os.environ["LANGFUSE_HOST"] = self._host
 
             self._client = Langfuse(
                 public_key=self._public_key,
