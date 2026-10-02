@@ -91,6 +91,8 @@ class AgentSettings(BaseSettings):
     @field_validator("telegram_allowed_user_ids", "telegram_allowed_chat_ids", mode="before")
     @classmethod
     def parse_allowed_ids(cls, v: Any) -> list[str]:
+        if isinstance(v, (int, float)):
+            return [str(v)]
         if isinstance(v, str):
             v = v.strip()
             if v.startswith("[") and v.endswith("]"):
@@ -99,7 +101,7 @@ class AgentSettings(BaseSettings):
                 except Exception:
                     pass
             return [item.strip() for item in v.split(",") if item.strip()]
-        if isinstance(v, list):
+        if isinstance(v, (list, tuple, set)):
             return [str(x) for x in v]
         return v or []
 
