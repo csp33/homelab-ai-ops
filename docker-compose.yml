@@ -3,10 +3,6 @@ services:
     image: postgres:17-alpine
     container_name: homelab-aiops-postgres
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-lyoko}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lyoko}
-      POSTGRES_DB: ${POSTGRES_DB:-lyoko}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -16,6 +12,13 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lyoko}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lyoko}
+      POSTGRES_DB: ${POSTGRES_DB:-lyoko}
+    env_file:
+      - path: .env
+        required: false
 
   homelab-mcp:
     build:
@@ -28,21 +31,6 @@ services:
     environment:
       MCP_HOST: "0.0.0.0"
       MCP_PORT: "8000"
-      MCP_TRANSPORT: ${MCP_TRANSPORT:-http}
-      AUTH_ENABLED: ${AUTH_ENABLED:-false}
-      SERVICE_TOKEN: ${SERVICE_TOKEN:-}
-      HASS_ENABLED: ${HASS_ENABLED:-false}
-      HASS_URL: ${HASS_URL:-}
-      HASS_TOKEN: ${HASS_TOKEN:-}
-      UNIFI_ENABLED: ${UNIFI_ENABLED:-false}
-      UNIFI_URL: ${UNIFI_URL:-}
-      UNIFI_USER: ${UNIFI_USER:-}
-      UNIFI_PASSWORD: ${UNIFI_PASSWORD:-}
-      K8S_ENABLED: ${K8S_ENABLED:-false}
-      TELEGRAM_ENABLED: ${TELEGRAM_ENABLED:-true}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_DEFAULT_CHAT_ID: ${TELEGRAM_DEFAULT_CHAT_ID:-}
-      TELEGRAM_CHAT_ID: ${TELEGRAM_DEFAULT_CHAT_ID:-}
     env_file:
       - path: .env
         required: false
@@ -64,22 +52,8 @@ services:
       LYOKO_HOST: "0.0.0.0"
       LYOKO_PORT: "9000"
       MCP_SERVER_URL: "http://homelab-mcp:8000/mcp"
-      SERVICE_TOKEN: ${SERVICE_TOKEN:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       POSTGRES_HOST: "postgres"
-      POSTGRES_PORT: "5432"
-      POSTGRES_USER: ${POSTGRES_USER:-lyoko}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lyoko}
-      POSTGRES_DB: ${POSTGRES_DB:-lyoko}
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
-      LANGFUSE_HOST: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
-      TELEGRAM_ENABLED: ${TELEGRAM_ENABLED:-true}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_DEFAULT_CHAT_ID: ${TELEGRAM_DEFAULT_CHAT_ID:-}
-      TELEGRAM_ALLOWED_USER_IDS: ${TELEGRAM_ALLOWED_USER_IDS:-}
-      TELEGRAM_ALLOWED_CHAT_IDS: ${TELEGRAM_ALLOWED_CHAT_IDS:-}
     env_file:
       - path: .env
         required: false
