@@ -101,9 +101,16 @@ cd "$path"
 
 ## Step 2: Project Setup
 
-Auto-detect and run appropriate setup:
+# Copy .env from parent / common repository checkout if not present
+MAIN_REPO_DIR=$(git rev-parse --show-toplevel 2>/dev/null)
+COMMON_GIT_DIR=$(git rev-parse --git-common-dir 2>/dev/null)
+if [ -n "$COMMON_GIT_DIR" ]; then
+    ROOT_REPO=$(cd "$COMMON_GIT_DIR/.." 2>/dev/null && pwd -P)
+    if [ -f "$ROOT_REPO/.env" ] && [ ! -f ".env" ]; then
+        cp "$ROOT_REPO/.env" ".env"
+    fi
+fi
 
-```bash
 # Node.js
 if [ -f package.json ]; then npm install; fi
 
