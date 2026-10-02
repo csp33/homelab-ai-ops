@@ -142,3 +142,208 @@ async def test_google_jwt_verifier_rejected_email():
         )
         token = await verifier.load_access_token("token123")
         assert token is None
+
+
+def test_auth_hs256_jwt_with_jwt_secret_success():
+    import jwt
+
+    secret = "my-custom-jwt-secret-key-1234567890-secure-32bytes"
+    token = jwt.encode(
+        {"email": "admin@cspaez.org", "name": "Admin User", "sub": "12345"},
+        secret,
+        algorithm="HS256",
+    )
+
+    verifier = GoogleAuthVerifier()
+    with (
+        patch("homelab_mcp.infrastructure.auth.google.settings.auth_enabled", True),
+        patch("homelab_mcp.infrastructure.auth.google.settings.jwt_secret", secret),
+        patch(
+            "homelab_mcp.infrastructure.auth.google.settings.allowed_google_emails",
+            ["admin@cspaez.org"],
+        ),
+    ):
+        res = verifier.verify(token)
+        assert res.authenticated is True
+        assert res.user == "admin@cspaez.org"
+        assert res.name == "Admin User"
+        assert res.auth_type == "jwt_hs256"
+
+
+def test_auth_hs256_jwt_with_google_client_secret_fastmcp_token_success():
+    from fastmcp.server.auth.jwt_issuer import JWTIssuer, derive_jwt_key
+
+    client_secret = "google-oauth-client-secret-xyz123-very-secure-32bytes"
+    signing_key = derive_jwt_key(
+        high_entropy_material=client_secret, salt="fastmcp-jwt-signing-key"
+    )
+    issuer = JWTIssuer(
+        issuer="http://localhost:8080",
+        audience="http://localhost:8080/mcp",
+        signing_key=signing_key,
+    )
+    token = issuer.issue_access_token(
+        client_id="admin@cspaez.org",
+        scopes=["openid", "email"],
+        jti="sample-jti-uuid",
+        upstream_claims={"email": "admin@cspaez.org", "name": "Admin FastMCP"},
+    )
+
+    verifier = GoogleAuthVerifier()
+    with (
+        patch("homelab_mcp.infrastructure.auth.google.settings.auth_enabled", True),
+        patch(
+            "homelab_mcp.infrastructure.auth.google.settings.google_client_secret", client_secret
+        ),
+        patch(
+            "homelab_mcp.infrastructure.auth.google.settings.allowed_google_emails",
+            ["admin@cspaez.org"],
+        ),
+    ):
+        res = verifier.verify(token)
+        assert res.authenticated is True
+        assert res.user == "admin@cspaez.org"
+        assert res.name == "Admin FastMCP"
+        assert res.auth_type == "jwt_hs256"
+
+
+def test_auth_hs256_jwt_with_service_token_secret_success():
+    import jwt
+
+    srv_secret = "shared-service-token-hmac-key-32bytes-long-secret"
+    token = jwt.encode(
+        {"user": "lyoko-agent", "role": "remediator"},
+        srv_secret,
+        algorithm="HS256",
+    )
+
+    verifier = GoogleAuthVerifier()
+    with (
+        patch("homelab_mcp.infrastructure.auth.google.settings.auth_enabled", True),
+        patch("homelab_mcp.infrastructure.auth.google.settings.service_token", srv_secret),
+        patch("homelab_mcp.infrastructure.auth.google.settings.allowed_google_emails", []),
+    ):
+        res = verifier.verify(token)
+        assert res.authenticated is True
+        assert res.user == "lyoko-agent"
+        assert res.auth_type == "jwt_hs256"
+
+
+def test_auth_hs256_jwt_unauthorized_email():
+    import jwt
+
+    secret = "my-custom-jwt-secret-at-least-32-bytes-long-now"
+    token = jwt.encode(
+        {"email": "unauthorized@gmail.com", "name": "Unauthorized User"},
+        secret,
+        algorithm="HS256",
+    )
+
+    verifier = GoogleAuthVerifier()
+    with (
+        patch("homelab_mcp.infrastructure.auth.google.settings.auth_enabled", True),
+        patch("homelab_mcp.infrastructure.auth.google.settings.jwt_secret", secret),
+        patch(
+            "homelab_mcp.infrastructure.auth.google.settings.allowed_google_emails",
+            ["admin@cspaez.org"],
+        ),
+        pytest.raises(AuthenticationError) as exc,
+    ):
+        verifier.verify(token)
+    assert "not in the allowed emails list" in str(exc.value)
+
+
+def test_auth_hs256_jwt_expired_raises_error():
+    import time
+
+    import jwt
+
+    secret = "my-custom-jwt-secret-at-least-32-bytes-long-now"
+    token = jwt.encode(
+        {"email": "admin@cspaez.org", "exp": int(time.time()) - 100},
+        secret,
+        algorithm="HS256",
+    )
+
+    verifier = GoogleAuthVerifier()
+    with (
+        patch("homelab_mcp.infrastructure.auth.google.settings.auth_enabled", True),
+        patch("homelab_mcp.infrastructure.auth.google.settings.jwt_secret", secret),
+        pytest.raises(AuthenticationError) as exc,
+    ):
+        verifier.verify(token)
+    assert "expired" in str(exc.value).lower()
+
+
+def test_auth_hs256_jwt_invalid_signature_raises_error():
+    import jwt
+
+    token = jwt.encode(
+        {"email": "admin@cspaez.org"},
+        "wrong-secret-key-with-at-least-32-bytes-for-hmac",
+        algorithm="HS256",
+    )
+
+    verifier = GoogleAuthVerifier()
+    with (
+        patch("homelab_mcp.infrastructure.auth.google.settings.auth_enabled", True),
+        patch(
+            "homelab_mcp.infrastructure.auth.google.settings.jwt_secret",
+            "correct-secret-key-with-at-least-32-bytes-hmac",
+        ),
+        pytest.raises(AuthenticationError) as exc,
+    ):
+        verifier.verify(token)
+    assert "Invalid HS256 signature" in str(exc.value)
+
+
+def test_auth_hs256_jwt_no_secrets_configured_raises_error():
+    import jwt
+
+    token = jwt.encode(
+        {"email": "admin@cspaez.org"},
+        "some-secret-key-that-is-at-least-32-bytes-long",
+        algorithm="HS256",
+    )
+
+    verifier = GoogleAuthVerifier()
+    with (
+        patch("homelab_mcp.infrastructure.auth.google.settings.auth_enabled", True),
+        patch("homelab_mcp.infrastructure.auth.google.settings.jwt_secret", ""),
+        patch("homelab_mcp.infrastructure.auth.google.settings.google_client_secret", ""),
+        patch("homelab_mcp.infrastructure.auth.google.settings.service_token", ""),
+        pytest.raises(AuthenticationError) as exc,
+    ):
+        verifier.verify(token)
+    assert "No HMAC secret key configured" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_gateway_token_verifier_with_hs256_token():
+    from unittest.mock import MagicMock
+
+    import jwt
+    from homelab_mcp.application.service import MCPGatewayService
+    from homelab_mcp.infrastructure.mcp.server import GatewayTokenVerifier
+
+    secret = "mcp-shared-secret-key-1234567890-at-least-32-chars"
+    token = jwt.encode(
+        {"email": "admin@cspaez.org", "name": "Admin Paez"},
+        secret,
+        algorithm="HS256",
+    )
+
+    service = MagicMock(spec=MCPGatewayService)
+    verifier = GoogleAuthVerifier()
+    with (
+        patch("homelab_mcp.infrastructure.auth.google.settings.auth_enabled", True),
+        patch("homelab_mcp.infrastructure.auth.google.settings.jwt_secret", secret),
+        patch("homelab_mcp.infrastructure.auth.google.settings.allowed_google_emails", []),
+    ):
+        service.verify_access.side_effect = verifier.verify
+        gateway_verifier = GatewayTokenVerifier(service)
+        access_token = await gateway_verifier.verify_token(token)
+
+        assert access_token is not None
+        assert access_token.client_id == "admin@cspaez.org"
+        assert access_token.token == token
