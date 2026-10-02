@@ -20,6 +20,19 @@ class TelegramMessageRequest(BaseModel):
     parse_mode: str = Field(
         default="Markdown", description="Message parse mode (e.g. Markdown, HTML)"
     )
+    reply_to_message_id: int | str | None = Field(
+        default=None, description="Optional message ID to reply directly to"
+    )
+
+
+class TelegramReactionRequest(BaseModel):
+    chat_id: str | None = Field(
+        default=None, description="Target chat ID, fallback to default if None"
+    )
+    message_id: int = Field(..., description="Message ID to set reaction on")
+    emoji: str = Field(
+        default="👀", description="Emoji to react with (e.g. '👀', '⚡', '👍', '🔥', '🎉')"
+    )
 
 
 class TelegramAlertRequest(BaseModel):

@@ -56,6 +56,7 @@ async def test_telegram_connector_incoming_message_handler():
     mock_update.effective_chat.id = 12345
     mock_update.message.message_id = 42
     mock_update.message.text = "/status"
+    mock_update.message.set_reaction = AsyncMock()
     mock_update.message.reply_text = AsyncMock()
 
     await connector._handle_telegram_message(mock_update, MagicMock())
@@ -64,7 +65,10 @@ async def test_telegram_connector_incoming_message_handler():
     assert received_msgs[0].text == "/status"
     assert received_msgs[0].user.user_id == "12345"
     assert received_msgs[0].user.username == "admin"
-    mock_update.message.reply_text.assert_called_once_with("Acknowledged", parse_mode="HTML")
+    mock_update.message.set_reaction.assert_called_once_with(reaction="👀")
+    mock_update.message.reply_text.assert_called_once_with(
+        "Acknowledged", parse_mode="HTML", reply_to_message_id=42, allow_sending_without_reply=True
+    )
 
 
 @pytest.mark.asyncio
@@ -213,14 +217,33 @@ async def test_telegram_connector_send_message():
     # Explicit chat_id
     await connector.send_message("12345", "Hello")
     mock_app.bot.send_message.assert_called_once_with(
-        chat_id="12345", text="Hello", parse_mode="HTML"
+        chat_id="12345",
+        text="Hello",
+        parse_mode="HTML",
+        reply_to_message_id=None,
+        allow_sending_without_reply=True,
     )
 
     # Default chat_id fallback
     mock_app.bot.send_message.reset_mock()
     await connector.send_message("", "Broadcast")
     mock_app.bot.send_message.assert_called_once_with(
-        chat_id="default_chat", text="Broadcast", parse_mode="HTML"
+        chat_id="default_chat",
+        text="Broadcast",
+        parse_mode="HTML",
+        reply_to_message_id=None,
+        allow_sending_without_reply=True,
+    )
+
+    # With reply_to_message_id
+    mock_app.bot.send_message.reset_mock()
+    await connector.send_message("12345", "Reply text", reply_to_message_id="42")
+    mock_app.bot.send_message.assert_called_once_with(
+        chat_id="12345",
+        text="Reply text",
+        parse_mode="HTML",
+        reply_to_message_id=42,
+        allow_sending_without_reply=True,
     )
 
 
@@ -316,13 +339,13 @@ async def test_chat_manager():
     # Broadcast message
     await manager.broadcast_message("chat_123", "Alert text")
     conn1.send_message.assert_called_once_with(
-        chat_id="chat_123", text="Alert text", parse_mode="Markdown"
+        chat_id="chat_123", text="Alert text", reply_to_message_id=None, parse_mode="Markdown"
     )
     conn2.send_message.assert_called_once_with(
-        chat_id="chat_123", text="Alert text", parse_mode="Markdown"
+        chat_id="chat_123", text="Alert text", reply_to_message_id=None, parse_mode="Markdown"
     )
     conn3.send_message.assert_called_once_with(
-        chat_id="chat_123", text="Alert text", parse_mode="Markdown"
+        chat_id="chat_123", text="Alert text", reply_to_message_id=None, parse_mode="Markdown"
     )
 
     # Broadcast approval request
@@ -342,7 +365,7 @@ async def test_chat_manager():
     conn2.send_message.reset_mock()
     await manager.broadcast_message("chat_123", "Alert text 2")
     conn2.send_message.assert_called_once_with(
-        chat_id="chat_123", text="Alert text 2", parse_mode="Markdown"
+        chat_id="chat_123", text="Alert text 2", reply_to_message_id=None, parse_mode="Markdown"
     )
 
 
@@ -386,7 +409,10 @@ async def test_telegram_connector_channel_post_authorization():
     assert received_msgs[0].chat_id == "-1001234567890"
     assert received_msgs[0].user.user_id == "-1001234567890"
     mock_update.effective_message.reply_text.assert_called_once_with(
-        "Channel response", parse_mode="HTML"
+        "Channel response",
+        parse_mode="HTML",
+        reply_to_message_id=101,
+        allow_sending_without_reply=True,
     )
 
 

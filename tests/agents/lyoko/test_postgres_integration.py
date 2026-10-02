@@ -3,7 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.main import create_app, lifespan
 
@@ -28,7 +28,7 @@ async def test_postgres_checkpointer_integration_with_local_container():
     )
 
     with (
-        patch("lyoko.main.settings.postgres_uri", "postgresql://lyoko:lyoko@localhost:5432/lyoko"),
+        patch("lyoko.main.settings.postgres_uri", "postgresql://lyoko:lyoko@127.0.0.1:5432/lyoko"),
         patch("lyoko.main.FastMCPClient", return_value=mock_mcp),
         patch("lyoko.main.build_llm_adapter", return_value=mock_llm),
     ):
@@ -37,16 +37,20 @@ async def test_postgres_checkpointer_integration_with_local_container():
                 # Ensure checkpointer is initialized
                 assert app.state.checkpointer is not None
 
-                client = TestClient(app)
-                health = client.get("/healthz")
-                assert health.status_code == 200
-                assert health.json()["postgres_checkpointer"] is True
+                async with AsyncClient(
+                    transport=ASGITransport(app=app), base_url="http://test"
+                ) as client:
+                    health = await client.get("/healthz")
+                    assert health.status_code == 200
+                    assert health.json()["postgres_checkpointer"] is True
 
                 # Test workflow invocation through state engine
                 engine = app.state.workflow_engine
+                approval_mgr = app.state.approval_manager
                 with patch("lyoko.application.workflow.settings.verification_delay_seconds", 0):
                     config = {"configurable": {"thread_id": "test-integration-incident-001"}}
                     initial_state = {
+                        "incident_id": "media-sonarr-test",
                         "namespace": "media",
                         "pod_name": "sonarr-test",
                         "deployment_name": "sonarr",
@@ -58,6 +62,24 @@ async def test_postgres_checkpointer_integration_with_local_container():
                         "is_resolved": False,
                         "requires_escalation": False,
                     }
+
+                    if approval_mgr:
+                        import asyncio
+
+                        from lyoko.domain.models.chat import ApprovalResponse
+
+                        async def auto_approve():
+                            await asyncio.sleep(0.05)
+                            approval_mgr.resolve_approval(
+                                ApprovalResponse(
+                                    incident_id="media-sonarr-test",
+                                    approved=True,
+                                    user_id="admin",
+                                )
+                            )
+
+                        asyncio.create_task(auto_approve())
+
                     result = await engine.ainvoke(initial_state, config=config)
                     assert result["is_resolved"] is True
 

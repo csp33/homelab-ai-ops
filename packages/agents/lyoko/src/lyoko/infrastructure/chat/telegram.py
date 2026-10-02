@@ -188,9 +188,40 @@ class TelegramConnector(ChatConnector):
             if chat_type != "channel":
                 with contextlib.suppress(Exception):
                     await msg.reply_text(
-                        "⛔ Access denied. Your user ID or chat is not authorized."
+                        "⛔ Access denied. Your user ID or chat is not authorized.",
+                        reply_to_message_id=msg.message_id,
+                        allow_sending_without_reply=True,
                     )
             return
+
+        # 1. React with an emoji (e.g. "👀") to acknowledge and indicate active processing
+        with contextlib.suppress(Exception):
+            if hasattr(msg, "set_reaction"):
+                await msg.set_reaction(reaction="👀")
+            elif (
+                context
+                and getattr(context, "bot", None)
+                and hasattr(context.bot, "set_message_reaction")
+            ):
+                await context.bot.set_message_reaction(
+                    chat_id=chat.id if chat else chat_id,
+                    message_id=msg.message_id,
+                    reaction="👀",
+                )
+
+        # 2. Trigger typing status in chat
+        with contextlib.suppress(Exception):
+            if chat and hasattr(chat, "send_action"):
+                await chat.send_action(action="typing")
+            elif (
+                context
+                and getattr(context, "bot", None)
+                and hasattr(context.bot, "send_chat_action")
+            ):
+                await context.bot.send_chat_action(
+                    chat_id=chat.id if chat else chat_id,
+                    action="typing",
+                )
 
         text = str(msg.text)
         username = None
@@ -226,17 +257,34 @@ class TelegramConnector(ChatConnector):
                 if reply:
                     formatted_reply = markdown_to_telegram_html(reply)
                     try:
-                        await msg.reply_text(formatted_reply, parse_mode="HTML")
+                        await msg.reply_text(
+                            formatted_reply,
+                            parse_mode="HTML",
+                            reply_to_message_id=msg.message_id,
+                            allow_sending_without_reply=True,
+                        )
                     except Exception as html_err:
                         logger.warning("Failed to reply with HTML, falling back: %s", html_err)
                         try:
-                            await msg.reply_text(reply)
+                            await msg.reply_text(
+                                reply,
+                                reply_to_message_id=msg.message_id,
+                                allow_sending_without_reply=True,
+                            )
                         except Exception:
-                            await self.send_message(chat_id=chat_id, text=reply)
+                            await self.send_message(
+                                chat_id=chat_id,
+                                text=reply,
+                                reply_to_message_id=msg.message_id,
+                            )
             except Exception as exc:
                 logger.error("Error executing message handler: %s", exc)
                 with contextlib.suppress(Exception):
-                    await msg.reply_text(f"⚠️ Error processing request: {exc}")
+                    await msg.reply_text(
+                        f"⚠️ Error processing request: {exc}",
+                        reply_to_message_id=msg.message_id,
+                        allow_sending_without_reply=True,
+                    )
 
     async def _handle_callback_query(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -326,7 +374,13 @@ class TelegramConnector(ChatConnector):
             await self._app.shutdown()
             logger.info("TelegramConnector stopped.")
 
-    async def send_message(self, chat_id: str, text: str, parse_mode: str = "HTML") -> None:
+    async def send_message(
+        self,
+        chat_id: str,
+        text: str,
+        reply_to_message_id: str | int | None = None,
+        parse_mode: str = "HTML",
+    ) -> None:
         """Send proactive text message to specific chat, group, or channel."""
         if not self._app or not self._app.bot:
             return
@@ -334,10 +388,18 @@ class TelegramConnector(ChatConnector):
         if not target:
             return
 
+        msg_id = int(reply_to_message_id) if reply_to_message_id is not None else None
+
         if parse_mode == "HTML":
             formatted = markdown_to_telegram_html(text)
             try:
-                await self._app.bot.send_message(chat_id=target, text=formatted, parse_mode="HTML")
+                await self._app.bot.send_message(
+                    chat_id=target,
+                    text=formatted,
+                    parse_mode="HTML",
+                    reply_to_message_id=msg_id,
+                    allow_sending_without_reply=True,
+                )
                 return
             except Exception as exc:
                 logger.warning(
@@ -346,10 +408,19 @@ class TelegramConnector(ChatConnector):
 
         try:
             await self._app.bot.send_message(
-                chat_id=target, text=text, parse_mode=parse_mode if parse_mode != "HTML" else None
+                chat_id=target,
+                text=text,
+                parse_mode=parse_mode if parse_mode != "HTML" else None,
+                reply_to_message_id=msg_id,
+                allow_sending_without_reply=True,
             )
         except Exception:
-            await self._app.bot.send_message(chat_id=target, text=text)
+            await self._app.bot.send_message(
+                chat_id=target,
+                text=text,
+                reply_to_message_id=msg_id,
+                allow_sending_without_reply=True,
+            )
 
     async def send_approval_request(self, request: ApprovalRequest) -> None:
         """Send interactive approval prompt with inline action buttons to chat or channel."""

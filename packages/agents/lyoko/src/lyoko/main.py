@@ -85,7 +85,7 @@ async def lifespan(app: FastAPI):
             pool = AsyncConnectionPool(
                 conninfo=db_uri,
                 max_size=settings.postgres_pool_max_size,
-                kwargs={"autocommit": True},
+                kwargs={"autocommit": True, "connect_timeout": 3},
                 open=False,
                 timeout=5.0,
             )

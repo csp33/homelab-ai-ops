@@ -24,7 +24,7 @@ async def test_telegram_client_send_message_success():
         "httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_response
     ) as mock_post:
         result = await client.send_message(
-            TelegramMessageRequest(text="Hello Homelab", chat_id="12345")
+            TelegramMessageRequest(text="Hello Homelab", chat_id="12345", reply_to_message_id=42)
         )
         assert result["ok"] is True
         assert result["result"]["message_id"] == 100
@@ -34,6 +34,32 @@ async def test_telegram_client_send_message_success():
             "chat_id": "12345",
             "text": "Hello Homelab",
             "parse_mode": "Markdown",
+            "reply_parameters": {"message_id": 42},
+        }
+
+
+@pytest.mark.asyncio
+async def test_telegram_client_set_reaction_success():
+    from homelab_mcp.domain.models.telegram import TelegramReactionRequest
+
+    client = TelegramClient(bot_token="fake_token", default_chat_id="12345")
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"ok": True}
+
+    with patch(
+        "httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_response
+    ) as mock_post:
+        result = await client.set_reaction(
+            TelegramReactionRequest(message_id=42, emoji="👀", chat_id="12345")
+        )
+        assert result["ok"] is True
+        mock_post.assert_called_once()
+        assert "setMessageReaction" in mock_post.call_args[0][0]
+        assert mock_post.call_args[1]["json"] == {
+            "chat_id": "12345",
+            "message_id": 42,
+            "reaction": [{"type": "emoji", "emoji": "👀"}],
         }
 
 

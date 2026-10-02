@@ -27,12 +27,21 @@ class ChatManager:
             await conn.stop()
 
     async def broadcast_message(
-        self, chat_id: str, text: str, parse_mode: str = "Markdown"
+        self,
+        chat_id: str,
+        text: str,
+        reply_to_message_id: str | int | None = None,
+        parse_mode: str = "Markdown",
     ) -> None:
         """Send message across all registered connectors with fault tolerance."""
         for conn in self.connectors:
             try:
-                await conn.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
+                await conn.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    reply_to_message_id=reply_to_message_id,
+                    parse_mode=parse_mode,
+                )
             except Exception as e:
                 logger.error("Error broadcasting message via connector: %s", e)
 
