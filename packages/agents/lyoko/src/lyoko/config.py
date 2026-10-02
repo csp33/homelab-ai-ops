@@ -93,11 +93,11 @@ class AgentSettings(BaseSettings):
     )
 
     chat_session_idle_timeout_seconds: int = Field(
-        default=1800,
+        default=900,
         ge=1,
         description=(
             "Seconds of chat inactivity after which a new Langfuse session is started "
-            "for the next message in the same chat"
+            "for the next message in the same chat (users can also send /new)"
         ),
     )
 

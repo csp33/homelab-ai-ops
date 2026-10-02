@@ -474,6 +474,7 @@ class TelegramConnector(ChatConnector):
         self._app.add_handler(CommandHandler("start", self._handle_telegram_message))
         self._app.add_handler(CommandHandler("help", self._handle_telegram_message))
         self._app.add_handler(CommandHandler("status", self._handle_telegram_message))
+        self._app.add_handler(CommandHandler("new", self._handle_telegram_message))
         self._app.add_handler(MessageHandler(filters.COMMAND, self._handle_telegram_message))
         self._app.add_handler(CallbackQueryHandler(self._handle_callback_query))
 
@@ -498,34 +499,34 @@ class TelegramConnector(ChatConnector):
         text: str,
         reply_to_message_id: str | int | None = None,
         parse_mode: str = "HTML",
-    ) -> None:
+    ) -> SentMessage | None:
         """Send proactive text message to specific chat, group, or channel."""
         if not self._app or not self._app.bot:
-            return
+            return None
         target = chat_id or self.default_chat_id
         if not target:
-            return
+            return None
 
         msg_id = int(reply_to_message_id) if reply_to_message_id is not None else None
 
         if parse_mode == "HTML":
             formatted = markdown_to_telegram_html(text)
             try:
-                await self._app.bot.send_message(
+                sent = await self._app.bot.send_message(
                     chat_id=target,
                     text=formatted,
                     parse_mode="HTML",
                     reply_to_message_id=msg_id,
                     allow_sending_without_reply=True,
                 )
-                return
+                return _to_sent_message(sent, str(target))
             except Exception as exc:
                 logger.warning(
                     "Failed to send HTML formatted message to Telegram, falling back: %s", exc
                 )
 
         try:
-            await self._app.bot.send_message(
+            sent = await self._app.bot.send_message(
                 chat_id=target,
                 text=text,
                 parse_mode=parse_mode if parse_mode != "HTML" else None,
@@ -533,20 +534,21 @@ class TelegramConnector(ChatConnector):
                 allow_sending_without_reply=True,
             )
         except Exception:
-            await self._app.bot.send_message(
+            sent = await self._app.bot.send_message(
                 chat_id=target,
                 text=text,
                 reply_to_message_id=msg_id,
                 allow_sending_without_reply=True,
             )
+        return _to_sent_message(sent, str(target))
 
-    async def send_approval_request(self, request: ApprovalRequest) -> None:
+    async def send_approval_request(self, request: ApprovalRequest) -> SentMessage | None:
         """Send interactive approval prompt with inline action buttons to chat or channel."""
         if not self._app or not self._app.bot:
-            return
+            return None
         target = request.chat_id or self.default_chat_id
         if not target:
-            return
+            return None
 
         buttons = []
         for act in request.actions:
@@ -556,10 +558,13 @@ class TelegramConnector(ChatConnector):
         keyboard = InlineKeyboardMarkup([buttons]) if buttons else None
         text = f"🚨 <b>[APPROVAL REQUIRED]</b>\n\n<b>{html.escape(request.title)}</b>\n\n{markdown_to_telegram_html(request.details)}"
         try:
-            await self._app.bot.send_message(
+            sent = await self._app.bot.send_message(
                 chat_id=target, text=text, reply_markup=keyboard, parse_mode="HTML"
             )
         except Exception as exc:
             logger.warning("Failed to send approval request in HTML, falling back: %s", exc)
             plain_text = f"🚨 [APPROVAL REQUIRED]\n\n{request.title}\n\n{request.details}"
-            await self._app.bot.send_message(chat_id=target, text=plain_text, reply_markup=keyboard)
+            sent = await self._app.bot.send_message(
+                chat_id=target, text=plain_text, reply_markup=keyboard
+            )
+        return _to_sent_message(sent, str(target))

@@ -41,7 +41,10 @@ def create_webhook_router(
                     labels=labels,
                 )
 
+                thread_id = f"incident-{incident.fingerprint or incident.pod_name}"
+
                 initial_state = {
+                    "incident_id": thread_id,
                     "namespace": incident.namespace,
                     "pod_name": incident.pod_name,
                     "deployment_name": incident.deployment_name or "",
@@ -54,7 +57,6 @@ def create_webhook_router(
                     "requires_escalation": False,
                 }
 
-                thread_id = f"incident-{incident.fingerprint or incident.pod_name}"
                 trace_name = f"lyoko-{incident.alert_name}-{incident.pod_name}"
                 tags = ["lyoko", f"ns:{incident.namespace}", f"alert:{incident.alert_name}"]
                 metadata = {

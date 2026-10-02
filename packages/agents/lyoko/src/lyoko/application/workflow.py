@@ -197,7 +197,9 @@ def create_remediation_workflow(
         logger.info(summary)
         if chat_manager is not None:
             chat_id = state.get("chat_id") or settings.telegram_default_chat_id or ""
-            await chat_manager.broadcast_message(chat_id=chat_id, text=summary)
+            await chat_manager.broadcast_message(
+                chat_id=chat_id, text=summary, session_id=state.get("incident_id")
+            )
         return {}
 
     # Assemble StateGraph

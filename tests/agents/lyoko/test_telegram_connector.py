@@ -549,3 +549,56 @@ def test_markdown_table_inside_code_block_is_untouched():
 
     text = "```\n| a | b |\n|---|---|\n| 1 | 2 |\n```"
     assert "| a | b |" in markdown_to_telegram_html(text)
+
+
+@pytest.mark.asyncio
+async def test_telegram_connector_populates_reply_to_message_id():
+    connector = TelegramConnector(
+        bot_token="fake:token", allowed_user_ids={"12345"}, default_chat_id="12345"
+    )
+    received: list[IncomingMessage] = []
+
+    async def handler(msg: IncomingMessage) -> None:
+        received.append(msg)
+
+    connector.register_message_handler(handler)
+
+    update = MagicMock()
+    update.effective_user.id = 12345
+    update.effective_chat.id = 12345
+    update.message.message_id = 50
+    update.message.text = "why did it crash?"
+    update.message.reply_to_message.message_id = 41
+    update.message.set_reaction = AsyncMock()
+    update.message.reply_text = AsyncMock()
+
+    await connector._handle_telegram_message(update, MagicMock())
+
+    assert received[0].reply_to_message_id == "41"
+
+
+@pytest.mark.asyncio
+async def test_telegram_connector_send_returns_message_reference():
+    connector = TelegramConnector(bot_token="fake:token", default_chat_id="12345")
+    sent = MagicMock()
+    sent.message_id = 777
+    sent.chat_id = 12345
+    mock_app = MagicMock()
+    mock_app.bot.send_message = AsyncMock(return_value=sent)
+    connector._app = mock_app
+
+    result = await connector.send_message("12345", "hello")
+    assert result is not None
+    assert (result.chat_id, result.message_id) == ("12345", "777")
+
+    approval = await connector.send_approval_request(
+        ApprovalRequest(
+            incident_id="inc-1",
+            title="t",
+            details="d",
+            chat_id="12345",
+            actions=[ApprovalAction(action_id="approve", label="Approve")],
+        )
+    )
+    assert approval is not None
+    assert approval.message_id == "777"
