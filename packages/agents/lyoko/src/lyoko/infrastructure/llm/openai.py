@@ -3,9 +3,9 @@
 import logging
 from typing import Any
 
+from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from langgraph.prebuilt import create_react_agent
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.infrastructure.observability.langfuse import get_langfuse_trace_config
 
@@ -95,10 +95,10 @@ class OpenAILLMAdapter(LLMClientInterface):
 
         if tools:
             try:
-                agent = create_react_agent(
+                agent = create_agent(
                     model=self.client,
                     tools=tools,
-                    prompt=system_prompt,
+                    system_prompt=system_prompt,
                 )
                 messages = [HumanMessage(content=prompt)]
                 agent_config = dict(config) if config else {}
