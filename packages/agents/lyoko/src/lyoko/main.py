@@ -11,6 +11,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from lyoko.application.chat_agent import InteractiveChatAgent
 from lyoko.application.chat_manager import ChatManager
+from lyoko.application.chat_sessions import ChatSessionTracker
 from lyoko.application.hitl import ApprovalManager
 from lyoko.application.workflow import create_remediation_workflow
 from lyoko.config import settings
@@ -49,7 +50,8 @@ def build_chat_manager(
     llm: LLMClientInterface | None = None,
 ) -> ChatManager:
     """Instantiate and configure active chat connectors."""
-    chat_manager = ChatManager()
+    session_tracker = ChatSessionTracker(settings.chat_session_idle_timeout_seconds)
+    chat_manager = ChatManager(session_tracker=session_tracker)
 
     if settings.telegram_enabled and settings.telegram_bot_token:
         logger.info("Configuring Telegram connector for private assistant & HITL alerts...")
@@ -64,7 +66,11 @@ def build_chat_manager(
             allowed_chat_ids=settings.telegram_allowed_chat_ids,
             default_chat_id=settings.telegram_default_chat_id,
         )
-        chat_agent = InteractiveChatAgent(mcp_client=mcp_client, llm=llm)
+        chat_agent = InteractiveChatAgent(
+            mcp_client=mcp_client,
+            llm=llm,
+            session_tracker=session_tracker,
+        )
         telegram_connector.register_message_handler(chat_agent.handle_message)
         telegram_connector.register_approval_handler(approval_manager.resolve_approval)
         chat_manager.add_connector(telegram_connector)

@@ -14,6 +14,14 @@ class IncomingMessage(BaseModel):
     chat_id: str
     user: ChatUser
     text: str
+    reply_to_message_id: str | None = None
+
+
+class SentMessage(BaseModel):
+    """Reference to a message delivered by a chat connector."""
+
+    chat_id: str
+    message_id: str
 
 
 class ApprovalAction(BaseModel):

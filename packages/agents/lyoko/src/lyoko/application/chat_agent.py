@@ -3,6 +3,10 @@
 import logging
 from typing import Any
 
+from lyoko.application.chat_sessions import (
+    DEFAULT_SESSION_IDLE_TIMEOUT_SECONDS,
+    ChatSessionTracker,
+)
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.models.chat import IncomingMessage
 
@@ -27,16 +31,36 @@ Tool Usage & Token Efficiency Rules:
 - Format all technical output in crisp, clean Markdown (use code blocks and bullet points where helpful). Telegram cannot render wide tables: prefer bullet lists, and only use a Markdown table when it has at most 3 short columns. Respond in the language used by the administrator (e.g. Spanish)."""
 
 
+NEW_SESSION_COMMAND = "/new"
+
+
+def is_new_session_command(text: str) -> bool:
+    """Return True for ``/new`` (optionally addressed as ``/new@botname``)."""
+    first_token = text.strip().split(maxsplit=1)[0].lower() if text.strip() else ""
+    return first_token == NEW_SESSION_COMMAND or first_token.startswith(f"{NEW_SESSION_COMMAND}@")
+
+
 class InteractiveChatAgent:
     """Conversational assistant handling interactive user queries via chat connectors."""
 
-    def __init__(self, mcp_client: Any, llm: LLMClientInterface | None = None) -> None:
+    def __init__(
+        self,
+        mcp_client: Any,
+        llm: LLMClientInterface | None = None,
+        session_idle_timeout_seconds: float = DEFAULT_SESSION_IDLE_TIMEOUT_SECONDS,
+        session_tracker: ChatSessionTracker | None = None,
+    ) -> None:
         self.mcp_client = mcp_client
         self.llm = llm
+        self.session_tracker = session_tracker or ChatSessionTracker(session_idle_timeout_seconds)
 
     async def handle_message(self, message: IncomingMessage) -> str:
         """Process incoming chat query and return conversational response."""
         logger.info("Processing chat message from user %s: %s", message.user.user_id, message.text)
+        if is_new_session_command(message.text):
+            session_id = self.session_tracker.start_new(message.chat_id)
+            logger.info("Started new session %s for chat %s", session_id, message.chat_id)
+            return "🆕 Started a new session. Previous context will not be grouped with this one."
         if self.llm is None:
             return f"Received message: '{message.text}'. (LLM provider not configured)"
 
@@ -44,12 +68,16 @@ class InteractiveChatAgent:
         if self.mcp_client and hasattr(self.mcp_client, "get_langchain_tools"):
             tools = self.mcp_client.get_langchain_tools()
 
+        session_id = self.session_tracker.get_session_id(
+            message.chat_id, reply_to_message_id=message.reply_to_message_id
+        )
+
         try:
             return await self.llm.chat(
                 prompt=message.text,
                 system_prompt=SYSTEM_PROMPT,
                 tools=tools if tools else None,
-                session_id=f"telegram-{message.chat_id}",
+                session_id=session_id,
                 user_id=str(message.user.user_id),
                 trace_name="telegram-chat-interaction",
                 tags=["telegram", "interactive-chat", f"chat:{message.chat_id}"],

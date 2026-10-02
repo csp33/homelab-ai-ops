@@ -10,6 +10,7 @@ from lyoko.domain.models.chat import (
     ApprovalResponse,
     ChatUser,
     IncomingMessage,
+    SentMessage,
 )
 from pydantic import SecretStr
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -23,6 +24,17 @@ from telegram.ext import (
 )
 
 logger = logging.getLogger("lyoko.chat.telegram")
+
+
+def _to_sent_message(result: object, fallback_chat_id: str) -> SentMessage | None:
+    """Convert a python-telegram-bot ``Message`` into a domain ``SentMessage`` reference."""
+    message_id = getattr(result, "message_id", None)
+    if not isinstance(message_id, int) or isinstance(message_id, bool):
+        return None
+    chat_id = getattr(result, "chat_id", None)
+    if not isinstance(chat_id, (int, str)) or isinstance(chat_id, bool):
+        chat_id = fallback_chat_id
+    return SentMessage(chat_id=str(chat_id), message_id=str(message_id))
 
 
 # Telegram has no table support. Tables narrower than this many characters are rendered as
@@ -285,7 +297,7 @@ class TelegramConnector(ChatConnector):
             return
 
         # 1. React with an emoji (e.g. "👀") to acknowledge and indicate active processing
-        with contextlib.suppress(Exception):
+        try:
             if hasattr(msg, "set_reaction"):
                 await msg.set_reaction(reaction="👀")
             elif (
@@ -298,6 +310,15 @@ class TelegramConnector(ChatConnector):
                     message_id=msg.message_id,
                     reaction="👀",
                 )
+        except Exception as reaction_err:
+            # A missing reaction must never block the reply, but it should not fail silently.
+            logger.warning(
+                "Failed to set 👀 reaction on message %s in chat %s: %s: %s",
+                getattr(msg, "message_id", None),
+                chat_id,
+                type(reaction_err).__name__,
+                reaction_err,
+            )
 
         # 2. Trigger typing status in chat
         with contextlib.suppress(Exception):
@@ -330,6 +351,12 @@ class TelegramConnector(ChatConnector):
         elif chat and getattr(chat, "title", None) and not hasattr(chat.title, "_mock_name"):
             first_name = str(chat.title)
 
+        reply_to_message_id: str | None = None
+        replied = getattr(msg, "reply_to_message", None)
+        replied_id = getattr(replied, "message_id", None) if replied is not None else None
+        if isinstance(replied_id, int) and not isinstance(replied_id, bool):
+            reply_to_message_id = str(replied_id)
+
         incoming = IncomingMessage(
             message_id=str(msg.message_id),
             chat_id=chat_id,
@@ -339,6 +366,7 @@ class TelegramConnector(ChatConnector):
                 first_name=first_name,
             ),
             text=text,
+            reply_to_message_id=reply_to_message_id,
         )
 
         for handler in self._message_handlers:
@@ -446,6 +474,7 @@ class TelegramConnector(ChatConnector):
         self._app.add_handler(CommandHandler("start", self._handle_telegram_message))
         self._app.add_handler(CommandHandler("help", self._handle_telegram_message))
         self._app.add_handler(CommandHandler("status", self._handle_telegram_message))
+        self._app.add_handler(CommandHandler("new", self._handle_telegram_message))
         self._app.add_handler(MessageHandler(filters.COMMAND, self._handle_telegram_message))
         self._app.add_handler(CallbackQueryHandler(self._handle_callback_query))
 
@@ -470,34 +499,34 @@ class TelegramConnector(ChatConnector):
         text: str,
         reply_to_message_id: str | int | None = None,
         parse_mode: str = "HTML",
-    ) -> None:
+    ) -> SentMessage | None:
         """Send proactive text message to specific chat, group, or channel."""
         if not self._app or not self._app.bot:
-            return
+            return None
         target = chat_id or self.default_chat_id
         if not target:
-            return
+            return None
 
         msg_id = int(reply_to_message_id) if reply_to_message_id is not None else None
 
         if parse_mode == "HTML":
             formatted = markdown_to_telegram_html(text)
             try:
-                await self._app.bot.send_message(
+                sent = await self._app.bot.send_message(
                     chat_id=target,
                     text=formatted,
                     parse_mode="HTML",
                     reply_to_message_id=msg_id,
                     allow_sending_without_reply=True,
                 )
-                return
+                return _to_sent_message(sent, str(target))
             except Exception as exc:
                 logger.warning(
                     "Failed to send HTML formatted message to Telegram, falling back: %s", exc
                 )
 
         try:
-            await self._app.bot.send_message(
+            sent = await self._app.bot.send_message(
                 chat_id=target,
                 text=text,
                 parse_mode=parse_mode if parse_mode != "HTML" else None,
@@ -505,20 +534,21 @@ class TelegramConnector(ChatConnector):
                 allow_sending_without_reply=True,
             )
         except Exception:
-            await self._app.bot.send_message(
+            sent = await self._app.bot.send_message(
                 chat_id=target,
                 text=text,
                 reply_to_message_id=msg_id,
                 allow_sending_without_reply=True,
             )
+        return _to_sent_message(sent, str(target))
 
-    async def send_approval_request(self, request: ApprovalRequest) -> None:
+    async def send_approval_request(self, request: ApprovalRequest) -> SentMessage | None:
         """Send interactive approval prompt with inline action buttons to chat or channel."""
         if not self._app or not self._app.bot:
-            return
+            return None
         target = request.chat_id or self.default_chat_id
         if not target:
-            return
+            return None
 
         buttons = []
         for act in request.actions:
@@ -528,10 +558,13 @@ class TelegramConnector(ChatConnector):
         keyboard = InlineKeyboardMarkup([buttons]) if buttons else None
         text = f"🚨 <b>[APPROVAL REQUIRED]</b>\n\n<b>{html.escape(request.title)}</b>\n\n{markdown_to_telegram_html(request.details)}"
         try:
-            await self._app.bot.send_message(
+            sent = await self._app.bot.send_message(
                 chat_id=target, text=text, reply_markup=keyboard, parse_mode="HTML"
             )
         except Exception as exc:
             logger.warning("Failed to send approval request in HTML, falling back: %s", exc)
             plain_text = f"🚨 [APPROVAL REQUIRED]\n\n{request.title}\n\n{request.details}"
-            await self._app.bot.send_message(chat_id=target, text=plain_text, reply_markup=keyboard)
+            sent = await self._app.bot.send_message(
+                chat_id=target, text=plain_text, reply_markup=keyboard
+            )
+        return _to_sent_message(sent, str(target))

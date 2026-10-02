@@ -1,7 +1,12 @@
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 
-from lyoko.domain.models.chat import ApprovalRequest, ApprovalResponse, IncomingMessage
+from lyoko.domain.models.chat import (
+    ApprovalRequest,
+    ApprovalResponse,
+    IncomingMessage,
+    SentMessage,
+)
 
 MessageHandler = Callable[[IncomingMessage], Awaitable[str | None]]
 ApprovalHandler = Callable[[ApprovalResponse], Awaitable[None]]
@@ -23,12 +28,12 @@ class ChatConnector(ABC):
         text: str,
         reply_to_message_id: str | int | None = None,
         parse_mode: str = "Markdown",
-    ) -> None:
-        pass
+    ) -> SentMessage | None:
+        """Send a message and return a reference to it when the platform exposes one."""
 
     @abstractmethod
-    async def send_approval_request(self, request: ApprovalRequest) -> None:
-        pass
+    async def send_approval_request(self, request: ApprovalRequest) -> SentMessage | None:
+        """Send an approval prompt and return a reference to it when available."""
 
     @abstractmethod
     def register_message_handler(self, handler: MessageHandler) -> None:
