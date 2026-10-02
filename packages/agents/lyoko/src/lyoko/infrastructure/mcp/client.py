@@ -60,7 +60,7 @@ class FastMCPClient(MCPClientInterface):
         """Return LangChain StructuredTool instances to execute tools via homelab-mcp."""
 
         async def _gateway_list_tools() -> str:
-            """List all tools available in the homelab infrastructure (Home Assistant smart home, UniFi network, Kubernetes, Grafana, Telegram)."""
+            """Discover and list all operational tools available in the homelab infrastructure and connected upstream services."""
             tools = await self.list_tools()
             return str(
                 [
@@ -74,11 +74,11 @@ class FastMCPClient(MCPClientInterface):
             )
 
         async def _gateway_call_tool(tool_name: str, arguments: dict[str, Any]) -> str:
-            """Execute any homelab tool (Home Assistant, UniFi, Kubernetes, Grafana, Telegram).
+            """Execute any operational homelab tool by name with arguments.
 
             Args:
-                tool_name: Name of the tool to invoke (e.g., ha_list_floors_areas, ha_manage_pipeline, unifi_execute, etc.)
-                arguments: Dictionary of arguments for the tool.
+                tool_name: Name of the tool to invoke.
+                arguments: Dictionary of arguments matching the tool schema.
             """
             result = await self.call_tool(tool_name, arguments)
             return str(result)
@@ -86,13 +86,13 @@ class FastMCPClient(MCPClientInterface):
         list_tool = StructuredTool.from_function(
             coroutine=_gateway_list_tools,
             name="gateway_list_tools",
-            description="Discover all available tools in the Homelab AIOps platform (Home Assistant smart home devices, UniFi network controllers, Kubernetes cluster pods, Grafana metrics, Telegram alerts).",
+            description="Discover and list all operational tools available in the homelab infrastructure and connected upstream services.",
         )
 
         call_tool = StructuredTool.from_function(
             coroutine=_gateway_call_tool,
             name="gateway_call_tool",
-            description="Execute any Homelab AIOps tool by name with arguments (e.g. Home Assistant devices, UniFi network clients, Kubernetes pods/logs, Grafana dashboards, Telegram alerts).",
+            description="Execute any operational homelab tool by name with arguments.",
         )
 
         return [list_tool, call_tool]

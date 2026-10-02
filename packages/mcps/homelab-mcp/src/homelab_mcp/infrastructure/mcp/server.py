@@ -100,7 +100,7 @@ def create_gateway_mcp_server(
 
     @mcp.tool()
     async def gateway_list_tools() -> list[dict[str, Any]]:
-        """List all tools aggregated from upstream MCP servers (Home Assistant, UniFi, Kubernetes)."""
+        """List all operational tools aggregated from connected upstream MCP servers."""
         tools = await service.discover_tools()
         return [
             {
