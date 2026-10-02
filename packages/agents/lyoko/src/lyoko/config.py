@@ -42,5 +42,33 @@ class AgentSettings(BaseSettings):
         default="https://cloud.langfuse.com", description="Langfuse Host URL"
     )
 
+    # PostgreSQL Checkpointer (Persistent LangGraph state)
+    postgres_uri: str | None = Field(
+        default=None,
+        description="Full PostgreSQL connection URI (e.g., postgresql://user:pass@host:5432/dbname)",
+    )
+    postgres_host: str = Field(
+        default="postgresql-rw.postgresql-cnpg.svc.cluster.local",
+        description="PostgreSQL hostname",
+    )
+    postgres_port: int = Field(default=5432, description="PostgreSQL port")
+    postgres_user: str = Field(default="lyoko", description="PostgreSQL username")
+    postgres_password: str = Field(default="", description="PostgreSQL password")
+    postgres_db: str = Field(default="lyoko", description="PostgreSQL database name")
+    postgres_pool_max_size: int = Field(
+        default=20, description="PostgreSQL connection pool max size"
+    )
+
+    def get_postgres_uri(self) -> str | None:
+        """Construct PostgreSQL connection URI if configured."""
+        if self.postgres_uri:
+            return self.postgres_uri
+        if self.postgres_password:
+            return (
+                f"postgresql://{self.postgres_user}:{self.postgres_password}"
+                f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            )
+        return None
+
 
 settings = AgentSettings()

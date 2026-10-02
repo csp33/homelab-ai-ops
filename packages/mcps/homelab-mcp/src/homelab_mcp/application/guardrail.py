@@ -69,8 +69,34 @@ class GuardrailEngine:
                     f"Security Guardrail: Mutation or exec operations in protected namespace '{namespace}' are prohibited."
                 )
 
-        # 3. Deep inspection of container exec / command execution arguments
+        # 3. GitHub repository allowlist / denylist check
+        if upstream_name == "github" or tool_name.startswith(("github_", "gh_")):
+            self._validate_github_repo(arguments)
+
+        # 4. Deep inspection of container exec / command execution arguments
         self._inspect_exec_commands(tool_name, arguments)
+
+    def _validate_github_repo(self, arguments: dict[str, Any]) -> None:
+        """Validate that target GitHub repository is permitted by policy."""
+        repo = arguments.get("repo") or arguments.get("repository")
+        if not repo and "owner" in arguments and "repo" in arguments:
+            repo = f"{arguments['owner']}/{arguments['repo']}"
+
+        if not repo or not isinstance(repo, str):
+            return
+
+        # 1. Blocked repos check
+        for pattern in self.policy.blocked_github_repos:
+            if fnmatch.fnmatch(repo, pattern):
+                raise GuardrailViolationError(
+                    f"Security Guardrail: GitHub repository '{repo}' is blocked by security policy."
+                )
+
+        # 2. Allowed repos check
+        if not any(fnmatch.fnmatch(repo, pattern) for pattern in self.policy.allowed_github_repos):
+            raise GuardrailViolationError(
+                f"Security Guardrail: GitHub repository '{repo}' is not permitted by allowed repositories policy."
+            )
 
     def _inspect_exec_commands(self, tool_name: str, arguments: dict[str, Any]) -> None:
         """Inspect command strings or lists passed to execution tools to prevent destructive commands."""

@@ -8,7 +8,7 @@ from lyoko.domain.models import Incident
 
 
 def create_webhook_router(
-    workflow_app: Any,
+    workflow_app: Any = None,
     tracer: TracerInterface | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/webhook", tags=["webhooks"])
@@ -21,6 +21,12 @@ def create_webhook_router(
             data = await request.json()
         except Exception as exc:
             raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
+
+        engine = workflow_app or getattr(request.app.state, "workflow_engine", None)
+        active_tracer = tracer or getattr(request.app.state, "tracer", None)
+
+        if not engine:
+            raise HTTPException(status_code=503, detail="Workflow engine is not initialized")
 
         alerts = data.get("alerts", [])
         for alert in alerts:
@@ -48,7 +54,9 @@ def create_webhook_router(
                     "requires_escalation": False,
                 }
 
+                thread_id = f"incident-{incident.fingerprint or incident.pod_name}"
                 config: dict[str, Any] = {
+                    "configurable": {"thread_id": thread_id},
                     "tags": ["lyoko", f"ns:{incident.namespace}", f"alert:{incident.alert_name}"],
                     "metadata": {
                         "namespace": incident.namespace,
@@ -59,12 +67,12 @@ def create_webhook_router(
                     "run_name": f"lyoko-{incident.alert_name}-{incident.pod_name}",
                 }
 
-                if tracer:
-                    callback = tracer.get_callback_handler()
+                if active_tracer:
+                    callback = active_tracer.get_callback_handler()
                     if callback:
                         config["callbacks"] = [callback]
 
-                background_tasks.add_task(workflow_app.ainvoke, initial_state, config=config)
+                background_tasks.add_task(engine.ainvoke, initial_state, config=config)
 
         return {"status": "accepted", "message": f"Processing {len(alerts)} alerts in background."}
 

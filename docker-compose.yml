@@ -1,0 +1,81 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: homelab-aiops-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lyoko}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lyoko}
+      POSTGRES_DB: ${POSTGRES_DB:-lyoko}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lyoko} -d ${POSTGRES_DB:-lyoko}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  homelab-mcp:
+    build:
+      context: .
+      dockerfile: packages/mcps/homelab-mcp/Dockerfile
+    container_name: homelab-aiops-mcp
+    restart: unless-stopped
+    ports:
+      - "${MCP_PORT:-8000}:8000"
+    environment:
+      MCP_HOST: "0.0.0.0"
+      MCP_PORT: "8000"
+      MCP_TRANSPORT: ${MCP_TRANSPORT:-http}
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      SERVICE_TOKEN: ${SERVICE_TOKEN:-}
+      HASS_ENABLED: ${HASS_ENABLED:-false}
+      HASS_URL: ${HASS_URL:-}
+      HASS_TOKEN: ${HASS_TOKEN:-}
+      UNIFI_ENABLED: ${UNIFI_ENABLED:-false}
+      UNIFI_URL: ${UNIFI_URL:-}
+      UNIFI_USER: ${UNIFI_USER:-}
+      UNIFI_PASSWORD: ${UNIFI_PASSWORD:-}
+      K8S_ENABLED: ${K8S_ENABLED:-false}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    env_file:
+      - path: .env
+        required: false
+
+  lyoko:
+    build:
+      context: .
+      dockerfile: packages/agents/lyoko/Dockerfile
+    container_name: homelab-aiops-lyoko
+    restart: unless-stopped
+    ports:
+      - "${LYOKO_PORT:-9000}:9000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      homelab-mcp:
+        condition: service_started
+    environment:
+      LYOKO_HOST: "0.0.0.0"
+      LYOKO_PORT: "9000"
+      MCP_SERVER_URL: "http://homelab-mcp:8000/mcp"
+      SERVICE_TOKEN: ${SERVICE_TOKEN:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      POSTGRES_HOST: "postgres"
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-lyoko}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lyoko}
+      POSTGRES_DB: ${POSTGRES_DB:-lyoko}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
+    env_file:
+      - path: .env
+        required: false
+
+volumes:
+  postgres_data:

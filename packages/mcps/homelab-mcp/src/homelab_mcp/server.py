@@ -69,6 +69,34 @@ def build_gateway_application() -> tuple[MCPGatewayService, any]:
             upstream_type=UpstreamType.KUBERNETES,
         )
 
+    # 4. Grafana MCP (github.com/grafana/mcp-grafana)
+    if settings.grafana_enabled and settings.grafana_token:
+        upstreams[UpstreamType.GRAFANA] = ProcessUpstreamClient(
+            command=settings.grafana_command,
+            env={
+                "GRAFANA_URL": settings.grafana_url,
+                "GRAFANA_SERVICE_ACCOUNT_TOKEN": settings.grafana_token,
+                "GRAFANA_TOKEN": settings.grafana_token,
+                "GRAFANA_API_KEY": settings.grafana_token,
+            },
+            upstream_type=UpstreamType.GRAFANA,
+        )
+
+    # 5. GitHub MCP (github-mcp-server / modelcontextprotocol/server-github)
+    if settings.github_enabled and settings.github_token:
+        github_env = {
+            "GITHUB_PERSONAL_ACCESS_TOKEN": settings.github_token,
+            "GITHUB_TOKEN": settings.github_token,
+        }
+        if settings.github_owner:
+            github_env["GITHUB_OWNER"] = settings.github_owner
+
+        upstreams[UpstreamType.GITHUB] = ProcessUpstreamClient(
+            command=settings.github_command,
+            env=github_env,
+            upstream_type=UpstreamType.GITHUB,
+        )
+
     auth_verifier = GoogleAuthVerifier()
     gateway_service = MCPGatewayService(upstreams=upstreams, auth_port=auth_verifier)
     mcp_app = create_gateway_mcp_server(gateway_service)

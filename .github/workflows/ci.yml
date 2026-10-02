@@ -91,9 +91,19 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   publish-images:
-    name: Build & push Docker images
+    name: Build & push ${{ matrix.name }} image
     runs-on: ubuntu-latest
     needs: publish-meta
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: homelab-mcp
+            dockerfile: packages/mcps/homelab-mcp/Dockerfile
+            tags_key: mcp_tags
+          - name: lyoko
+            dockerfile: packages/agents/lyoko/Dockerfile
+            tags_key: lyoko_tags
     if: |
       always() &&
       !cancelled() &&
@@ -111,31 +121,18 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GHCR_WRITE_TOKEN != '' && secrets.GHCR_WRITE_TOKEN || secrets.GITHUB_TOKEN }}
 
-      - name: Build & push homelab-mcp image
+      - name: Build & push ${{ matrix.name }} image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: packages/mcps/homelab-mcp/Dockerfile
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
           push: true
           provenance: false
           sbom: false
-          tags: ${{ needs.publish-meta.outputs.mcp_tags }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build & push lyoko image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: packages/agents/lyoko/Dockerfile
-          platforms: linux/amd64
-          push: true
-          provenance: false
-          sbom: false
-          tags: ${{ needs.publish-meta.outputs.lyoko_tags }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ needs.publish-meta.outputs[matrix.tags_key] }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
   update-k8s-helm-values:
     name: Bump homelab-aiops image tags in k8s-at-home

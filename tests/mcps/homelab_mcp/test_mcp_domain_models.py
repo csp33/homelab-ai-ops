@@ -37,3 +37,10 @@ def test_guardrail_policy_defaults():
     assert "*" in policy.allowed_tools
     assert "kube-system" in policy.blocked_namespaces
     assert any(r"\brm\b" in p for p in policy.blocked_exec_patterns)
+    assert "*" in policy.allowed_github_repos
+    assert policy.blocked_github_repos == []
+
+
+def test_upstream_type_github():
+    assert UpstreamType.GITHUB == "github"
+    assert UpstreamType.GITHUB.value == "github"

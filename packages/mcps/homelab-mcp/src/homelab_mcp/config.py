@@ -46,6 +46,9 @@ class GatewaySettings(BaseSettings):
     service_token: str = Field(
         default="", description="Internal static bearer token for automated in-cluster agents"
     )
+    jwt_secret: str = Field(
+        default="", description="Secret key for signing and verifying HS256 JWT tokens"
+    )
 
     # Upstream: Home Assistant MCP (github.com/homeassistant-ai/ha-mcp)
     ha_enabled: bool = Field(default=True, description="Enable Home Assistant MCP upstream")
@@ -76,6 +79,33 @@ class GatewaySettings(BaseSettings):
     )
     kubeconfig_path: str | None = Field(
         default=None, description="Path to kubeconfig file if not default"
+    )
+
+    # Upstream: Grafana MCP (github.com/grafana/mcp-grafana)
+    grafana_enabled: bool = Field(default=True, description="Enable Grafana MCP upstream")
+    grafana_command: str = Field(
+        default="npx -y @grafana/mcp-server@latest", description="Command to launch grafana mcp"
+    )
+    grafana_url: str = Field(
+        default="http://grafana.monitoring.svc.cluster.local:3000",
+        description="Grafana Controller Base URL",
+    )
+    grafana_token: str = Field(default="", description="Grafana Service Account or API Token")
+
+    # Upstream: GitHub MCP (github.com/github/github-mcp-server or modelcontextprotocol/server-github)
+    github_enabled: bool = Field(default=True, description="Enable GitHub MCP upstream")
+    github_command: str = Field(
+        default="github-mcp-server", description="Command to launch github-mcp-server"
+    )
+    github_token: str = Field(default="", description="GitHub Personal Access Token")
+    github_owner: str = Field(default="", description="Default GitHub owner or organization")
+    github_allowed_repos: list[str] | str = Field(
+        default_factory=lambda: ["*"],
+        description="Allowed repositories glob patterns (e.g. ['*'] or ['csp33/*', 'org/repo'])",
+    )
+    github_blocked_repos: list[str] | str = Field(
+        default_factory=list,
+        description="Blocked repositories glob patterns (e.g. ['*/secrets-*'])",
     )
 
     # Security & Guardrails
@@ -118,6 +148,8 @@ class GatewaySettings(BaseSettings):
         "blocked_tools",
         "allowed_exec_commands",
         "blocked_namespaces",
+        "github_allowed_repos",
+        "github_blocked_repos",
         mode="before",
     )
     @classmethod

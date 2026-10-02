@@ -30,13 +30,10 @@ SYSTEM_PROMPT = """You are LYOKO (Live Yaml Optimization & K8s Orchestration), t
 Analyze pod failure events, diagnose root causes (e.g., OOMKilled, CrashLoopBackOff), and provide precise recommendations."""
 
 
-def create_remediation_workflow(mcp_client: Any) -> Any:
+def create_remediation_workflow(mcp_client: Any, checkpointer: Any = None) -> Any:
     """Build LangGraph StateGraph workflow for incident diagnosis and auto-remediation."""
-    model = ChatOpenAI(
-        model=settings.openai_model,
-        temperature=0,
-        api_key=settings.openai_api_key or None,
-    )
+    api_key = settings.openai_api_key or "sk-dummy"
+    model = ChatOpenAI(model=settings.openai_model, temperature=0, api_key=api_key)
 
     async def diagnose_node(state: RemediationGraphState) -> dict[str, Any]:
         """Fetch diagnostics from homelab-mcp."""
@@ -129,4 +126,4 @@ def create_remediation_workflow(mcp_client: Any) -> Any:
     workflow.add_edge("verify", "notify")
     workflow.add_edge("notify", END)
 
-    return workflow.compile()
+    return workflow.compile(checkpointer=checkpointer)

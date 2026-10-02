@@ -48,6 +48,12 @@ def test_alertmanager_webhook_firing_alert(test_client, mock_workflow):
     data = response.json()
     assert data["status"] == "accepted"
     assert "Processing 1 alerts" in data["message"]
+    mock_workflow.ainvoke.assert_called_once()
+    _, kwargs = mock_workflow.ainvoke.call_args
+    config = kwargs.get("config", {})
+    assert config.get("configurable") == {"thread_id": "incident-abc12345"}
+    assert "lyoko" in config.get("tags", [])
+    assert config.get("metadata", {}).get("pod_name") == "radarr-79dfb8bf7-x82k"
 
 
 def test_alertmanager_webhook_ignored_resolved(test_client, mock_workflow):
