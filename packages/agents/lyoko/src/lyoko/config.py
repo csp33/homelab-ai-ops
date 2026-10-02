@@ -1,5 +1,7 @@
 """Configuration settings for LYOKO agent."""
 
+from urllib.parse import quote_plus
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -64,8 +66,10 @@ class AgentSettings(BaseSettings):
         if self.postgres_uri:
             return self.postgres_uri
         if self.postgres_password:
+            user = quote_plus(self.postgres_user)
+            password = quote_plus(self.postgres_password)
             return (
-                f"postgresql://{self.postgres_user}:{self.postgres_password}"
+                f"postgresql://{user}:{password}"
                 f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
             )
         return None

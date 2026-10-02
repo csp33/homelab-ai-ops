@@ -1,5 +1,6 @@
 """LYOKO Agent Application Composition Root."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -35,10 +36,11 @@ async def lifespan(app: FastAPI):
                 max_size=settings.postgres_pool_max_size,
                 kwargs={"autocommit": True},
                 open=False,
+                timeout=5.0,
             )
-            await pool.open()
+            await asyncio.wait_for(pool.open(), timeout=5.0)
             checkpointer = AsyncPostgresSaver(pool)
-            await checkpointer.setup()
+            await asyncio.wait_for(checkpointer.setup(), timeout=5.0)
             logger.info("PostgreSQL checkpointer initialized and tables ready.")
         except Exception as exc:
             logger.error(f"Failed to initialize PostgreSQL checkpointer: {exc}", exc_info=True)
