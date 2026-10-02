@@ -69,6 +69,19 @@ def build_gateway_application() -> tuple[MCPGatewayService, any]:
             upstream_type=UpstreamType.KUBERNETES,
         )
 
+    # 4. Grafana MCP (github.com/grafana/mcp-grafana)
+    if settings.grafana_enabled and settings.grafana_token:
+        upstreams[UpstreamType.GRAFANA] = ProcessUpstreamClient(
+            command=settings.grafana_command,
+            env={
+                "GRAFANA_URL": settings.grafana_url,
+                "GRAFANA_SERVICE_ACCOUNT_TOKEN": settings.grafana_token,
+                "GRAFANA_TOKEN": settings.grafana_token,
+                "GRAFANA_API_KEY": settings.grafana_token,
+            },
+            upstream_type=UpstreamType.GRAFANA,
+        )
+
     auth_verifier = GoogleAuthVerifier()
     gateway_service = MCPGatewayService(upstreams=upstreams, auth_port=auth_verifier)
     mcp_app = create_gateway_mcp_server(gateway_service)

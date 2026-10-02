@@ -81,6 +81,17 @@ class GatewaySettings(BaseSettings):
         default=None, description="Path to kubeconfig file if not default"
     )
 
+    # Upstream: Grafana MCP (github.com/grafana/mcp-grafana)
+    grafana_enabled: bool = Field(default=True, description="Enable Grafana MCP upstream")
+    grafana_command: str = Field(
+        default="npx -y @grafana/mcp-server@latest", description="Command to launch grafana mcp"
+    )
+    grafana_url: str = Field(
+        default="http://grafana.monitoring.svc.cluster.local:3000",
+        description="Grafana Controller Base URL",
+    )
+    grafana_token: str = Field(default="", description="Grafana Service Account or API Token")
+
     # Security & Guardrails
     allowed_tools: list[str] | str = Field(
         default_factory=lambda: ["*"],
