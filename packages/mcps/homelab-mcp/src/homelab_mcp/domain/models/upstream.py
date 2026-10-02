@@ -9,6 +9,7 @@ class UpstreamType(StrEnum):
     HOME_ASSISTANT = "homeassistant"
     UNIFI = "unifi"
     KUBERNETES = "kubernetes"
+    GRAFANA = "grafana"
     GITHUB = "github"
 
 

@@ -48,6 +48,9 @@ def test_alertmanager_webhook_firing_alert(test_client, mock_workflow):
     data = response.json()
     assert data["status"] == "accepted"
     assert "Processing 1 alerts" in data["message"]
+    mock_workflow.ainvoke.assert_called_once()
+    _, kwargs = mock_workflow.ainvoke.call_args
+    assert kwargs.get("config") == {"configurable": {"thread_id": "incident-abc12345"}}
 
 
 def test_alertmanager_webhook_ignored_resolved(test_client, mock_workflow):

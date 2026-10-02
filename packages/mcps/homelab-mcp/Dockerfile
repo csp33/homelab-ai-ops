@@ -4,6 +4,8 @@ FROM python:3.13-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Install kubernetes-mcp-server binary
