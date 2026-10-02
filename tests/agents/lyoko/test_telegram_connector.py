@@ -344,3 +344,72 @@ async def test_chat_manager():
     conn2.send_message.assert_called_once_with(
         chat_id="chat_123", text="Alert text 2", parse_mode="Markdown"
     )
+
+
+@pytest.mark.asyncio
+async def test_telegram_connector_channel_post_authorization():
+    connector = TelegramConnector(
+        bot_token="fake:token",
+        allowed_user_ids=set(),
+        allowed_chat_ids={"-1001234567890"},
+        default_chat_id="-1001234567890",
+    )
+    assert connector.is_chat_authorized("-1001234567890") is True
+    assert connector.is_chat_authorized(-1001234567890) is True
+    assert connector.is_chat_authorized("-1009999999999") is False
+    assert connector.is_chat_authorized(None) is False
+
+    received_msgs: list[IncomingMessage] = []
+
+    async def handler(msg: IncomingMessage) -> str:
+        received_msgs.append(msg)
+        return "Channel response"
+
+    connector.register_message_handler(handler)
+
+    # Simulate channel post (effective_user is None)
+    mock_update = MagicMock()
+    mock_update.message = None
+    mock_update.effective_user = None
+    mock_update.effective_chat.id = -1001234567890
+    mock_update.effective_chat.username = "ops_channel"
+    mock_update.effective_chat.title = "Homelab Ops"
+    mock_update.effective_chat.type = "channel"
+    mock_update.effective_message.message_id = 101
+    mock_update.effective_message.text = "Check k8s status"
+    mock_update.effective_message.reply_text = AsyncMock()
+
+    await connector._handle_telegram_message(mock_update, MagicMock())
+
+    assert len(received_msgs) == 1
+    assert received_msgs[0].text == "Check k8s status"
+    assert received_msgs[0].chat_id == "-1001234567890"
+    assert received_msgs[0].user.user_id == "-1001234567890"
+    mock_update.effective_message.reply_text.assert_called_once_with(
+        "Channel response", parse_mode="Markdown"
+    )
+
+
+@pytest.mark.asyncio
+async def test_telegram_connector_unauthorized_channel_post():
+    connector = TelegramConnector(
+        bot_token="fake:token",
+        allowed_user_ids=set(),
+        allowed_chat_ids={"-1001234567890"},
+    )
+    mock_handler = AsyncMock()
+    connector.register_message_handler(mock_handler)
+
+    # Channel not in allowed list
+    mock_update = MagicMock()
+    mock_update.effective_user = None
+    mock_update.effective_chat.id = -1009999999999
+    mock_update.effective_chat.type = "channel"
+    mock_update.effective_message.message_id = 102
+    mock_update.effective_message.text = "Unauthorized message"
+    mock_update.effective_message.reply_text = AsyncMock()
+
+    await connector._handle_telegram_message(mock_update, MagicMock())
+
+    mock_handler.assert_not_called()
+    mock_update.effective_message.reply_text.assert_not_called()

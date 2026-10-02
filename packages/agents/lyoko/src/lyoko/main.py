@@ -37,6 +37,7 @@ def build_chat_manager(mcp_client: FastMCPClient, approval_manager: ApprovalMana
         telegram_connector = TelegramConnector(
             bot_token=bot_token,
             allowed_user_ids=settings.telegram_allowed_user_ids,
+            allowed_chat_ids=settings.telegram_allowed_chat_ids,
             default_chat_id=settings.telegram_default_chat_id,
         )
         chat_agent = InteractiveChatAgent(mcp_client=mcp_client)

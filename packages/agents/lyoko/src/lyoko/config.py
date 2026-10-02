@@ -33,7 +33,8 @@ class AgentSettings(BaseSettings):
 
     # Telegram Bot settings
     telegram_enabled: bool = Field(
-        default=False, description="Enable Telegram private assistant and HITL notifications"
+        default=False,
+        description="Enable Telegram private assistant, channel, and HITL notifications",
     )
     telegram_bot_token: SecretStr | None = Field(
         default=None, description="Telegram Bot Token from @BotFather"
@@ -42,10 +43,16 @@ class AgentSettings(BaseSettings):
         default_factory=list,
         description="List of authorized Telegram user IDs allowed to interact with the bot",
     )
+    telegram_allowed_chat_ids: list[str] | str = Field(
+        default_factory=list,
+        description="List of authorized Telegram channel or group chat IDs (e.g. -1001234567890)",
+    )
     telegram_default_chat_id: str | None = Field(
         default=None,
-        validation_alias=AliasChoices("telegram_default_chat_id", "telegram_chat_id"),
-        description="Default Telegram Chat ID for broadcast notifications and alerts",
+        validation_alias=AliasChoices(
+            "telegram_default_chat_id", "telegram_chat_id", "telegram_channel_id"
+        ),
+        description="Default Telegram Chat/Channel ID for broadcast notifications and alerts",
     )
 
     # Guardrails
@@ -81,9 +88,9 @@ class AgentSettings(BaseSettings):
         default=20, description="PostgreSQL connection pool max size"
     )
 
-    @field_validator("telegram_allowed_user_ids", mode="before")
+    @field_validator("telegram_allowed_user_ids", "telegram_allowed_chat_ids", mode="before")
     @classmethod
-    def parse_allowed_user_ids(cls, v: Any) -> list[str]:
+    def parse_allowed_ids(cls, v: Any) -> list[str]:
         if isinstance(v, str):
             v = v.strip()
             if v.startswith("[") and v.endswith("]"):
