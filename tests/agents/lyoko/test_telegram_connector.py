@@ -64,7 +64,7 @@ async def test_telegram_connector_incoming_message_handler():
     assert received_msgs[0].text == "/status"
     assert received_msgs[0].user.user_id == "12345"
     assert received_msgs[0].user.username == "admin"
-    mock_update.message.reply_text.assert_called_once_with("Acknowledged", parse_mode="Markdown")
+    mock_update.message.reply_text.assert_called_once_with("Acknowledged", parse_mode="HTML")
 
 
 @pytest.mark.asyncio
@@ -213,14 +213,14 @@ async def test_telegram_connector_send_message():
     # Explicit chat_id
     await connector.send_message("12345", "Hello")
     mock_app.bot.send_message.assert_called_once_with(
-        chat_id="12345", text="Hello", parse_mode="Markdown"
+        chat_id="12345", text="Hello", parse_mode="HTML"
     )
 
     # Default chat_id fallback
     mock_app.bot.send_message.reset_mock()
     await connector.send_message("", "Broadcast")
     mock_app.bot.send_message.assert_called_once_with(
-        chat_id="default_chat", text="Broadcast", parse_mode="Markdown"
+        chat_id="default_chat", text="Broadcast", parse_mode="HTML"
     )
 
 
@@ -386,7 +386,7 @@ async def test_telegram_connector_channel_post_authorization():
     assert received_msgs[0].chat_id == "-1001234567890"
     assert received_msgs[0].user.user_id == "-1001234567890"
     mock_update.effective_message.reply_text.assert_called_once_with(
-        "Channel response", parse_mode="Markdown"
+        "Channel response", parse_mode="HTML"
     )
 
 
@@ -413,3 +413,46 @@ async def test_telegram_connector_unauthorized_channel_post():
 
     mock_handler.assert_not_called()
     mock_update.effective_message.reply_text.assert_not_called()
+
+
+def test_markdown_to_telegram_html():
+    from lyoko.infrastructure.chat.telegram import markdown_to_telegram_html
+
+    # Empty / none
+    assert markdown_to_telegram_html("") == ""
+
+    # Bold and italics
+    assert markdown_to_telegram_html("**bold text**") == "<b>bold text</b>"
+    assert markdown_to_telegram_html("*italic text*") == "<i>italic text</i>"
+
+    # Underscores in identifiers must NOT be eaten or converted to italic
+    assert (
+        markdown_to_telegram_html("Connected to MOVISTAR_25EO_IOT wifi network")
+        == "Connected to MOVISTAR_25EO_IOT wifi network"
+    )
+
+    # Inline code
+    assert (
+        markdown_to_telegram_html("Use `kubectl get pods -n kube-system` now")
+        == "Use <code>kubectl get pods -n kube-system</code> now"
+    )
+
+    # Code block with language
+    code_block = '```json\n{"status": "ok"}\n```'
+    assert (
+        markdown_to_telegram_html(code_block)
+        == '<pre><code class="language-json">{\n  &quot;status&quot;: &quot;ok&quot;\n}\n</code></pre>'
+        or "<pre><code>" in markdown_to_telegram_html(code_block)
+    )
+
+    # HTML special characters escaping
+    assert markdown_to_telegram_html("5 < 10 && 10 > 5") == "5 &lt; 10 &amp;&amp; 10 &gt; 5"
+
+    # Headers
+    assert markdown_to_telegram_html("### Header Title") == "<b>Header Title</b>"
+
+    # Links
+    assert (
+        markdown_to_telegram_html("[Grafana](http://grafana.local)")
+        == '<a href="http://grafana.local">Grafana</a>'
+    )

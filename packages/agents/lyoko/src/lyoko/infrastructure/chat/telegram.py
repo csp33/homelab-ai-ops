@@ -1,5 +1,7 @@
 import contextlib
+import html
 import logging
+import re
 from collections.abc import Awaitable, Callable
 
 from lyoko.domain.interfaces.chat_connector import ChatConnector
@@ -21,6 +23,58 @@ from telegram.ext import (
 )
 
 logger = logging.getLogger("lyoko.chat.telegram")
+
+
+def markdown_to_telegram_html(text: str) -> str:
+    """Convert standard Markdown output from LLMs to Telegram-compatible HTML formatting."""
+    if not text:
+        return ""
+
+    # 1. Extract and preserve code blocks
+    code_blocks: list[str] = []
+
+    def save_code_block(match: re.Match) -> str:
+        code_blocks.append(match.group(2))
+        return f"@@CODE_BLOCK_{len(code_blocks) - 1}@@"
+
+    # Match ```lang\ncode``` or ```code```
+    processed = re.sub(r"```([a-zA-Z0-9_-]*\n)?(.*?)```", save_code_block, text, flags=re.DOTALL)
+
+    # 2. Extract and preserve inline code
+    inline_codes: list[str] = []
+
+    def save_inline_code(match: re.Match) -> str:
+        inline_codes.append(match.group(1))
+        return f"@@INLINE_CODE_{len(inline_codes) - 1}@@"
+
+    processed = re.sub(r"`([^`\n]+)`", save_inline_code, processed)
+
+    # 3. HTML escape standard text so '<', '>', '&' don't break Telegram parser
+    processed = html.escape(processed)
+
+    # 4. Headers (# Title -> <b>Title</b>)
+    processed = re.sub(r"^#{1,6}\s*(.+)$", r"<b>\1</b>", processed, flags=re.MULTILINE)
+
+    # 5. Bold (**bold**)
+    processed = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", processed)
+
+    # 6. Italic (*italic* only when surrounded by non-alphanumeric or word boundaries)
+    processed = re.sub(r"(?<!\w)\*([^*]+?)\*(?!\w)", r"<i>\1</i>", processed)
+
+    # 7. Links [title](url)
+    processed = re.sub(r"\[(.+?)\]\((https?://[^\s)]+)\)", r'<a href="\2">\1</a>', processed)
+
+    # 8. Restore inline code (HTML escaped content inside <code>)
+    for i, code in enumerate(inline_codes):
+        processed = processed.replace(f"@@INLINE_CODE_{i}@@", f"<code>{html.escape(code)}</code>")
+
+    # 9. Restore code blocks (HTML escaped content inside <pre>)
+    for i, code in enumerate(code_blocks):
+        processed = processed.replace(
+            f"@@CODE_BLOCK_{i}@@", f"<pre><code>{html.escape(code.strip())}</code></pre>"
+        )
+
+    return processed
 
 
 class TelegramConnector(ChatConnector):
@@ -170,10 +224,15 @@ class TelegramConnector(ChatConnector):
             try:
                 reply = await handler(incoming)
                 if reply:
+                    formatted_reply = markdown_to_telegram_html(reply)
                     try:
-                        await msg.reply_text(reply, parse_mode="Markdown")
-                    except Exception:
-                        await self.send_message(chat_id=chat_id, text=reply)
+                        await msg.reply_text(formatted_reply, parse_mode="HTML")
+                    except Exception as html_err:
+                        logger.warning("Failed to reply with HTML, falling back: %s", html_err)
+                        try:
+                            await msg.reply_text(reply)
+                        except Exception:
+                            await self.send_message(chat_id=chat_id, text=reply)
             except Exception as exc:
                 logger.error("Error executing message handler: %s", exc)
                 with contextlib.suppress(Exception):
@@ -228,13 +287,11 @@ class TelegramConnector(ChatConnector):
             else ""
         )
         if current_text:
-            new_text = f"{current_text}\n\n*Result:* {status_text} by admin ({update.effective_user.first_name or user_id})."
+            new_text = f"{current_text}\n\n<b>Result:</b> {status_text} by admin ({html.escape(update.effective_user.first_name or user_id)})."
         else:
-            new_text = (
-                f"*Result:* {status_text} by admin ({update.effective_user.first_name or user_id})."
-            )
+            new_text = f"<b>Result:</b> {status_text} by admin ({html.escape(update.effective_user.first_name or user_id)})."
         try:
-            await query.edit_message_text(new_text)
+            await query.edit_message_text(new_text, parse_mode="HTML")
         except Exception as edit_err:
             logger.debug("Could not edit message text after callback: %s", edit_err)
 
@@ -269,13 +326,30 @@ class TelegramConnector(ChatConnector):
             await self._app.shutdown()
             logger.info("TelegramConnector stopped.")
 
-    async def send_message(self, chat_id: str, text: str, parse_mode: str = "Markdown") -> None:
+    async def send_message(self, chat_id: str, text: str, parse_mode: str = "HTML") -> None:
         """Send proactive text message to specific chat, group, or channel."""
         if not self._app or not self._app.bot:
             return
         target = chat_id or self.default_chat_id
-        if target:
-            await self._app.bot.send_message(chat_id=target, text=text, parse_mode=parse_mode)
+        if not target:
+            return
+
+        if parse_mode == "HTML":
+            formatted = markdown_to_telegram_html(text)
+            try:
+                await self._app.bot.send_message(chat_id=target, text=formatted, parse_mode="HTML")
+                return
+            except Exception as exc:
+                logger.warning(
+                    "Failed to send HTML formatted message to Telegram, falling back: %s", exc
+                )
+
+        try:
+            await self._app.bot.send_message(
+                chat_id=target, text=text, parse_mode=parse_mode if parse_mode != "HTML" else None
+            )
+        except Exception:
+            await self._app.bot.send_message(chat_id=target, text=text)
 
     async def send_approval_request(self, request: ApprovalRequest) -> None:
         """Send interactive approval prompt with inline action buttons to chat or channel."""
@@ -291,7 +365,12 @@ class TelegramConnector(ChatConnector):
             buttons.append(InlineKeyboardButton(text=act.label, callback_data=cb_data))
 
         keyboard = InlineKeyboardMarkup([buttons]) if buttons else None
-        text = f"🚨 *[APPROVAL REQUIRED]*\n\n*{request.title}*\n\n{request.details}"
-        await self._app.bot.send_message(
-            chat_id=target, text=text, reply_markup=keyboard, parse_mode="Markdown"
-        )
+        text = f"🚨 <b>[APPROVAL REQUIRED]</b>\n\n<b>{html.escape(request.title)}</b>\n\n{markdown_to_telegram_html(request.details)}"
+        try:
+            await self._app.bot.send_message(
+                chat_id=target, text=text, reply_markup=keyboard, parse_mode="HTML"
+            )
+        except Exception as exc:
+            logger.warning("Failed to send approval request in HTML, falling back: %s", exc)
+            plain_text = f"🚨 [APPROVAL REQUIRED]\n\n{request.title}\n\n{request.details}"
+            await self._app.bot.send_message(chat_id=target, text=plain_text, reply_markup=keyboard)
