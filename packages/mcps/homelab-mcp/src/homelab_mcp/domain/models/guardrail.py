@@ -28,3 +28,5 @@ class GuardrailPolicy:
     blocked_namespaces: list[str] = field(
         default_factory=lambda: ["kube-system", "kube-public", "kube-node-lease"]
     )
+    allowed_github_repos: list[str] = field(default_factory=lambda: ["*"])
+    blocked_github_repos: list[str] = field(default_factory=list)

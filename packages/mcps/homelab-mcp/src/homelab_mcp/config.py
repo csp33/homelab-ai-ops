@@ -78,6 +78,22 @@ class GatewaySettings(BaseSettings):
         default=None, description="Path to kubeconfig file if not default"
     )
 
+    # Upstream: GitHub MCP (github.com/github/github-mcp-server or modelcontextprotocol/server-github)
+    github_enabled: bool = Field(default=True, description="Enable GitHub MCP upstream")
+    github_command: str = Field(
+        default="github-mcp-server", description="Command to launch github-mcp-server"
+    )
+    github_token: str = Field(default="", description="GitHub Personal Access Token")
+    github_owner: str = Field(default="", description="Default GitHub owner or organization")
+    github_allowed_repos: list[str] | str = Field(
+        default_factory=lambda: ["*"],
+        description="Allowed repositories glob patterns (e.g. ['*'] or ['csp33/*', 'org/repo'])",
+    )
+    github_blocked_repos: list[str] | str = Field(
+        default_factory=list,
+        description="Blocked repositories glob patterns (e.g. ['*/secrets-*'])",
+    )
+
     # Security & Guardrails
     allowed_tools: list[str] | str = Field(
         default_factory=lambda: ["*"],
@@ -118,6 +134,8 @@ class GatewaySettings(BaseSettings):
         "blocked_tools",
         "allowed_exec_commands",
         "blocked_namespaces",
+        "github_allowed_repos",
+        "github_blocked_repos",
         mode="before",
     )
     @classmethod

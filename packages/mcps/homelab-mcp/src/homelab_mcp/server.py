@@ -69,6 +69,21 @@ def build_gateway_application() -> tuple[MCPGatewayService, any]:
             upstream_type=UpstreamType.KUBERNETES,
         )
 
+    # 4. GitHub MCP (github-mcp-server / modelcontextprotocol/server-github)
+    if settings.github_enabled and settings.github_token:
+        github_env = {
+            "GITHUB_PERSONAL_ACCESS_TOKEN": settings.github_token,
+            "GITHUB_TOKEN": settings.github_token,
+        }
+        if settings.github_owner:
+            github_env["GITHUB_OWNER"] = settings.github_owner
+
+        upstreams[UpstreamType.GITHUB] = ProcessUpstreamClient(
+            command=settings.github_command,
+            env=github_env,
+            upstream_type=UpstreamType.GITHUB,
+        )
+
     auth_verifier = GoogleAuthVerifier()
     gateway_service = MCPGatewayService(upstreams=upstreams, auth_port=auth_verifier)
     mcp_app = create_gateway_mcp_server(gateway_service)
