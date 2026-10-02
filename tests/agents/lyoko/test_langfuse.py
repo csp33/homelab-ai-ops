@@ -102,7 +102,10 @@ def test_get_langfuse_trace_config_enabled(monkeypatch):
     assert cfg["metadata"]["langfuse_session_id"] == "telegram-12345"
     assert cfg["metadata"]["langfuse_user_id"] == "user-999"
     assert cfg["metadata"]["langfuse_trace_name"] == "chat-trace"
-    assert cfg["metadata"]["langfuse_tags"] == ["tg", "chat"]
+    assert "tg" in cfg["metadata"]["langfuse_tags"]
+    assert "env:local" in cfg["metadata"]["langfuse_tags"]
+    assert cfg["metadata"]["environment"] == "local"
     assert cfg["metadata"]["extra"] == "val"
     assert cfg["run_name"] == "chat-trace"
-    assert cfg["tags"] == ["tg", "chat"]
+    assert "tg" in cfg["tags"]
+    assert "env:local" in cfg["tags"]

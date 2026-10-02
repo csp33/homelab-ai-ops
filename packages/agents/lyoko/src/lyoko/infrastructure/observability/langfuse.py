@@ -17,10 +17,14 @@ class LangfuseTracer(TracerInterface):
         public_key: str = "",
         secret_key: str = "",
         host: str = "https://cloud.langfuse.com",
+        environment: str = "local",
+        release: str | None = None,
     ) -> None:
         self._public_key = public_key
         self._secret_key = secret_key
         self._host = host
+        self._environment = environment
+        self._release = release
         self._client: Any | None = None
         self._enabled = bool(public_key and secret_key)
 
@@ -30,6 +34,7 @@ class LangfuseTracer(TracerInterface):
     def _init_client(self) -> None:
         try:
             import os
+
             from langfuse import Langfuse
 
             if self._public_key:
@@ -38,13 +43,19 @@ class LangfuseTracer(TracerInterface):
                 os.environ["LANGFUSE_SECRET_KEY"] = self._secret_key
             if self._host:
                 os.environ["LANGFUSE_HOST"] = self._host
+            if self._environment:
+                os.environ["LANGFUSE_TRACING_ENVIRONMENT"] = self._environment
 
             self._client = Langfuse(
                 public_key=self._public_key,
                 secret_key=self._secret_key,
                 host=self._host,
+                environment=self._environment,
+                release=self._release,
             )
-            logger.info("Langfuse client initialized successfully.")
+            logger.info(
+                "Langfuse client initialized successfully with env '%s'.", self._environment
+            )
         except Exception as exc:
             logger.warning(f"Failed to initialize Langfuse client: {exc}")
             self._enabled = False
@@ -77,20 +88,26 @@ class LangfuseTracer(TracerInterface):
         if handler:
             config["callbacks"] = [handler]
 
+        effective_tags = list(tags or [])
+        env_tag = f"env:{self._environment}"
+        if env_tag not in effective_tags:
+            effective_tags.append(env_tag)
+
         meta: dict[str, Any] = dict(metadata or {})
+        meta["environment"] = self._environment
         if session_id:
             meta["langfuse_session_id"] = str(session_id)
         if user_id:
             meta["langfuse_user_id"] = str(user_id)
         if trace_name:
             meta["langfuse_trace_name"] = str(trace_name)
-        if tags:
-            meta["langfuse_tags"] = [str(t) for t in tags]
+        if effective_tags:
+            meta["langfuse_tags"] = [str(t) for t in effective_tags]
 
         if meta:
             config["metadata"] = meta
-        if tags:
-            config["tags"] = [str(t) for t in tags]
+        if effective_tags:
+            config["tags"] = [str(t) for t in effective_tags]
         if trace_name:
             config["run_name"] = str(trace_name)
 
@@ -116,6 +133,8 @@ def get_langfuse_callback_handler() -> Any | None:
             public_key=settings.langfuse_public_key,
             secret_key=secret_val,
             host=settings.langfuse_host,
+            environment=settings.get_langfuse_environment(),
+            release=settings.langfuse_release,
         )
         return tracer.get_callback_handler()
     except Exception as e:
@@ -148,6 +167,8 @@ def get_langfuse_trace_config(
             public_key=settings.langfuse_public_key,
             secret_key=secret_val,
             host=settings.langfuse_host,
+            environment=settings.get_langfuse_environment(),
+            release=settings.langfuse_release,
         )
         return tracer.get_trace_config(
             session_id=session_id,

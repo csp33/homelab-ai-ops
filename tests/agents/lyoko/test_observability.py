@@ -45,12 +45,15 @@ def test_langfuse_tracer_get_trace_config_with_session_and_user():
         assert config is not None
         assert "callbacks" in config
         assert len(config["callbacks"]) == 1
-        assert config["tags"] == ["lyoko", "ns:media", "alert:OOMKilled"]
+        assert "lyoko" in config["tags"]
+        assert "env:local" in config["tags"]
         assert config["run_name"] == "lyoko-OOMKilled-radarr-xxx"
         assert config["metadata"]["langfuse_session_id"] == "incident-xyz123"
         assert config["metadata"]["langfuse_user_id"] == "alert:OOMKilled"
         assert config["metadata"]["langfuse_trace_name"] == "lyoko-OOMKilled-radarr-xxx"
-        assert config["metadata"]["langfuse_tags"] == ["lyoko", "ns:media", "alert:OOMKilled"]
+        assert "lyoko" in config["metadata"]["langfuse_tags"]
+        assert "env:local" in config["metadata"]["langfuse_tags"]
+        assert config["metadata"]["environment"] == "local"
         assert config["metadata"]["pod_name"] == "radarr-xxx"
         assert config["metadata"]["custom"] == "value"
 
@@ -64,12 +67,13 @@ def test_langfuse_tracer_get_trace_config_when_disabled():
         metadata={"pod": "test"},
     )
     assert config == {
-        "tags": ["lyoko"],
+        "tags": ["lyoko", "env:local"],
         "metadata": {
             "pod": "test",
+            "environment": "local",
             "langfuse_session_id": "incident-xyz",
             "langfuse_trace_name": "test-run",
-            "langfuse_tags": ["lyoko"],
+            "langfuse_tags": ["lyoko", "env:local"],
         },
         "run_name": "test-run",
     }

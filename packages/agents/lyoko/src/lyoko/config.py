@@ -63,12 +63,26 @@ class AgentSettings(BaseSettings):
         default=10, description="Seconds to wait before verifying pod health"
     )
 
+    # General Environment
+    environment: str = Field(
+        default="local",
+        description="Deployment environment (e.g. 'local', 'homelab', 'development', 'production')",
+    )
+
     # Observability (Langfuse / OpenTelemetry)
-    langfuse_enabled: bool = Field(default=False, description="Enable Langfuse tracing")
+    langfuse_enabled: bool = Field(default=True, description="Enable Langfuse tracing")
     langfuse_public_key: str | None = Field(default=None, description="Langfuse Public Key")
     langfuse_secret_key: SecretStr | None = Field(default=None, description="Langfuse Secret Key")
     langfuse_host: str = Field(
         default="https://cloud.langfuse.com", description="Langfuse Host URL"
+    )
+    langfuse_environment: str | None = Field(
+        default=None,
+        description="Langfuse environment tag override (defaults to environment setting if not set)",
+    )
+    langfuse_release: str | None = Field(
+        default=None,
+        description="Release version identifier for Langfuse tracing",
     )
 
     # PostgreSQL Checkpointer (Persistent LangGraph state)
@@ -104,6 +118,10 @@ class AgentSettings(BaseSettings):
         if isinstance(v, (list, tuple, set)):
             return [str(x) for x in v]
         return v or []
+
+    def get_langfuse_environment(self) -> str:
+        """Return the effective Langfuse environment string."""
+        return self.langfuse_environment or self.environment
 
     def get_postgres_uri(self) -> str | None:
         """Construct PostgreSQL connection URI if configured."""
