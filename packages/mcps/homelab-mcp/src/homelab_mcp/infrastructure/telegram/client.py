@@ -8,6 +8,7 @@ from homelab_mcp.domain.interfaces.telegram import TelegramClientInterface
 from homelab_mcp.domain.models.telegram import (
     TelegramAlertRequest,
     TelegramMessageRequest,
+    TelegramReactionRequest,
     TelegramSeverity,
 )
 from pydantic import SecretStr
@@ -45,10 +46,32 @@ class TelegramClient(TelegramClientInterface):
             raise ValueError("Telegram bot token not configured")
 
         url = f"{self.base_url}/sendMessage"
-        payload = {
+        payload: dict[str, Any] = {
             "chat_id": chat_id,
             "text": request.text,
             "parse_mode": request.parse_mode,
+        }
+        if request.reply_to_message_id is not None:
+            payload["reply_parameters"] = {"message_id": int(request.reply_to_message_id)}
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+            return resp.json()
+
+    async def set_reaction(self, request: TelegramReactionRequest) -> dict[str, Any]:
+        """Set an emoji reaction on a message in Telegram."""
+        chat_id = request.chat_id or self.default_chat_id
+        if not chat_id:
+            raise ValueError("No chat_id specified and no default_chat_id configured")
+        if not self.bot_token:
+            raise ValueError("Telegram bot token not configured")
+
+        url = f"{self.base_url}/setMessageReaction"
+        payload = {
+            "chat_id": chat_id,
+            "message_id": int(request.message_id),
+            "reaction": [{"type": "emoji", "emoji": request.emoji}],
         }
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(url, json=payload)

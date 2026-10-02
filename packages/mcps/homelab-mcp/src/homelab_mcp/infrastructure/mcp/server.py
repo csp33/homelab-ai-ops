@@ -15,6 +15,7 @@ from homelab_mcp.domain.interfaces.telegram import TelegramClientInterface
 from homelab_mcp.domain.models.telegram import (
     TelegramAlertRequest,
     TelegramMessageRequest,
+    TelegramReactionRequest,
     TelegramSeverity,
 )
 from homelab_mcp.infrastructure.auth.google import GoogleJWTVerifier
@@ -209,6 +210,7 @@ def create_gateway_mcp_server(
             text: str,
             chat_id: str | None = None,
             parse_mode: str = "Markdown",
+            reply_to_message_id: int | str | None = None,
         ) -> dict[str, Any]:
             """Send a text message to Telegram via the configured bot.
 
@@ -216,13 +218,35 @@ def create_gateway_mcp_server(
                 text: Message text to send.
                 chat_id: Optional target Telegram chat ID (falls back to default if not set).
                 parse_mode: Text format parsing mode (e.g. 'Markdown', 'HTML').
+                reply_to_message_id: Optional message ID to reply to directly.
             """
             request = TelegramMessageRequest(
                 text=text,
                 chat_id=chat_id,
                 parse_mode=parse_mode,
+                reply_to_message_id=reply_to_message_id,
             )
             return await telegram_client.send_message(request)
+
+        @mcp.tool()
+        async def telegram_set_reaction(
+            message_id: int,
+            emoji: str = "👀",
+            chat_id: str | None = None,
+        ) -> dict[str, Any]:
+            """Set an emoji reaction on a message in Telegram.
+
+            Args:
+                message_id: The ID of the Telegram message to react to.
+                emoji: Emoji string to react with (e.g. '👀', '⚡', '👍', '🔥', '🎉').
+                chat_id: Optional target Telegram chat ID (falls back to default if not set).
+            """
+            request = TelegramReactionRequest(
+                message_id=message_id,
+                emoji=emoji,
+                chat_id=chat_id,
+            )
+            return await telegram_client.set_reaction(request)
 
         @mcp.tool()
         async def telegram_send_alert(

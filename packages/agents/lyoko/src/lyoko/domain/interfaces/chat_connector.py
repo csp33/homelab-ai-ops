@@ -17,7 +17,13 @@ class ChatConnector(ABC):
         pass
 
     @abstractmethod
-    async def send_message(self, chat_id: str, text: str, parse_mode: str = "Markdown") -> None:
+    async def send_message(
+        self,
+        chat_id: str,
+        text: str,
+        reply_to_message_id: str | int | None = None,
+        parse_mode: str = "Markdown",
+    ) -> None:
         pass
 
     @abstractmethod
