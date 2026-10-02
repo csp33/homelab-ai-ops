@@ -75,9 +75,10 @@ class OpenAILLMAdapter(LLMClientInterface):
                 last_message = result["messages"][-1]
                 return str(last_message.content)
             except Exception as e:
-                logger.error("Error executing ReAct agent with tools: %s", e)
-                # Fallback to standard chat without tools
-                pass
+                # Never fall back to a tool-less chat: the system prompt forbids answering about
+                # live infrastructure without tools, so a silent fallback produces hallucinations.
+                logger.error("Error executing ReAct agent with tools: %s", e, exc_info=True)
+                raise
 
         messages: list[Any] = []
         if system_prompt:

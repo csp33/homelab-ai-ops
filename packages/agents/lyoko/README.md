@@ -155,7 +155,8 @@ Configure LYOKO using environment variables (in `.env` or Kubernetes ConfigMap/S
 | `OPENAI_API_KEY` | `""` | OpenAI API key for LLM diagnosis and chat. |
 | `OPENAI_MODEL` | `gpt-4o-mini` | LLM model used for chat and remediation reasoning. |
 | `MCP_SERVER_URL` | `http://localhost:8000/mcp` | URL of the `homelab-mcp` gateway endpoint. |
-| `SERVICE_TOKEN` | `""` | Bearer token for authenticating against `homelab-mcp`. |
+| `SERVICE_TOKEN` | `""` | Bearer token for authenticating against `homelab-mcp`. Required when the gateway runs with `AUTH_ENABLED=true`. |
+| `MCP_FAIL_FAST` | `true` | Abort startup if the gateway rejects the credentials (401/403) or the URL is not an MCP endpoint (404). An unreachable gateway only logs an error. |
 | `TELEGRAM_ENABLED` | `false` | Enable Telegram assistant, channel posting, and HITL approvals. |
 | `TELEGRAM_BOT_TOKEN` | `""` | Telegram Bot Token from `@BotFather`. |
 | `TELEGRAM_ALLOWED_USER_IDS` | `[]` | List of authorized Telegram user IDs. |

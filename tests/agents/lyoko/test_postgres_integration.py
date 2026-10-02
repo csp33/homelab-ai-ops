@@ -14,6 +14,7 @@ async def test_postgres_checkpointer_integration_with_local_container():
     app = create_app()
 
     mock_mcp = MagicMock()
+    mock_mcp.verify_connection = AsyncMock()
     mock_mcp.call_tool = AsyncMock(
         side_effect=[
             {"phase": "Running", "logs": "out of memory"},
