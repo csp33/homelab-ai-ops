@@ -122,11 +122,11 @@ class GatewaySettings(BaseSettings):
     # Security & Guardrails
     allowed_tools: list[str] | str = Field(
         default_factory=lambda: ["*"],
-        description="Glob patterns of permitted tool names (e.g. ['*'] or ['k8s_*', 'ha_*'])",
+        description="Glob patterns of permitted tool names (e.g. ['*'] or ['pods_*', 'ha_*'])",
     )
     blocked_tools: list[str] | str = Field(
         default_factory=list,
-        description="Glob patterns of strictly forbidden tool names (e.g. ['k8s_delete_namespace'])",
+        description="Glob patterns of strictly forbidden tool names (e.g. ['resources_delete'])",
     )
     allowed_exec_commands: list[str] | str = Field(
         default_factory=list,

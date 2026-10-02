@@ -56,7 +56,7 @@ Every tool call is evaluated by the `GuardrailEngine` before it is dispatched up
 flowchart TD
     REQ([Tool call]) --> C1{Tool allowed?}
     C1 -->|no| X1[Rejected: not in allowlist]
-    C1 -->|yes| C2{Mutation in protected namespace?}
+    C1 -->|yes| C2{Non read-only tool in protected namespace?}
     C2 -->|yes| X2[Rejected: protected namespace]
     C2 -->|no| C3{GitHub repo permitted?}
     C3 -->|no| X3[Rejected: repository policy]
@@ -76,17 +76,22 @@ flowchart TD
 ```
 
 ### Security capabilities
-1. **Namespace Isolation**: Mutating actions (`delete`, `patch`, `update`, `restart`, `bump`, `exec`) targeting protected namespaces like `kube-system` are intercepted and rejected.
+1. **Namespace Isolation**: Protected namespaces like `kube-system` are read-only. Only Kubernetes tools that match a read-only pattern (`*_get`, `*_list`, `*_log`, `*_top`, and similar) may target them, so every other tool, including new or unknown ones, is rejected. The target namespace is read from the `namespace` argument, from the `metadata.namespace` of a `resource` manifest, and from the name of a `Namespace` object. A manifest that cannot be parsed is rejected. Calls that name no namespace use the namespace from your kubeconfig.
 2. **Command Exec Filtering**: Commands executed in containers or hosts are parsed via `shlex` and evaluated against regex signatures for destructive operations (`rm -rf /`, `dd if=...`, `mkfs`, fork bombs).
 3. **Multi-Tenant Google OIDC Authentication**: Support for Google OAuth / OIDC with email allowlisting to restrict gateway tool execution to verified identities.
 
 ## Tool domains
 
-| Domain | Upstream MCP Provider | Capabilities | Example Tools |
+Tool names come straight from each upstream server. Run `gateway_list_tools` (optionally with `upstream="grafana"`, `query="pod"`, and so on) to see what is available in your deployment.
+
+| Domain | Upstream MCP provider | Capabilities | Example tools |
 | :--- | :--- | :--- | :--- |
-| **Kubernetes** | `kubernetes-mcp-server` | Pod diagnostics, logs, deployment resource adjustments, rollout restarts, namespace queries. | `k8s_get_pod_diagnostics`<br/>`k8s_bump_deployment_resources`<br/>`k8s_rollout_restart` |
-| **Home Assistant** | `homeassistant-ai/ha-mcp` | IoT entity state inspection, domain service execution, automation trigger, health monitoring. | `ha_get_state`<br/>`ha_call_service`<br/>`ha_get_overview` |
-| **UniFi Network** | `sirkirby/unifi-mcp` | Network topology, connected client inspection, port profiles, controller metrics, support bundles. | `unifi_tool_index`<br/>`unifi_execute`<br/>`unifi_get_support_bundle` |
+| **Kubernetes** | [`kubernetes-mcp-server`](https://github.com/containers/kubernetes-mcp-server) | Pod and resource inspection, logs, events, node and pod metrics, scaling, applying manifests, exec. | `pods_get`<br/>`pods_log`<br/>`resources_scale`<br/>`resources_create_or_update` |
+| **Home Assistant** | [`homeassistant-ai/ha-mcp`](https://github.com/homeassistant-ai/ha-mcp) | Entity state inspection, service calls, automations, areas, helpers, add-ons, configuration. | `ha_get_state`<br/>`ha_call_service`<br/>`ha_set_entity` |
+| **UniFi Network** | [`sirkirby/unifi-mcp`](https://github.com/sirkirby/unifi-mcp) | Network topology, clients, devices, switches, APs, firewall, VPN, routing, statistics, support bundles. | `unifi_tool_index`<br/>`unifi_execute`<br/>`unifi_get_support_bundle` |
+| **Grafana** | [`grafana/mcp-grafana`](https://github.com/grafana/mcp-grafana) | Dashboards, datasources, and queries against your Grafana instance. | Discover with `gateway_list_tools` |
+| **GitHub** | [`github/github-mcp-server`](https://github.com/github/github-mcp-server) | Repository inspection and GitOps pull requests, restricted by an allowlist and denylist of repositories. | Discover with `gateway_list_tools` |
+| **Telegram** | Built into the gateway | Send messages and alerts, and set message reactions. | `telegram_send_message`<br/>`telegram_send_alert`<br/>`telegram_set_reaction` |
 
 ## Configuration
 
@@ -109,6 +114,19 @@ Configure `homelab-mcp` via environment variables (in `.env` or container enviro
 | `UNIFI_PASSWORD` | `""` | UniFi admin password. |
 | `K8S_ENABLED` | `true` | Enable Kubernetes upstream MCP. |
 | `KUBECONFIG` | `~/.kube/config` | Path to kubeconfig (or in-cluster SA). |
+| `GRAFANA_ENABLED` | `true` | Enable Grafana upstream MCP. |
+| `GRAFANA_URL` | `http://grafana.monitoring.svc.cluster.local:3000` | Grafana base URL. |
+| `GRAFANA_TOKEN` | `""` | Grafana service account or API token. |
+| `GRAFANA_COMMAND` | `npx -y @grafana/mcp-server@latest` | Command used to launch the Grafana MCP server. |
+| `GITHUB_ENABLED` | `true` | Enable GitHub upstream MCP. |
+| `GITHUB_COMMAND` | `github-mcp-server` | Command used to launch the GitHub MCP server. |
+| `GITHUB_TOKEN` | `""` | GitHub personal access token. |
+| `GITHUB_OWNER` | `""` | Default GitHub owner or organization. |
+| `GITHUB_ALLOWED_REPOS` | `["*"]` | Glob patterns of repositories tools may target. |
+| `GITHUB_BLOCKED_REPOS` | `[]` | Glob patterns of repositories that are always blocked. |
+| `TELEGRAM_ENABLED` | `false` | Enable the built-in Telegram tools. |
+| `TELEGRAM_BOT_TOKEN` | `""` | Telegram bot token from `@BotFather`. |
+| `TELEGRAM_DEFAULT_CHAT_ID` | `""` | Default chat for alerts and messages. |
 
 ## Usage
 

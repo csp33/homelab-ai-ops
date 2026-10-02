@@ -7,64 +7,137 @@ from homelab_mcp.domain.models import GuardrailPolicy
 
 
 def test_guardrail_tool_allowlist_wildcard():
-    policy = GuardrailPolicy(allowed_tools=["ha_*", "k8s_get_*"])
+    policy = GuardrailPolicy(allowed_tools=["ha_*", "pods_get*"])
     engine = GuardrailEngine(policy)
 
     assert engine.is_tool_allowed("ha_get_state") is True
     assert engine.is_tool_allowed("ha_set_state") is True
-    assert engine.is_tool_allowed("k8s_get_pods") is True
-    assert engine.is_tool_allowed("k8s_delete_pod") is False
+    assert engine.is_tool_allowed("pods_get") is True
+    assert engine.is_tool_allowed("pods_delete") is False
     assert engine.is_tool_allowed("unifi_list_clients") is False
 
 
 def test_guardrail_tool_denylist_precedence():
     policy = GuardrailPolicy(
-        allowed_tools=["k8s_*"],
-        blocked_tools=["k8s_delete_namespace", "k8s_delete_node"],
+        allowed_tools=["pods_*", "resources_*"],
+        blocked_tools=["resources_delete", "pods_run"],
     )
     engine = GuardrailEngine(policy)
 
-    assert engine.is_tool_allowed("k8s_get_pods") is True
-    assert engine.is_tool_allowed("k8s_delete_pod") is True
-    assert engine.is_tool_allowed("k8s_delete_namespace") is False
-    assert engine.is_tool_allowed("k8s_delete_node") is False
+    assert engine.is_tool_allowed("pods_get") is True
+    assert engine.is_tool_allowed("pods_delete") is True
+    assert engine.is_tool_allowed("resources_delete") is False
+    assert engine.is_tool_allowed("pods_run") is False
 
 
-def test_guardrail_blocked_namespaces():
-    policy = GuardrailPolicy(
-        allowed_tools=["*"],
-        blocked_namespaces=["kube-system", "kube-public", "longhorn-system"],
-    )
-    engine = GuardrailEngine(policy)
+PROTECTED = ["kube-system", "kube-public", "longhorn-system"]
 
-    # Safe read operation in kube-system is permitted
-    engine.validate_tool_call(
-        "k8s_get_pod_diagnostics", {"namespace": "kube-system"}, upstream_name="kubernetes"
-    )
 
-    # Mutation in kube-system is blocked
+def _k8s_engine() -> GuardrailEngine:
+    return GuardrailEngine(GuardrailPolicy(allowed_tools=["*"], blocked_namespaces=PROTECTED))
+
+
+def _call(engine: GuardrailEngine, tool: str, arguments: dict) -> None:
+    engine.validate_tool_call(tool, arguments, upstream_name="kubernetes")
+
+
+def test_guardrail_protected_namespaces_allow_reads():
+    engine = _k8s_engine()
+
+    _call(engine, "pods_get", {"namespace": "kube-system", "name": "coredns"})
+    _call(engine, "pods_log", {"namespace": "kube-system", "name": "coredns"})
+    _call(engine, "pods_list_in_namespace", {"namespace": "kube-system"})
+    _call(engine, "resources_get", {"kind": "Pod", "namespace": "kube-system", "name": "x"})
+    _call(engine, "resources_list", {"kind": "Pod", "namespace": "longhorn-system"})
+    _call(engine, "events_list", {"namespace": "kube-system"})
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("pods_delete", {"namespace": "kube-system", "name": "coredns"}),
+        ("pods_exec", {"namespace": "kube-system", "name": "coredns", "command": ["ls"]}),
+        ("pods_run", {"namespace": "kube-system", "image": "busybox"}),
+        ("resources_delete", {"kind": "Pod", "namespace": "longhorn-system", "name": "x"}),
+        ("resources_scale", {"kind": "Deployment", "namespace": "kube-system", "name": "x"}),
+        ("ns_mutating_tool_nobody_has_heard_of", {"ns": "kube-system"}),
+    ],
+)
+def test_guardrail_protected_namespaces_block_mutations(tool, arguments):
+    engine = _k8s_engine()
+
     with pytest.raises(GuardrailViolationError) as exc:
-        engine.validate_tool_call(
-            "k8s_delete_pod",
-            {"namespace": "kube-system", "pod_name": "coredns"},
-            upstream_name="kubernetes",
+        _call(engine, tool, arguments)
+    assert "are prohibited" in str(exc.value)
+
+
+def test_guardrail_protected_namespaces_inspect_resource_manifests():
+    engine = _k8s_engine()
+    manifest = """
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coredns
+  namespace: kube-system
+"""
+    with pytest.raises(GuardrailViolationError) as exc:
+        _call(engine, "resources_create_or_update", {"resource": manifest})
+    assert "kube-system" in str(exc.value)
+
+    as_json = '{"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"namespace": "kube-public"}}'
+    with pytest.raises(GuardrailViolationError):
+        _call(engine, "resources_create_or_update", {"resource": as_json})
+
+    multi_doc = "kind: ConfigMap\nmetadata:\n  namespace: media\n---\nkind: ConfigMap\nmetadata:\n  namespace: kube-system\n"
+    with pytest.raises(GuardrailViolationError):
+        _call(engine, "resources_create_or_update", {"resource": multi_doc})
+
+    item_list = {
+        "kind": "List",
+        "items": [{"kind": "Pod", "metadata": {"namespace": "kube-system"}}],
+    }
+    with pytest.raises(GuardrailViolationError):
+        _call(engine, "resources_create_or_update", {"resource": item_list})
+
+
+def test_guardrail_protected_namespaces_block_namespace_objects():
+    engine = _k8s_engine()
+
+    with pytest.raises(GuardrailViolationError):
+        _call(engine, "resources_delete", {"kind": "Namespace", "name": "kube-system"})
+    with pytest.raises(GuardrailViolationError):
+        _call(
+            engine,
+            "resources_create_or_update",
+            {"resource": "kind: Namespace\nmetadata:\n  name: longhorn-system\n"},
         )
-    assert "Mutation or exec operations in protected namespace 'kube-system' are prohibited" in str(
-        exc.value
+
+
+def test_guardrail_blocks_uninspectable_manifest():
+    engine = _k8s_engine()
+
+    with pytest.raises(GuardrailViolationError) as exc:
+        _call(engine, "resources_create_or_update", {"resource": "{unclosed: [yaml"})
+    assert "cannot be inspected" in str(exc.value)
+
+
+def test_guardrail_allows_mutations_outside_protected_namespaces():
+    engine = _k8s_engine()
+
+    _call(engine, "pods_delete", {"namespace": "media", "name": "radarr-xxx"})
+    _call(engine, "resources_scale", {"kind": "Deployment", "namespace": "media", "name": "x"})
+    _call(
+        engine,
+        "resources_create_or_update",
+        {"resource": "kind: Deployment\nmetadata:\n  name: x\n  namespace: media\n"},
     )
 
-    # Mutation in longhorn-system is blocked
-    with pytest.raises(GuardrailViolationError) as exc:
-        engine.validate_tool_call(
-            "k8s_restart_deployment", {"namespace": "longhorn-system"}, upstream_name="kubernetes"
-        )
-    assert "longhorn-system" in str(exc.value)
 
-    # Mutation in non-protected namespace is allowed
+def test_guardrail_namespace_check_only_applies_to_kubernetes_upstream():
+    engine = _k8s_engine()
+
     engine.validate_tool_call(
-        "k8s_delete_pod",
-        {"namespace": "media", "pod_name": "radarr-xxx"},
-        upstream_name="kubernetes",
+        "ha_call_service", {"namespace": "kube-system"}, upstream_name="homeassistant"
     )
 
 
@@ -86,7 +159,9 @@ def test_guardrail_blocked_command_patterns():
 
     for cmd in dangerous_commands:
         with pytest.raises(GuardrailViolationError) as exc:
-            engine.validate_tool_call("k8s_exec", {"namespace": "default", "command": cmd})
+            engine.validate_tool_call(
+                "pods_exec", {"namespace": "default", "command": cmd}, upstream_name="kubernetes"
+            )
         assert "violates blocked execution pattern" in str(exc.value)
 
 
@@ -98,18 +173,18 @@ def test_guardrail_allowed_command_whitelist():
 
     # Allowed commands
     engine.validate_tool_call(
-        "k8s_exec", {"namespace": "default", "command": "cat /etc/os-release"}
+        "pods_exec", {"namespace": "default", "command": "cat /etc/os-release"}
     )
-    engine.validate_tool_call("k8s_exec", {"namespace": "default", "command": "ls -lah /var/log"})
-    engine.validate_tool_call("k8s_exec", {"namespace": "default", "command": "ps aux"})
+    engine.validate_tool_call("pods_exec", {"namespace": "default", "command": "ls -lah /var/log"})
+    engine.validate_tool_call("pods_exec", {"namespace": "default", "command": "ps aux"})
     engine.validate_tool_call(
-        "k8s_exec", {"namespace": "default", "command": "sh -c 'cat /proc/meminfo'"}
+        "pods_exec", {"namespace": "default", "command": "sh -c 'cat /proc/meminfo'"}
     )
 
     # Disallowed binary (not in allowed list, e.g. curl)
     with pytest.raises(GuardrailViolationError) as exc:
         engine.validate_tool_call(
-            "k8s_exec", {"namespace": "default", "command": "curl http://external.site"}
+            "pods_exec", {"namespace": "default", "command": "curl http://external.site"}
         )
     assert "not in the allowed commands whitelist" in str(exc.value)
 

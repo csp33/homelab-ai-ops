@@ -66,7 +66,7 @@ async def test_gateway_tool_execution(mock_auth):
     mock_k8s.list_tools = AsyncMock(
         return_value=[
             ToolDefinition(
-                name="k8s_get_pod_diagnostics",
+                name="pods_get",
                 description="Diagnostics",
                 upstream_type=UpstreamType.KUBERNETES,
             )
@@ -82,12 +82,12 @@ async def test_gateway_tool_execution(mock_auth):
     )
 
     result = await gateway.execute_tool(
-        "k8s_get_pod_diagnostics", {"namespace": "media", "pod_name": "radarr-123"}
+        "pods_get", {"namespace": "media", "pod_name": "radarr-123"}
     )
     assert result.status == "success"
     assert result.content == {"pod": "running"}
     mock_k8s.call_tool.assert_awaited_once_with(
-        "k8s_get_pod_diagnostics", {"namespace": "media", "pod_name": "radarr-123"}
+        "pods_get", {"namespace": "media", "pod_name": "radarr-123"}
     )
 
 
