@@ -109,11 +109,17 @@ def create_gateway_mcp_server(
         return [{"upstream": k, "tool_count": v} for k, v in sorted(counts.items())]
 
     @mcp.tool()
-    async def gateway_list_tools(upstream: str | None = None) -> list[dict[str, Any]]:
-        """List operational tools aggregated from connected upstream MCP servers, optionally filtered by upstream category (e.g. 'homeassistant', 'unifi', 'kubernetes', 'grafana', 'github').
+    async def gateway_list_tools(
+        query: str | None = None,
+        upstream: str | None = None,
+        limit: int = 25,
+    ) -> list[dict[str, Any]]:
+        """List operational tools aggregated from connected upstream MCP servers with optional keyword search and category filtering.
 
         Args:
-            upstream: Optional upstream name to filter tools by category.
+            query: Optional keyword to search tool names and descriptions (e.g. 'client', 'pod', 'light', 'blind').
+            upstream: Optional upstream name to filter tools by category (e.g. 'homeassistant', 'unifi', 'kubernetes', 'grafana', 'github').
+            limit: Maximum number of tools to return (default: 25, max: 50).
         """
         tools = await service.discover_tools()
         if upstream:
@@ -125,15 +131,49 @@ def create_gateway_mcp_server(
                 or target in str(t.upstream_type).lower()
                 or target in t.name.lower()
             ]
-        return [
-            {
-                "name": t.name,
-                "description": t.description,
-                "upstream": str(t.upstream_type),
-                "parameters": t.parameters,
-            }
-            for t in tools
-        ]
+
+        if query:
+            q = query.strip().lower()
+            tools = [
+                t
+                for t in tools
+                if q in t.name.lower()
+                or (t.description and q in t.description.lower())
+                or (t.upstream_type and q in str(t.upstream_type).lower())
+            ]
+
+        bounded_limit = max(1, min(limit, 50))
+        results = []
+        for t in tools[:bounded_limit]:
+            desc = (t.description or "").strip()
+            first_line = desc.split("\n")[0].strip()
+            short_desc = first_line[:160] + "..." if len(first_line) > 160 else first_line
+            results.append(
+                {
+                    "name": t.name,
+                    "description": short_desc,
+                    "upstream": str(t.upstream_type),
+                }
+            )
+        return results
+
+    @mcp.tool()
+    async def gateway_get_tool_schema(tool_name: str) -> dict[str, Any]:
+        """Get the full parameter schema and detailed description for a specific operational tool.
+
+        Args:
+            tool_name: The exact name of the tool to inspect.
+        """
+        tools = await service.discover_tools()
+        for t in tools:
+            if t.name == tool_name:
+                return {
+                    "name": t.name,
+                    "description": t.description,
+                    "upstream": str(t.upstream_type),
+                    "parameters": t.parameters,
+                }
+        return {"error": f"Tool '{tool_name}' not found."}
 
     @mcp.tool()
     async def gateway_call_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -144,9 +184,21 @@ def create_gateway_mcp_server(
             arguments: Dictionary of arguments matching the tool schema.
         """
         result = await service.execute_tool(tool_name, arguments)
+        content = result.content
+        # Truncate excessively large strings or collections to avoid blowing LLM context windows
+        if isinstance(content, str) and len(content) > 12000:
+            content = (
+                content[:12000]
+                + f"\n... [Output truncated. Total characters: {len(result.content)}]"
+            )
+        elif isinstance(content, list) and len(content) > 60:
+            content = content[:60] + [
+                f"... [{len(result.content) - 60} more items truncated to maintain lean context]"
+            ]
+
         return {
             "status": result.status,
-            "content": result.content,
+            "content": content,
             "is_error": result.is_error,
         }
 
