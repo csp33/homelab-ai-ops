@@ -1,7 +1,10 @@
 """LLM client interface definitions for LYOKO."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from typing import Any
+
+TokenCallback = Callable[[str], Awaitable[None]]
 
 
 class LLMClientInterface(ABC):
@@ -20,6 +23,7 @@ class LLMClientInterface(ABC):
         metadata: dict[str, Any] | None = None,
         max_steps: int | None = None,
         parent_config: dict[str, Any] | None = None,
+        on_token: TokenCallback | None = None,
     ) -> str:
         """Process a conversational or single-turn prompt with optional tools and session tracing.
 
@@ -29,4 +33,6 @@ class LLMClientInterface(ABC):
         given, the call is traced as a child of that run (named ``trace_name``) instead of
         starting a trace of its own, and ``session_id`` and ``user_id`` are ignored because the
         enclosing trace already carries them.
+
+        ``on_token`` is an optional async callback invoked as text tokens are streamed.
         """

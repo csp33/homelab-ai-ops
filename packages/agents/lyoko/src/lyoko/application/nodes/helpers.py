@@ -83,19 +83,23 @@ async def run_agent(
     phase: str,
     system_prompt: str,
     prompt: str,
+    on_token: Any = None,
 ) -> str:
     """Run one tool-using agent with every tool call going through ``gate``."""
     assert llm is not None
-    return await llm.chat(
-        prompt=prompt,
-        system_prompt=system_prompt,
-        tools=mcp_client.get_langchain_tools(authorizer=gate.authorize),
-        session_id=state.get("session_id"),
-        trace_name=f"{phase}-agent",
-        tags=[f"phase:{phase}"],
-        max_steps=settings.max_agent_steps,
-        parent_config=config,
-    )
+    kwargs: dict[str, Any] = {
+        "prompt": prompt,
+        "system_prompt": system_prompt,
+        "tools": mcp_client.get_langchain_tools(authorizer=gate.authorize),
+        "session_id": state.get("session_id"),
+        "trace_name": f"{phase}-agent",
+        "tags": [f"phase:{phase}"],
+        "max_steps": settings.max_agent_steps,
+        "parent_config": config,
+    }
+    if on_token is not None:
+        kwargs["on_token"] = on_token
+    return await llm.chat(**kwargs)
 
 
 async def run_supervised(
@@ -109,6 +113,7 @@ async def run_supervised(
     phase: str,
     prompt: str,
     system_prompt: str | None = None,
+    on_token: Any = None,
 ) -> str:
     """Run through the supervisor + specialists when available; otherwise fall back."""
     if supervisor is None:
@@ -123,6 +128,7 @@ async def run_supervised(
             phase=phase,
             system_prompt=system_prompt,
             prompt=prompt,
+            on_token=on_token,
         )
     return await supervisor.coordinate(
         prompt=prompt,
@@ -132,4 +138,5 @@ async def run_supervised(
         authorizer=gate.authorize,
         parent_config=config,
         max_steps=settings.max_agent_steps,
+        on_token=on_token,
     )

@@ -78,6 +78,9 @@ def create_chat_node(
             approval_manager=approval_manager,
             chat_manager=chat_manager,
         )
+        on_token = state.get("on_token")
+        if on_token is None and isinstance(config, dict):
+            on_token = config.get("configurable", {}).get("on_token")
         try:
             answer = await run_supervised(
                 state,
@@ -89,6 +92,7 @@ def create_chat_node(
                 phase="chat",
                 prompt=prompt_with_memory,
                 system_prompt=None if supervisor is not None else CHAT_SYSTEM_PROMPT,
+                on_token=on_token,
             )
         except Exception as exc:
             logger.error("Failed to generate LLM response: %s", exc)

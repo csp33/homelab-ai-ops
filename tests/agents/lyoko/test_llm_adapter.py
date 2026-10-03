@@ -179,3 +179,81 @@ async def test_nested_call_works_when_the_parent_has_no_tracer(mock_get_config):
     await adapter.chat(prompt="hi", trace_name="route-llm", parent_config={})
 
     assert client.ainvoke.call_args.kwargs["config"] == {"run_name": "route-llm"}
+
+
+@pytest.mark.asyncio
+async def test_openai_llm_adapter_streaming_direct_chat():
+    """Verify on_token callback is invoked for each streamed chunk."""
+    adapter = OpenAILLMAdapter(api_key="sk-test")
+    mock_client = MagicMock()
+
+    chunk1 = MagicMock()
+    chunk1.content = "Hello "
+    chunk2 = MagicMock()
+    chunk2.content = "world!"
+    chunk3 = MagicMock()
+    chunk3.content = ""
+
+    async def mock_astream(*args, **kwargs):
+        for c in [chunk1, chunk2, chunk3]:
+            yield c
+
+    mock_client.astream = mock_astream
+    adapter._client = mock_client
+
+    tokens: list[str] = []
+
+    async def on_token(token: str) -> None:
+        tokens.append(token)
+
+    result = await adapter.chat(
+        prompt="Greet",
+        on_token=on_token,
+    )
+
+    assert result == "Hello world!"
+    assert tokens == ["Hello ", "world!"]
+
+
+@pytest.mark.asyncio
+async def test_openai_llm_adapter_streaming_react_loop():
+    """Verify on_token callback receives chunks during tool-enabled ReAct agent run."""
+    adapter = OpenAILLMAdapter(api_key="sk-test")
+    mock_client = MagicMock()
+
+    class MockChunk:
+        def __init__(self, content: str, tool_calls=None):
+            self.content = content
+            self.tool_calls = tool_calls or []
+
+        def __add__(self, other):
+            return MockChunk(
+                self.content + getattr(other, "content", ""),
+                self.tool_calls + getattr(other, "tool_calls", []),
+            )
+
+    async def mock_bound_astream(*args, **kwargs):
+        yield MockChunk("Cluster ")
+        yield MockChunk("is healthy.")
+
+    mock_bound = MagicMock()
+    mock_bound.astream = mock_bound_astream
+    mock_client.bind_tools.return_value = mock_bound
+    adapter._client = mock_client
+
+    tokens: list[str] = []
+
+    async def on_token(token: str) -> None:
+        tokens.append(token)
+
+    mock_tool = MagicMock()
+    mock_tool.name = "k8s_tool"
+
+    result = await adapter.chat(
+        prompt="Status",
+        tools=[mock_tool],
+        on_token=on_token,
+    )
+
+    assert result == "Cluster is healthy."
+    assert tokens == ["Cluster ", "is healthy."]
