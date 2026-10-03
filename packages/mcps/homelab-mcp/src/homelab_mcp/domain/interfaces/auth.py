@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 
-from homelab_mcp.domain.models import AuthIdentity
+from homelab_mcp.domain.models.auth import AuthIdentity
 
 
 class AuthVerifierInterface(ABC):

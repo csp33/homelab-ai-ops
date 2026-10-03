@@ -1,8 +1,8 @@
 """Unit tests for homelab-mcp domain models."""
 
-from homelab_mcp.domain.models import (
-    AuthIdentity,
-    GuardrailPolicy,
+from homelab_mcp.domain.models.auth import AuthIdentity
+from homelab_mcp.domain.models.guardrail import GuardrailPolicy
+from homelab_mcp.domain.models.upstream import (
     ToolDefinition,
     ToolResult,
     UpstreamType,

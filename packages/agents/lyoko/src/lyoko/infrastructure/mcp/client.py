@@ -9,13 +9,13 @@ from fastmcp import Client
 from langchain_core.runnables import RunnableLambda
 from langchain_core.tools import StructuredTool, ToolException
 from lyoko.config import settings
-from lyoko.domain.exceptions import (
+from lyoko.domain.exceptions.mcp import (
     MCPAuthenticationError,
     MCPEndpointNotFoundError,
     MCPGatewayError,
     MCPGatewayUnreachableError,
 )
-from lyoko.domain.interfaces import MCPClientInterface, ToolAuthorizer
+from lyoko.domain.interfaces.mcp import MCPClientInterface, ToolAuthorizer
 
 logger = logging.getLogger("lyoko.infrastructure.mcp.client")
 

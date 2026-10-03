@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from langchain_core.callbacks import BaseCallbackHandler
-from lyoko.domain.exceptions import (
+from lyoko.domain.exceptions.mcp import (
     MCPAuthenticationError,
     MCPEndpointNotFoundError,
     MCPGatewayError,

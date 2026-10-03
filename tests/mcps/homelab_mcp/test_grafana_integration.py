@@ -3,7 +3,7 @@
 from unittest.mock import patch
 
 from homelab_mcp.config import GatewaySettings
-from homelab_mcp.domain.models import UpstreamType
+from homelab_mcp.domain.models.upstream import UpstreamType
 from homelab_mcp.server import build_gateway_application
 
 

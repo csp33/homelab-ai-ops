@@ -3,7 +3,7 @@
 from unittest.mock import patch
 
 import pytest
-from homelab_mcp.domain.exceptions import AuthenticationError
+from homelab_mcp.domain.exceptions.auth import AuthenticationError
 from homelab_mcp.infrastructure.auth.google import GoogleAuthVerifier
 
 

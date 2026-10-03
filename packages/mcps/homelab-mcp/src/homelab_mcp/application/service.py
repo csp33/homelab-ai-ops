@@ -5,9 +5,12 @@ from typing import Any
 
 from homelab_mcp.application.guardrail import GuardrailEngine
 from homelab_mcp.config import settings
-from homelab_mcp.domain.exceptions import ToolNotFoundError
-from homelab_mcp.domain.interfaces import AuthVerifierInterface, UpstreamMCPInterface
-from homelab_mcp.domain.models import AuthIdentity, GuardrailPolicy, ToolDefinition, ToolResult
+from homelab_mcp.domain.exceptions.tool import ToolNotFoundError
+from homelab_mcp.domain.interfaces.auth import AuthVerifierInterface
+from homelab_mcp.domain.interfaces.upstream import UpstreamMCPInterface
+from homelab_mcp.domain.models.auth import AuthIdentity
+from homelab_mcp.domain.models.guardrail import GuardrailPolicy
+from homelab_mcp.domain.models.upstream import ToolDefinition, ToolResult
 
 logger = logging.getLogger("homelab_mcp.gateway_service")
 
