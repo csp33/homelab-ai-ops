@@ -5,11 +5,12 @@
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![FastMCP](https://img.shields.io/badge/FastMCP-gateway-009688.svg?style=flat)](https://github.com/jlowin/fastmcp)
 [![LangGraph](https://img.shields.io/badge/LangGraph-workflow-orange.svg?style=flat)](https://github.com/langchain-ai/langgraph)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-336791.svg?style=flat&logo=postgresql&logoColor=white)](https://github.com/pgvector/pgvector)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-An AI operator for the whole homelab: Kubernetes, the network, the smart home, and observability. It receives incidents, works out the cause, and fixes them through a single authenticated, guardrail-protected tool gateway, with a human approving anything that is not explicitly trusted. Powered by **FastMCP** and **LangGraph**.
+An AI operator for the whole homelab: Kubernetes, the network, the smart home, and observability. It receives incidents, works out the cause, and fixes them through a single authenticated, guardrail-protected tool gateway, with a human approving anything that is not explicitly trusted. It continuously learns from operator feedback via persistent vector episodic memory (**PostgreSQL** + **pgvector**). Powered by **FastMCP** and **LangGraph**.
 
-[Architecture](#architecture) · [Packages](#packages) · [Quick Start](#quick-start) · [Security](#security)
+[Architecture](#architecture) · [Packages](#packages) · [Features](#features) · [Quick Start](#quick-start) · [Security](#security)
 
 ## Architecture
 
@@ -31,6 +32,7 @@ flowchart TD
         WH[Webhook Controller]
         CH[Chat Handler]
         SUP["Supervisor & Planner"]
+        MEM_ENG["Semantic Memory & Feedback Engine"]
         
         subgraph Specialists ["Domain Specialists"]
             direction LR
@@ -46,6 +48,13 @@ flowchart TD
         SUP --> NET_S
         SUP --> HA_S
         SUP --> OBS_S
+        SUP <--> MEM_ENG
+    end
+
+    %% Persistent Storage
+    subgraph DB ["Persistent Storage"]
+        direction TB
+        PG[(PostgreSQL + pgvector<br/>HNSW Cosine Index)]
     end
 
     %% homelab-mcp Tool Hub
@@ -69,8 +78,11 @@ flowchart TD
 
     %% Ingress Connections
     AM -->|"webhooks"| WH
-    TG <-->|"chat & approvals"| CH
+    TG <-->|"chat, feedback & approvals"| CH
     IDE -->|"HTTP / stdio (Direct MCP)"| AUTH
+
+    %% Memory Connection
+    MEM_ENG <-->|"dense embeddings & past lessons"| PG
 
     %% LYOKO & MCP Connections
     K8S_S -->|"scoped tools"| AUTH
@@ -89,40 +101,49 @@ flowchart TD
     classDef spec fill:#9333ea,stroke:#6b21a8,color:#fff;
     classDef gateway fill:#0f766e,stroke:#115e59,color:#fff;
     classDef upstream fill:#b45309,stroke:#92400e,color:#fff;
+    classDef storage fill:#1e3a8a,stroke:#172554,color:#fff;
 
     class AM,TG,IDE ingress;
-    class WH,CH,SUP agent;
+    class WH,CH,SUP,MEM_ENG agent;
     class K8S_S,NET_S,HA_S,OBS_S spec;
     class AUTH,SEARCH,GUARD gateway;
     class U_K8S,U_HA,U_NET,U_GRAF,U_GH upstream;
+    class PG storage;
 ```
 
-### Example: an OOMKilled pod
+### Example: an OOMKilled pod with learned memory
 
-Every incident follows the same loop: investigate with read-only tools, decide on a fix, get approval for each change, apply it, verify, and report. The agent discovers tools at run time, so nothing in the loop is specific to Kubernetes. A UniFi access point that went offline or a Home Assistant integration that stopped responding takes the same path with different tools. The example below uses a pod that was killed for exceeding its memory limit.
+Every incident follows the same loop: investigate with read-only tools, retrieve prior operator lessons, decide on a fix, get approval for each change, apply it, verify, and report. If the operator previously taught the agent a specific rule for that service (e.g. *"compact WAL logs before restarting"*), the agent incorporates it into its diagnosis and remediation plan.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant AM as Alertmanager
     participant L as LYOKO
+    participant DB as PostgreSQL (pgvector)
     participant G as homelab-mcp
     participant O as Operator (Telegram)
     participant K as Kubernetes
 
     AM->>L: POST /webhook/alertmanager (KubePodOOMKilled)
 
-    loop Read-only investigation
-        L->>G: pods_get, pods_log, events_list
-        G->>K: Read pod, logs, events
-        K-->>G: Exit code 137
-        G-->>L: Evidence
+    par Semantic memory lookup
+        L->>DB: Search past feedback & incident rules (cosine distance)
+        DB-->>L: Prior lessons & operator guidelines
+    and Read-only investigation
+        loop Tool investigation
+            L->>G: pods_get, pods_log, events_list
+            G->>K: Read pod, logs, events
+            K-->>G: Exit code 137
+            G-->>L: Evidence
+        end
     end
-    L->>L: Root cause and plan
+
+    L->>L: Root cause and plan (incorporating memory rules)
 
     L->>G: resources_create_or_update (raise memory limit)
     Note over L,G: The tool gate holds the call
-    L->>O: Approval request with tool and arguments
+    L->>O: Approval request with tool, arguments & [💡 Teach Rule]
 
     alt Approved
         O-->>L: Approve
@@ -131,12 +152,16 @@ sequenceDiagram
         L->>L: Wait for stabilization
         L->>G: pods_get (read-only)
         G-->>L: Pod running
+    else Teach Rule / Redirect
+        O-->>L: Teach Rule (e.g. "/feedback Do not increase RAM, compact WAL")
+        L->>DB: Store vector embedding & rule in agent_memory
+        Note over L: Memory updated for next incidents
     else Denied or timed out
         O-->>L: Deny
         Note over L: Nothing changed, incident escalated
     end
 
-    L->>O: Incident report
+    L->>O: Incident report (including applied memories)
 ```
 
 Tool names come from the upstream servers, so they depend on your deployment. The agent finds them with `gateway_list_tools`.
@@ -146,16 +171,17 @@ Tool names come from the upstream servers, so they depend on your deployment. Th
 | Package | Role | Description |
 | :--- | :--- | :--- |
 | [`homelab-mcp`](packages/mcps/homelab-mcp) | Tool gateway | FastMCP gateway that aggregates upstream MCP servers behind authentication and safety guardrails. |
-| [`lyoko`](packages/agents/lyoko) | Autonomous agent | Event-driven remediation agent built with LangGraph and FastAPI, with a Telegram chat assistant. |
+| [`lyoko`](packages/agents/lyoko) | Autonomous agent | Event-driven remediation agent built with LangGraph, FastAPI, persistent semantic memory, and a Telegram chat assistant. |
 
 ## Features
 
+- **Semantic Memory & Operator Feedback**: Learns continuously from operator interactions. Past incident resolutions and operator rules are stored in PostgreSQL with 1536-dimensional vector embeddings and HNSW indexes (`pgvector`). During diagnosis, LYOKO retrieves relevant past lessons to prevent repeating mistakes. Operators can teach rules via interactive Telegram buttons (`[💡 Teach Rule / Redirect]`), commands (`/feedback`, `/teach`), or REST API (`POST /api/v1/feedback`).
 - **Guardrails**: block destructive commands (`rm -rf`, `mkfs`, fork bombs), mutations in protected namespaces (`kube-system`), and tools outside the allowlist.
 - **Autonomous remediation**: for any alert, an agent investigates with read-only tools, proposes a fix, and applies it. Every state-changing tool call needs human approval unless you put it on the auto-approve list, and the agent cannot change anything while diagnosing or verifying.
 - **Whole-homelab assistant**: a Telegram assistant that can inspect and operate Kubernetes, Home Assistant, UniFi, and Grafana through the same gateway. It follows the same approval policy as alerts: reads run, trusted changes run, and any other change asks you first. A message that reports a broken service is handled like an alert, with investigation, fix, verification and report.
 - **One gateway**: Kubernetes, Home Assistant, UniFi, Grafana, and GitHub tools behind a single endpoint over Streamable HTTP (`/mcp`) and stdio.
 - **Authentication**: Google OIDC and bearer-token verification for users and agents.
-- **Reproducible toolchain**: Python 3.13+, `uv` workspace, `ruff`.
+- **Reproducible toolchain**: Python 3.13+, `uv` workspace, `ruff`, Alembic migrations.
 
 ## Quick Start
 
@@ -206,6 +232,18 @@ UNIFI_PASSWORD=your-unifi-password
 LYOKO_HOST=0.0.0.0
 LYOKO_PORT=9000
 MCP_SERVER_URL=http://localhost:8000/mcp
+
+# Persistent Storage & Vector Memory (PostgreSQL + pgvector)
+POSTGRES_HOST=postgresql-rw.postgresql-cnpg.svc.cluster.local
+POSTGRES_PORT=5432
+POSTGRES_DB=lyoko
+POSTGRES_USER=lyoko
+POSTGRES_PASSWORD=your-postgres-password
+
+# Telegram Bot (Optional for interactive HITL and /feedback)
+TELEGRAM_BOT_TOKEN=your-telegram-bot-token
+TELEGRAM_ALLOWED_USER_IDS=123456789
+TELEGRAM_DEFAULT_CHAT_ID=123456789
 ```
 
 ### 4. Running the Services
