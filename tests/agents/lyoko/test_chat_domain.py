@@ -1,10 +1,10 @@
 import pytest
-from lyoko.domain.interfaces import (
+from lyoko.domain.interfaces.chat_connector import (
     ApprovalHandler,
     ChatConnector,
     MessageHandler,
 )
-from lyoko.domain.models import (
+from lyoko.domain.models.chat import (
     ApprovalAction,
     ApprovalRequest,
     ApprovalResponse,

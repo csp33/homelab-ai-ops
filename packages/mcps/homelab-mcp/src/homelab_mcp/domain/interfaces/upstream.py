@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from homelab_mcp.domain.models import ToolDefinition, ToolResult
+from homelab_mcp.domain.models.upstream import ToolDefinition, ToolResult
 
 
 class UpstreamMCPInterface(ABC):

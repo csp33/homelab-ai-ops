@@ -7,8 +7,8 @@ import shlex
 from contextlib import AsyncExitStack
 from typing import Any
 
-from homelab_mcp.domain.interfaces import UpstreamMCPInterface
-from homelab_mcp.domain.models import ToolDefinition, ToolResult, UpstreamType
+from homelab_mcp.domain.interfaces.upstream import UpstreamMCPInterface
+from homelab_mcp.domain.models.upstream import ToolDefinition, ToolResult, UpstreamType
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 

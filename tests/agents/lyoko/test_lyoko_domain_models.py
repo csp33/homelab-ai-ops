@@ -1,10 +1,12 @@
 """Unit tests for LYOKO agent domain models."""
 
-from lyoko.domain.models import (
-    FeedbackRequest,
+from lyoko.domain.models.incident import (
     Incident,
     IncidentState,
     IncidentStatus,
+)
+from lyoko.domain.models.memory import (
+    FeedbackRequest,
     MemoryEntry,
     MemoryQueryResult,
 )

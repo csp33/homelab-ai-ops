@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homelab_mcp.domain.models import UpstreamType
+from homelab_mcp.domain.models.upstream import UpstreamType
 from homelab_mcp.infrastructure.upstream.client import ProcessUpstreamClient
 
 

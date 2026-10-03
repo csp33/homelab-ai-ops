@@ -5,8 +5,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homelab_mcp.application.service import MCPGatewayService
 from homelab_mcp.config import GatewaySettings
-from homelab_mcp.domain.interfaces import AuthVerifierInterface, UpstreamMCPInterface
-from homelab_mcp.domain.models import ToolDefinition, ToolResult, UpstreamType
+from homelab_mcp.domain.interfaces.auth import AuthVerifierInterface
+from homelab_mcp.domain.interfaces.upstream import UpstreamMCPInterface
+from homelab_mcp.domain.models.upstream import (
+    ToolDefinition,
+    ToolResult,
+    UpstreamType,
+)
 from homelab_mcp.server import build_gateway_application
 
 

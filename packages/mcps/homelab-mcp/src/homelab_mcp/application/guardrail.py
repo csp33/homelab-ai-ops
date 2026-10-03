@@ -7,7 +7,7 @@ import shlex
 from typing import Any
 
 import yaml
-from homelab_mcp.domain.exceptions import GuardrailViolationError
+from homelab_mcp.domain.exceptions.guardrail import GuardrailViolationError
 from homelab_mcp.domain.models.guardrail import GuardrailPolicy
 
 logger = logging.getLogger("homelab_mcp.guardrails")

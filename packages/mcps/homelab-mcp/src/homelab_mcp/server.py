@@ -4,7 +4,7 @@ import logging
 
 from homelab_mcp.application.service import MCPGatewayService
 from homelab_mcp.config import settings
-from homelab_mcp.domain.models import UpstreamType
+from homelab_mcp.domain.models.upstream import UpstreamType
 from homelab_mcp.infrastructure.auth.google import GoogleAuthVerifier
 from homelab_mcp.infrastructure.mcp.server import create_gateway_mcp_server
 from homelab_mcp.infrastructure.telegram.client import TelegramClient

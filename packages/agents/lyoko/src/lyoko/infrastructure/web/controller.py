@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 from lyoko.domain.interfaces.tracer import TracerInterface
-from lyoko.domain.models import Incident
+from lyoko.domain.models.incident import Incident
 from lyoko.domain.models.memory import FeedbackRequest, MemoryEntry
 
 _MAX_KEY_LENGTH = 24

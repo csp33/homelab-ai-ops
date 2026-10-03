@@ -2,8 +2,8 @@
 
 import pytest
 from homelab_mcp.application.guardrail import GuardrailEngine
-from homelab_mcp.domain.exceptions import GuardrailViolationError
-from homelab_mcp.domain.models import GuardrailPolicy
+from homelab_mcp.domain.exceptions.guardrail import GuardrailViolationError
+from homelab_mcp.domain.models.guardrail import GuardrailPolicy
 
 
 def test_guardrail_tool_allowlist_wildcard():

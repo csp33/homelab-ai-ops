@@ -109,7 +109,11 @@ Every package in `homelab-aiops` strictly adheres to **Clean Architecture** (Por
 4. **Composition Root (`main.py` / `server.py`)**:
    - The only place where concrete infrastructure adapters are instantiated, configuration is bound, and dependencies are injected into application services and workflow graphs.
 
-Automated AST architectural tests (`tests/test_clean_architecture.py`) run in CI to permanently prevent layer leakage.
+5. **Empty `__init__.py` Files & Explicit Imports (Strict Rule)**:
+   - All `__init__.py` files across all packages (`packages/`) must remain **completely empty** (0 bytes / no code, re-exports, or barrel imports).
+   - All imports across the codebase must explicitly target the specific submodule where the symbol is defined (e.g., `from lyoko.domain.models.memory import MemoryEntry` instead of `from lyoko.domain.models import MemoryEntry`).
+
+Automated AST architectural tests (`tests/test_clean_architecture.py`) run in CI to permanently prevent layer leakage and enforce empty `__init__.py` files.
 
 ---
 

@@ -13,17 +13,17 @@ from lyoko.application.chat_agent import InteractiveChatAgent
 from lyoko.application.chat_manager import ChatManager
 from lyoko.application.chat_sessions import ChatSessionTracker
 from lyoko.application.hitl import ApprovalManager
-from lyoko.application.specialists import (
+from lyoko.application.specialists.agent import DomainSpecialistAgent
+from lyoko.application.specialists.prompts import (
     K8S_SPECIALIST_PROMPT,
     NETWORK_SPECIALIST_PROMPT,
     OBSERVABILITY_SPECIALIST_PROMPT,
     SMARTHOME_SPECIALIST_PROMPT,
-    DomainSpecialistAgent,
 )
 from lyoko.application.supervisor import SupervisorAgent
 from lyoko.application.workflow import create_lyoko_graph
 from lyoko.config import settings
-from lyoko.domain.exceptions import MCPGatewayError
+from lyoko.domain.exceptions.mcp import MCPGatewayError
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.mcp import MCPClientInterface
 from lyoko.infrastructure.chat.telegram import TelegramConnector

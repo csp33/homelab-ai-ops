@@ -11,9 +11,9 @@ from fastmcp.server.auth.providers.jwt import JWTVerifier
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from homelab_mcp.config import settings
-from homelab_mcp.domain.exceptions import AuthenticationError
-from homelab_mcp.domain.interfaces import AuthVerifierInterface
-from homelab_mcp.domain.models import AuthIdentity
+from homelab_mcp.domain.exceptions.auth import AuthenticationError
+from homelab_mcp.domain.interfaces.auth import AuthVerifierInterface
+from homelab_mcp.domain.models.auth import AuthIdentity
 
 logger = logging.getLogger("homelab_mcp.auth_adapter")
 

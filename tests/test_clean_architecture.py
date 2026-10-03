@@ -90,3 +90,18 @@ def test_application_layer_clean_architecture_isolation():
     assert not violations, "Application layer Clean Architecture violations found:\n" + "\n".join(
         violations
     )
+
+
+def test_init_files_are_empty():
+    """Ensure all __init__.py files in packages/ are completely empty (no re-exports/barrel files)."""
+    non_empty: list[str] = []
+    for init_file in WORKSPACE_ROOT.glob("packages/**/__init__.py"):
+        content = init_file.read_text(encoding="utf-8").strip()
+        if content:
+            non_empty.append(
+                f"{init_file.relative_to(WORKSPACE_ROOT)} is not empty ({len(content)} chars)"
+            )
+
+    assert not non_empty, "The following __init__.py files must remain empty:\n" + "\n".join(
+        non_empty
+    )
