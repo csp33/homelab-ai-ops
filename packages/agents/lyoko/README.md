@@ -90,24 +90,31 @@ Configure LYOKO using environment variables (in `.env` or Kubernetes ConfigMap/S
 | `ENVIRONMENT` | `local` | Operational environment tag (`local`, `homelab`, `production`). |
 | `LYOKO_HOST` | `0.0.0.0` | Webhook receiver bind host. |
 | `LYOKO_PORT` | `9000` | Webhook receiver bind port. |
-| `OPENAI_API_KEY` | `""` | OpenAI API key for LLM diagnosis and chat. |
+| `OPENAI_API_KEY` | `""` | OpenAI API key for LLM diagnosis, chat, and embeddings. |
 | `OPENAI_MODEL` | `gpt-4o-mini` | LLM model used for chat and remediation reasoning. |
 | `MCP_SERVER_URL` | `http://localhost:8000/mcp` | URL of the `homelab-mcp` gateway endpoint. |
 | `SERVICE_TOKEN` | `""` | Bearer token for authenticating against `homelab-mcp`. Required when the gateway runs with `AUTH_ENABLED=true`. |
-| `MCP_FAIL_FAST` | `true` | Abort startup if the gateway rejects the credentials (401/403) or the URL is not an MCP endpoint (404). An unreachable gateway only logs an error. |
-| `READ_ONLY_TOOLS` | inspection patterns (`get_*`, `*_list`, `*_log`, ...) | Glob patterns of tools the incident agent may call freely. Comma-separated or JSON list. Replaces the defaults when set. |
-| `AUTO_APPROVED_TOOLS` | `[]` | Glob patterns of state-changing tools that run during remediation without approval (e.g. `k8s_resources_scale`). Every other change requires approval. |
-| `MAX_AGENT_STEPS` | `25` | Maximum tool-use iterations of each investigation, remediation, or verification run. |
+| `MCP_FAIL_FAST` | `true` | Abort startup if the gateway rejects credentials (401/403) or the URL is not an MCP endpoint (404). |
+| `READ_ONLY_TOOLS` | inspection patterns (`get_*`, `*_list`, `*_log`, ...) | Glob patterns of tools the incident agent may call freely. Comma-separated or JSON list. |
+| `AUTO_APPROVED_TOOLS` | `[]` | Glob patterns of state-changing tools that run during remediation without approval (e.g. `k8s_resources_scale`). |
+| `MAX_AGENT_STEPS` | `25` | Maximum tool-use iterations of each specialist run. |
+| `MAX_SUPERVISOR_STEPS` | `5` | Maximum supervisor delegation iterations per phase. |
 | `TELEGRAM_ENABLED` | `false` | Enable Telegram assistant, channel posting, and HITL approvals. |
 | `TELEGRAM_BOT_TOKEN` | `""` | Telegram Bot Token from `@BotFather`. |
 | `TELEGRAM_ALLOWED_USER_IDS` | `[]` | List of authorized Telegram user IDs. |
 | `TELEGRAM_ALLOWED_CHAT_IDS` | `[]` | List of authorized Telegram channel/group IDs. |
 | `TELEGRAM_DEFAULT_CHAT_ID` | `""` | Default chat ID for broadcast notifications and alerts. |
-| `LANGFUSE_ENABLED` | `false` | Enable Langfuse tracing and observability. |
+| `LANGFUSE_ENABLED` | `true` | Enable Langfuse tracing and observability. |
 | `LANGFUSE_PUBLIC_KEY` | `""` | Langfuse Project Public API Key. |
 | `LANGFUSE_SECRET_KEY` | `""` | Langfuse Project Secret API Key. |
 | `LANGFUSE_HOST` | `https://cloud.langfuse.com` | Langfuse instance host URL. |
-| `POSTGRES_CHECKPOINTER_URL` | `""` | PostgreSQL connection string for LangGraph persistent state checkpointing. |
+| `CHAT_SESSION_IDLE_TIMEOUT_SECONDS` | `900` | Idle seconds before chat session resets to a new trace context. |
+| `POSTGRES_HOST` | `postgresql-rw...` | PostgreSQL hostname for persistent state and episodic vector memory (`pgvector`). |
+| `POSTGRES_PORT` | `5432` | PostgreSQL database port. |
+| `POSTGRES_DB` | `lyoko` | PostgreSQL database name. |
+| `POSTGRES_USER` | `lyoko` | PostgreSQL database username. |
+| `POSTGRES_PASSWORD` | `""` | PostgreSQL database password. |
+| `POSTGRES_URI` | `""` | Optional full PostgreSQL connection URI override. |
 
 ## Alertmanager integration
 

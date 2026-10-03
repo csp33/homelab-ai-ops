@@ -61,25 +61,29 @@ Configure `homelab-mcp` via environment variables (in `.env` or container enviro
 | :--- | :--- | :--- |
 | `MCP_HOST` | `0.0.0.0` | Gateway listening interface. |
 | `MCP_PORT` | `8000` | Gateway listening HTTP port. |
-| `MCP_TRANSPORT` | `http` | Transport mode: `http` (Streamable HTTP) or `stdio`. |
-| `AUTH_ENABLED` | `false` | Enable/disable token and OIDC verification. |
+| `MCP_TRANSPORT` | `http` | Transport mode: `http` (Streamable HTTP on `/mcp`) or `stdio`. |
+| `AUTH_ENABLED` | `false` | Enable/disable token and Google OIDC verification. |
 | `GOOGLE_CLIENT_ID` | `""` | Google OAuth client ID for OIDC proxy. |
-| `GOOGLE_CLIENT_SECRET`| `""` | Google OAuth client secret for OIDC proxy. |
-| `HASS_ENABLED` | `true` | Enable Home Assistant upstream MCP. |
+| `GOOGLE_CLIENT_SECRET` | `""` | Google OAuth client secret for OIDC proxy. |
+| `ALLOWED_GOOGLE_EMAILS` | `[]` | Allowed Google email addresses. |
+| `SERVICE_TOKEN` | `""` | Bearer token for authenticating in-cluster agents. |
+| `JWT_SECRET` | `""` | Secret key for signing/verifying HS256 JWT tokens. |
+| `HA_ENABLED` | `true` | Enable Home Assistant upstream MCP. |
 | `HASS_URL` | `http://homeassistant...:8123` | Home Assistant instance URL. |
 | `HASS_TOKEN` | `""` | Long-lived access token for Home Assistant. |
 | `UNIFI_ENABLED` | `true` | Enable UniFi Network upstream MCP. |
 | `UNIFI_URL` | `https://192.168.1.1` | UniFi controller URL / gateway IP. |
 | `UNIFI_USER` | `""` | UniFi admin username. |
 | `UNIFI_PASSWORD` | `""` | UniFi admin password. |
+| `UNIFI_SITE` | `default` | UniFi site identifier. |
 | `K8S_ENABLED` | `true` | Enable Kubernetes upstream MCP. |
-| `KUBECONFIG` | `~/.kube/config` | Path to kubeconfig (or in-cluster SA). |
+| `KUBECONFIG_PATH` | `""` | Path to kubeconfig (or in-cluster ServiceAccount if unset). |
 | `GRAFANA_ENABLED` | `true` | Enable Grafana upstream MCP. |
-| `GRAFANA_URL` | `http://grafana.monitoring.svc.cluster.local:3000` | Grafana base URL. |
+| `GRAFANA_URL` | `http://grafana...:3000` | Grafana base URL. |
 | `GRAFANA_TOKEN` | `""` | Grafana service account or API token. |
 | `GRAFANA_COMMAND` | `npx -y @grafana/mcp-server@latest` | Command used to launch the Grafana MCP server. |
 | `GITHUB_ENABLED` | `true` | Enable GitHub upstream MCP. |
-| `GITHUB_COMMAND` | `github-mcp-server` | Command used to launch the GitHub MCP server. |
+| `GITHUB_COMMAND` | `npx -y @modelcontextprotocol/server-github` | Command used to launch the GitHub MCP server. |
 | `GITHUB_TOKEN` | `""` | GitHub personal access token. |
 | `GITHUB_OWNER` | `""` | Default GitHub owner or organization. |
 | `GITHUB_ALLOWED_REPOS` | `["*"]` | Glob patterns of repositories tools may target. |
@@ -87,6 +91,10 @@ Configure `homelab-mcp` via environment variables (in `.env` or container enviro
 | `TELEGRAM_ENABLED` | `false` | Enable the built-in Telegram tools. |
 | `TELEGRAM_BOT_TOKEN` | `""` | Telegram bot token from `@BotFather`. |
 | `TELEGRAM_DEFAULT_CHAT_ID` | `""` | Default chat for alerts and messages. |
+| `ALLOWED_TOOLS` | `["*"]` | Glob patterns of permitted tool names. |
+| `BLOCKED_TOOLS` | `[]` | Glob patterns of strictly forbidden tool names. |
+| `BLOCKED_NAMESPACES` | `["kube-system", ...]` | Namespaces where mutations and exec are prohibited. |
+| `BLOCKED_EXEC_PATTERNS` | `[rm, dd, mkfs, ...]` | Regex patterns prohibited in container exec arguments. |
 
 ## Usage
 
