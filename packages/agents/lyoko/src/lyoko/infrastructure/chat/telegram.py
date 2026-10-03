@@ -425,10 +425,10 @@ class TelegramConnector(ChatConnector):
         feedback_content = text.removeprefix("/feedback").removeprefix("/teach").strip()
         if not feedback_content:
             help_text = (
-                "ℹ️ <b>Uso de retroalimentación:</b>\n"
-                "<code>/feedback &lt;regla o indicación para LYOKO&gt;</code>\n\n"
-                "<i>Ejemplo:</i> <code>/feedback Para influxdb no aumentar RAM, compactar logs primero</code>\n"
-                "<i>Tip:</i> Puedes responder a cualquier reporte de incidente con <code>/feedback &lt;regla&gt;</code> para asociarlo automáticamente a ese pod/servicio."
+                "ℹ️ <b>Feedback usage:</b>\n"
+                "<code>/feedback &lt;rule or instruction for LYOKO&gt;</code>\n\n"
+                "<i>Example:</i> <code>/feedback For influxdb do not increase RAM, compact logs first</code>\n"
+                "<i>Tip:</i> Reply to any incident report with <code>/feedback &lt;rule&gt;</code> to automatically associate it with that pod/service."
             )
             await msg.reply_text(
                 help_text,
@@ -440,7 +440,7 @@ class TelegramConnector(ChatConnector):
 
         if not self.memory_repository:
             await msg.reply_text(
-                "⚠️ La base de datos de memoria persistente (PostgreSQL) no está disponible.",
+                "⚠️ The persistent memory database (PostgreSQL) is not available.",
                 reply_to_message_id=msg.message_id,
                 allow_sending_without_reply=True,
             )
@@ -486,10 +486,10 @@ class TelegramConnector(ChatConnector):
 
         memory_id = await self.memory_repository.save_memory(entry, embedding=embedding)
         success_msg = (
-            f"🧠 <b>Regla aprendida y registrada en PostgreSQL</b> (ID: <code>{memory_id}</code>)\n\n"
-            f"• <b>Servicio:</b> <code>{html.escape(service_name)}</code> ({html.escape(namespace)})\n"
-            f"• <b>Regla:</b> <i>{html.escape(feedback_content)}</i>\n\n"
-            f"LYOKO aplicará esta directriz semántica en los próximos incidentes."
+            f"🧠 <b>Rule learned and stored in PostgreSQL</b> (ID: <code>{memory_id}</code>)\n\n"
+            f"• <b>Service:</b> <code>{html.escape(service_name)}</code> ({html.escape(namespace)})\n"
+            f"• <b>Rule:</b> <i>{html.escape(feedback_content)}</i>\n\n"
+            f"LYOKO will apply this semantic guideline in future incidents."
         )
         await msg.reply_text(
             success_msg,
@@ -555,8 +555,8 @@ class TelegramConnector(ChatConnector):
         elif is_feedback:
             status_text = (
                 f"💡 <b>Redirection / Teaching mode activated</b> by {user_name}.\n\n"
-                f"👉 <i>Responde a este mensaje o escribe:</i>\n"
-                f"<code>/feedback &lt;tu corrección o regla para este servicio&gt;</code>"
+                f"👉 <i>Reply to this message or type:</i>\n"
+                f"<code>/feedback &lt;your correction or rule for this service&gt;</code>"
             )
         else:
             status_text = f"❌ <b>Rejected</b> by admin ({user_name})."
