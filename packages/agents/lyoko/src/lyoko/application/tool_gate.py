@@ -91,6 +91,7 @@ class ToolGate:
         origin: str,
         session_id: str | None = None,
         chat_id: str = "",
+        plan: str = "",
         approval_manager: ApprovalManager | None = None,
         chat_manager: ChatManager | None = None,
     ) -> None:
@@ -102,6 +103,7 @@ class ToolGate:
         self._origin = origin
         self._session_id = session_id or event_id
         self._chat_id = chat_id
+        self._plan = plan
         self._approval_manager = approval_manager
         self._chat_manager = chat_manager
         self._approval_count = 0
@@ -145,15 +147,22 @@ class ToolGate:
 
         self._approval_count += 1
         approval_id = f"{self._event_id}.{self._approval_count}"
+        action_summary = _describe_action(tool_name, arguments)
+        details_parts = [f"Action: {action_summary}"]
+        if self._plan:
+            details_parts.append(f"Plan: {self._plan}")
+        details_parts.extend(
+            [
+                self._origin,
+                f"Tool: `{tool_name}`",
+                f"Arguments:\n```json\n{_format_arguments(arguments)}\n```",
+            ]
+        )
         request = ApprovalRequest(
             incident_id=approval_id,
             session_id=self._session_id,
             title=f"Approval required: {tool_name}",
-            details=(
-                f"{self._origin}\n"
-                f"Tool: `{tool_name}`\n"
-                f"Arguments:\n```json\n{_format_arguments(arguments)}\n```"
-            ),
+            details="\n\n".join(details_parts),
             chat_id=self._chat_id,
             actions=[
                 ApprovalAction(action_id="approve", label="✅ Approve", style="primary"),
@@ -174,6 +183,69 @@ class ToolGate:
             f"Denied: the operator did not approve '{tool_name}' ({reason}). Do not retry it or "
             "look for a way around the denial. Stop and report what you found."
         )
+
+
+def _describe_action(tool_name: str, arguments: dict[str, Any]) -> str:
+    """Produce a concise human-readable sentence explaining what the tool call wants to do."""
+    # Specific tool explanations
+    if "scale" in tool_name:
+        name = (
+            arguments.get("name")
+            or arguments.get("deployment")
+            or arguments.get("workload")
+            or "workload"
+        )
+        replicas = arguments.get("replicas")
+        ns = f" in namespace '{arguments['namespace']}'" if arguments.get("namespace") else ""
+        return f"Scale {name} to {replicas} replicas{ns}."
+
+    if "delete" in tool_name:
+        target = (
+            arguments.get("name")
+            or arguments.get("pod")
+            or arguments.get("deployment")
+            or arguments.get("target")
+            or "resource"
+        )
+        ns = f" from namespace '{arguments['namespace']}'" if arguments.get("namespace") else ""
+        return f"Delete {target}{ns}."
+
+    if "restart" in tool_name:
+        target = arguments.get("name") or arguments.get("deployment") or "workload"
+        ns = f" in namespace '{arguments['namespace']}'" if arguments.get("namespace") else ""
+        return f"Restart {target}{ns}."
+
+    if (
+        "create" in tool_name
+        or "update" in tool_name
+        or "apply" in tool_name
+        or "patch" in tool_name
+    ):
+        kind = arguments.get("kind") or "resource"
+        name = arguments.get("name") or ""
+        ns = f" in namespace '{arguments['namespace']}'" if arguments.get("namespace") else ""
+        target = f"{kind} '{name}'" if name else kind
+        return f"Apply changes to {target}{ns}."
+
+    if tool_name.startswith("ha_") or "homeassistant" in tool_name:
+        service = arguments.get("service") or arguments.get("domain") or tool_name
+        entity = arguments.get("entity_id") or ""
+        return f"Execute Home Assistant action '{service}'{' on ' + entity if entity else ''}."
+
+    if tool_name.startswith("unifi_"):
+        action = arguments.get("action") or arguments.get("command") or tool_name
+        return f"Execute UniFi network action '{action}'."
+
+    # General fallback
+    readable_name = tool_name.replace("_", " ").strip()
+    key_params = [
+        f"{k}='{v}'"
+        for k, v in arguments.items()
+        if k in ("name", "namespace", "replicas", "entity_id", "service", "action", "command")
+    ]
+    if key_params:
+        return f"Execute {readable_name} with {', '.join(key_params)}."
+    return f"Execute tool '{tool_name}'."
 
 
 def _format_arguments(arguments: dict[str, Any]) -> str:

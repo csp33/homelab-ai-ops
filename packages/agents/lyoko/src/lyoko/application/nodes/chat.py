@@ -14,6 +14,7 @@ from lyoko.application.nodes.helpers import (
     run_supervised,
 )
 from lyoko.application.tool_gate import GateMode
+from lyoko.config import settings
 from lyoko.domain.interfaces.llm import LLMClientInterface
 
 logger = logging.getLogger("lyoko.workflow.chat")
@@ -47,6 +48,7 @@ def create_chat_node(
                 memories = await memory_repository.search_memories(
                     query_embedding=query_embedding,
                     limit=3,
+                    min_similarity=settings.memory_similarity_threshold,
                 )
 
                 if memories:

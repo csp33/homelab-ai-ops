@@ -82,6 +82,7 @@ class PostgresMemoryRepository:
         namespace: str | None = None,
         service_name: str | None = None,
         limit: int = 3,
+        min_similarity: float = 0.0,
     ) -> list[MemoryQueryResult]:
         """Search memories using vector cosine similarity or metadata filtering."""
         results: list[MemoryQueryResult] = []
@@ -97,6 +98,7 @@ class PostgresMemoryRepository:
                     WHERE (%s::text IS NULL OR namespace = %s)
                       AND (%s::text IS NULL OR service_name = %s)
                       AND embedding IS NOT NULL
+                      AND (1 - (embedding <=> %s::vector)) >= %s
                     ORDER BY embedding <=> %s::vector ASC
                     LIMIT %s;
                 """
@@ -106,6 +108,8 @@ class PostgresMemoryRepository:
                     namespace,
                     service_name,
                     service_name,
+                    embedding_str,
+                    min_similarity,
                     embedding_str,
                     limit,
                 )

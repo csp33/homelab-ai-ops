@@ -173,6 +173,7 @@ def create_remediate_node(
             GateMode.APPROVAL,
             approval_manager=approval_manager,
             chat_manager=chat_manager,
+            plan=state.get("plan", ""),
         )
         error: str | None = None
         summary = ""

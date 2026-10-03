@@ -112,6 +112,26 @@ async def test_search_memories():
     assert results[0].similarity == 0.89
     assert results[0].memory.service_name == "influxdb"
     assert results[0].memory.operator_feedback == "Do not bump RAM"
+    query_str = mock_cur.execute.call_args[0][0]
+    assert "AND (1 - (embedding <=> %s::vector)) >= %s" in query_str
+
+
+@pytest.mark.asyncio
+async def test_search_memories_with_min_similarity():
+    """Verify search_memories passes min_similarity parameter to query."""
+    mock_cur = AsyncMock()
+    mock_cur.fetchall = AsyncMock(return_value=[])
+    mock_pool = _create_mock_pool(mock_cur)
+
+    repo = PostgresMemoryRepository(mock_pool)
+    await repo.search_memories(
+        query_embedding=[0.1] * 1536,
+        min_similarity=0.2,
+    )
+
+    assert mock_cur.execute.called
+    params = mock_cur.execute.call_args[0][1]
+    assert 0.2 in params
 
 
 @pytest.mark.asyncio
