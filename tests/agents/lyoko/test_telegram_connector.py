@@ -676,5 +676,5 @@ async def test_telegram_connector_feedback_command():
 
     assert mock_update.message.reply_text.called
     reply_msg = mock_update.message.reply_text.call_args[0][0]
-    assert "Regla aprendida" in reply_msg
+    assert "Rule learned" in reply_msg
     assert "77" in reply_msg
