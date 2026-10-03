@@ -105,7 +105,7 @@ class OpenAILLMAdapter(LLMClientInterface):
                         messages.append(SystemMessage(content=system_prompt))
                     messages.append(HumanMessage(content=prompt_text))
 
-                    for _ in range(max_iterations):
+                    for step_idx in range(max_iterations):
                         response = await model_with_tools.ainvoke(messages)
                         messages.append(response)
 
@@ -115,6 +115,13 @@ class OpenAILLMAdapter(LLMClientInterface):
                         for tool_call in response.tool_calls:
                             tool_name = tool_call["name"]
                             tool_args = tool_call["args"]
+                            logger.info(
+                                "ReAct step %d/%d: calling '%s' with %s",
+                                step_idx + 1,
+                                max_iterations,
+                                tool_name,
+                                tool_args,
+                            )
                             tool = tools_by_name.get(tool_name)
                             if tool is None:
                                 tool_output = f"Error: Tool '{tool_name}' not found."
