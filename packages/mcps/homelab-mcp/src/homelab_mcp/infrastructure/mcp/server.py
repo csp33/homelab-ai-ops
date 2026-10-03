@@ -144,10 +144,10 @@ def create_gateway_mcp_server(
         Args:
             tool_name: The exact name of the tool to inspect.
         """
-        target_name = service._normalize_tool_name(tool_name)
+        base_name = tool_name.split(".", 1)[1] if "." in tool_name else tool_name
         tools = await service.discover_tools()
         for t in tools:
-            if t.name in (tool_name, target_name):
+            if t.name in (tool_name, base_name):
                 return {
                     "name": t.name,
                     "description": t.description,

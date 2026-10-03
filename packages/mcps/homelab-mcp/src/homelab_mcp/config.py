@@ -84,7 +84,7 @@ class GatewaySettings(BaseSettings):
     # Upstream: Grafana MCP (github.com/grafana/mcp-grafana)
     grafana_enabled: bool = Field(default=True, description="Enable Grafana MCP upstream")
     grafana_command: str = Field(
-        default="npx -y @grafana/mcp-server@latest", description="Command to launch grafana mcp"
+        default="npx -y mcp-grafana-npx", description="Command to launch grafana mcp"
     )
     grafana_url: str = Field(
         default="http://grafana.monitoring.svc.cluster.local:3000",

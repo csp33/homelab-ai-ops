@@ -9,6 +9,7 @@ from homelab_mcp.infrastructure.auth.google import GoogleAuthVerifier
 from homelab_mcp.infrastructure.mcp.server import create_gateway_mcp_server
 from homelab_mcp.infrastructure.telegram.client import TelegramClient
 from homelab_mcp.infrastructure.upstream.client import ProcessUpstreamClient
+from homelab_mcp.infrastructure.upstream.unifi import UnifiUpstreamClient
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("homelab_mcp")
@@ -40,7 +41,7 @@ def build_gateway_application() -> tuple[MCPGatewayService, any]:
             .split(":")[0]
             .split("/")[0]
         )
-        upstreams[UpstreamType.UNIFI] = ProcessUpstreamClient(
+        upstreams[UpstreamType.UNIFI] = UnifiUpstreamClient(
             command=settings.unifi_command,
             env={
                 "UNIFI_NETWORK_HOST": unifi_host,
@@ -68,6 +69,7 @@ def build_gateway_application() -> tuple[MCPGatewayService, any]:
             command=settings.k8s_command,
             env=k8s_env,
             upstream_type=UpstreamType.KUBERNETES,
+            prefix="k8s_",
         )
 
     # 4. Grafana MCP (github.com/grafana/mcp-grafana)
