@@ -3,13 +3,14 @@
 import logging
 from typing import Any
 
+from lyoko.application.context.loader import build_agent_context
 from lyoko.application.prompts.loader import load_prompt
 from lyoko.config import settings
 from lyoko.domain.interfaces.llm import LLMClientInterface
 
 logger = logging.getLogger("lyoko.supervisor")
 
-SUPERVISOR_SYSTEM_PROMPT = load_prompt("supervisor.md")
+SUPERVISOR_SYSTEM_PROMPT = f"{load_prompt('supervisor.md')}\n\n{build_agent_context('supervisor')}"
 
 
 class SupervisorAgent:

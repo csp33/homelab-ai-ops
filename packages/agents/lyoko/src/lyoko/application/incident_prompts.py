@@ -3,11 +3,12 @@
 import re
 from dataclasses import dataclass
 
+from lyoko.application.context.loader import build_agent_context
 from lyoko.application.prompts.loader import load_prompt
 
-DIAGNOSE_SYSTEM_PROMPT = load_prompt("diagnose.md")
-REMEDIATE_SYSTEM_PROMPT = load_prompt("remediate.md")
-VERIFY_SYSTEM_PROMPT = load_prompt("verify.md")
+DIAGNOSE_SYSTEM_PROMPT = f"{load_prompt('diagnose.md')}\n\n{build_agent_context('diagnose')}"
+REMEDIATE_SYSTEM_PROMPT = f"{load_prompt('remediate.md')}\n\n{build_agent_context('remediate')}"
+VERIFY_SYSTEM_PROMPT = f"{load_prompt('verify.md')}\n\n{build_agent_context('verify')}"
 
 
 @dataclass(frozen=True)
