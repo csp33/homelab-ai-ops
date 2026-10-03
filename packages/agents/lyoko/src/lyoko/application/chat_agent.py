@@ -73,7 +73,6 @@ class InteractiveChatAgent:
             "text": message.text,
             "labels": {},
             "annotations": {},
-            "on_token": on_token,
         }
         config = self._trace_config(message, session_id)
         config.setdefault("configurable", {})["thread_id"] = event_id
