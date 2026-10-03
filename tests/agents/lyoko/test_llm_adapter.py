@@ -62,7 +62,7 @@ async def test_openai_llm_adapter_with_langfuse_callback(mock_get_config):
 
 @pytest.mark.asyncio
 async def test_openai_llm_adapter_bounds_agent_steps():
-    """max_steps limits the tool-use loop iterations and raises when exceeded."""
+    """max_steps limits the tool-use loop iterations and falls back to a final summary."""
     tool_call_msg = MagicMock()
     tool_call_msg.tool_calls = [{"name": "mock_tool", "args": {}, "id": "call_1"}]
     mock_bound_client = AsyncMock()
@@ -71,16 +71,20 @@ async def test_openai_llm_adapter_bounds_agent_steps():
     adapter = OpenAILLMAdapter(api_key="sk-test")
     mock_client = MagicMock()
     mock_client.bind_tools.return_value = mock_bound_client
+    mock_summary_response = MagicMock()
+    mock_summary_response.content = "Summary of findings after reaching maximum steps."
+    mock_client.ainvoke = AsyncMock(return_value=mock_summary_response)
     adapter._client = mock_client
 
     mock_tool = MagicMock()
     mock_tool.name = "mock_tool"
     mock_tool.ainvoke = AsyncMock(return_value="tool_result")
 
-    with pytest.raises(RuntimeError, match="Agent exceeded maximum allowed steps"):
-        await adapter.chat(prompt="Investigate", tools=[mock_tool], max_steps=3)
+    result = await adapter.chat(prompt="Investigate", tools=[mock_tool], max_steps=3)
 
     assert mock_bound_client.ainvoke.await_count == 3
+    mock_client.ainvoke.assert_awaited_once()
+    assert result == "Summary of findings after reaching maximum steps."
 
 
 @pytest.mark.asyncio
