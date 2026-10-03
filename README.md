@@ -35,7 +35,9 @@ When incidents occur, the system diagnoses root causes using read-only specialis
 
 > [!NOTE]
 > **🎮 Why LYOKO?**
+>
 > Named as a nostalgic tribute to *Code Lyoko* — the iconic childhood animated series about battling virtual glitches and digital anomalies inside an underground quantum supercomputer.
+>
 > In this repository, **LYOKO** stands for **L**ive **Y**aml **O**ptimization & **K**8s **O**rchestration: your homelab's virtual defender that investigates alerts, neutralizes failures, and safely restores stability before downtime strikes.
 
 ---
