@@ -110,6 +110,11 @@ class AgentSettings(BaseSettings):
         ge=1,
         description="Maximum tool-use iterations of each incident investigation or remediation",
     )
+    max_supervisor_steps: int = Field(
+        default=5,
+        ge=1,
+        description="Maximum supervisor delegation iterations per phase",
+    )
 
     # General Environment
     environment: str = Field(
