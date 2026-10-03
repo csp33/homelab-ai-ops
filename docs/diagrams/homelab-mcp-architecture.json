@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "homelab-mcp Gateway Architecture",
+    "quality_profile": "showcase",
+    "viewBox": [1080, 680],
+    "views": [
+      {
+        "id": "inbound-clients",
+        "label": "Inbound Clients",
+        "focus": ["lyoko_agents", "dev_clients", "transports"],
+        "note": "LYOKO cognitive agents and local developer IDEs connect via stdio and Streamable HTTP."
+      },
+      {
+        "id": "gateway-pipeline",
+        "label": "Gateway Security & Search",
+        "focus": ["transports", "auth_engine", "search_engine", "guard_engine"],
+        "note": "Zero-trust pipeline verifies identity, searches tools by intent, and enforces safety guardrails."
+      },
+      {
+        "id": "upstream-integrations",
+        "label": "Upstream Integrations",
+        "focus": ["guard_engine", "k8s_upstream", "ha_upstream", "unifi_upstream", "graf_upstream", "gh_upstream", "tg_upstream"],
+        "note": "Aggregated upstream MCP servers for homelab infrastructure operations."
+      }
+    ]
+  },
+  "components": [
+    { "id": "lyoko_agents", "type": "backend", "label": "LYOKO Specialists", "sublabel": "Domain Agents", "pos": [40, 140], "size": [180, 60], "brand": "openai" },
+    { "id": "dev_clients", "type": "external", "label": "Developer IDEs", "sublabel": "Claude / Cursor / IDE", "pos": [40, 340], "size": [180, 60] },
+
+    { "id": "transports", "type": "security", "label": "Transport Layer", "sublabel": "Streamable HTTP & stdio", "pos": [360, 60], "size": [190, 56] },
+    { "id": "auth_engine", "type": "security", "label": "Auth Verifier", "sublabel": "Google OIDC & Bearer", "pos": [360, 160], "size": [190, 56] },
+    { "id": "search_engine", "type": "backend", "label": "Scoped Tool Search", "sublabel": "Multi-Token Scoring", "pos": [360, 260], "size": [190, 56] },
+    { "id": "guard_engine", "type": "security", "label": "Guardrail Engine", "sublabel": "Namespace & Exec Policy", "pos": [360, 360], "size": [190, 62] },
+
+    { "id": "k8s_upstream", "type": "cloud", "label": "Kubernetes MCP", "sublabel": "Pods, Logs & Apply", "pos": [740, 45], "size": [180, 52], "brand": "kubernetes" },
+    { "id": "ha_upstream", "type": "cloud", "label": "Home Assistant MCP", "sublabel": "Entities & Services", "pos": [740, 120], "size": [180, 52] },
+    { "id": "unifi_upstream", "type": "cloud", "label": "UniFi Network MCP", "sublabel": "Clients, Ports & POE", "pos": [740, 195], "size": [180, 52] },
+    { "id": "graf_upstream", "type": "cloud", "label": "Grafana MCP", "sublabel": "Metrics & Dashboards", "pos": [740, 270], "size": [180, 52], "brand": "grafana" },
+    { "id": "gh_upstream", "type": "cloud", "label": "GitHub MCP", "sublabel": "GitOps PRs & Repos", "pos": [740, 345], "size": [180, 52], "brand": "github" },
+    { "id": "tg_upstream", "type": "cloud", "label": "Telegram Service", "sublabel": "Alerts & HITL Buttons", "pos": [740, 420], "size": [180, 52], "brand": "telegram" }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Inbound Clients", "wraps": ["lyoko_agents", "dev_clients"], "pad": 14 },
+    { "kind": "security-group", "label": "homelab-mcp Gateway Core", "wraps": ["transports", "auth_engine", "search_engine", "guard_engine"], "pad": 16 },
+    { "kind": "region", "label": "Upstream Providers & Connectors", "wraps": ["k8s_upstream", "ha_upstream", "unifi_upstream", "graf_upstream", "gh_upstream", "tg_upstream"], "pad": 14 }
+  ],
+  "connections": [
+    { "from": "lyoko_agents", "to": "transports", "variant": "emphasis" },
+    { "from": "dev_clients", "to": "transports", "variant": "dashed" },
+
+    { "from": "transports", "to": "auth_engine", "route": "straight" },
+    { "from": "auth_engine", "to": "search_engine", "route": "straight" },
+    { "from": "search_engine", "to": "guard_engine", "route": "straight" },
+
+    { "from": "guard_engine", "to": "k8s_upstream", "variant": "security" },
+    { "from": "guard_engine", "to": "ha_upstream", "variant": "security" },
+    { "from": "guard_engine", "to": "unifi_upstream", "variant": "security" },
+    { "from": "guard_engine", "to": "graf_upstream", "variant": "security" },
+    { "from": "guard_engine", "to": "gh_upstream", "variant": "security" },
+    { "from": "guard_engine", "to": "tg_upstream", "variant": "security" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Unified Tool Aggregator",
+      "items": [
+        "Single FastMCP gateway endpoint serving both agents and IDEs",
+        "Dynamically queries upstream capabilities and caches tool schemas",
+        "Streamable HTTP (/mcp) for cluster services and stdio for local IDEs"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Scoped Tool Search",
+      "items": [
+        "Multi-token relevance scoring with domain alias resolution",
+        "Keyword weighting and full-match bonuses place exact tools at rank #1",
+        "Biases read-only tools by default unless mutation intent is detected"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Active Guardrails",
+      "items": [
+        "Blocks destructive operations on protected namespaces like kube-system",
+        "Intercepts dangerous shell patterns and enforces repo allowlists",
+        "Rejects unauthorized execution before reaching upstream services"
+      ]
+    }
+  ]
+}

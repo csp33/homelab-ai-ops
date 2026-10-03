@@ -8,53 +8,13 @@
 
 ## Architecture
 
-```mermaid
-flowchart TD
-    %% Inbound Clients
-    subgraph Inbound ["Clients"]
-        direction LR
-        C1["🤖 LYOKO Domain Specialists"]
-        C2["💻 IDEs & External MCP Clients"]
-    end
-
-    %% Gateway Core
-    subgraph GW ["homelab-mcp Gateway Core"]
-        direction TB
-        T["Transport: Streamable HTTP (/mcp) & stdio"]
-        AUTH["Auth Verifier (OIDC & Bearer)"]
-        SEARCH["Scoped Tool Search / Domain Catalogs"]
-        GUARD["Guardrail Engine (Namespace & Exec Safety)"]
-        
-        T --> AUTH --> GUARD
-        AUTH -.-> SEARCH
-    end
-
-    %% Upstreams
-    subgraph UP ["Upstream MCP Servers"]
-        direction LR
-        K8S["☸️ Kubernetes MCP"]
-        HA["🏠 Home Assistant MCP"]
-        UNIFI["🌐 UniFi Network MCP"]
-        GRAF["📊 Grafana / Prometheus"]
-        GH["🐙 GitHub MCP"]
-    end
-
-    C1 --> T
-    C2 --> T
-    GUARD -->|"authorized calls"| K8S
-    GUARD -->|"authorized calls"| HA
-    GUARD -->|"authorized calls"| UNIFI
-    GUARD -->|"authorized calls"| GRAF
-    GUARD -->|"authorized calls"| GH
-
-    classDef client fill:#475569,stroke:#334155,color:#fff;
-    classDef gateway fill:#0f766e,stroke:#115e59,color:#fff;
-    classDef upstream fill:#b45309,stroke:#92400e,color:#fff;
-
-    class C1,C2 client;
-    class T,AUTH,SEARCH,GUARD gateway;
-    class K8S,HA,UNIFI,GRAF,GH upstream;
-```
+<p align="center">
+  <a href="../../../docs/diagrams/homelab-mcp-architecture.html">
+    <img src="../../../docs/assets/homelab-mcp-architecture.png" alt="homelab-mcp Gateway Architecture" width="100%" />
+  </a>
+  <br>
+  <em>Click diagram to launch interactive gateway architecture viewer.</em>
+</p>
 
 `homelab-mcp` provides **Scoped Tool Search** with **Multi-Token Relevance Scoring**:
 - **Domain Scoping**: Clients can search within specific domains (e.g. `upstream="unifi"`, `upstream="kubernetes"`) with automatic category alias resolution (`network` ➔ `unifi`, `k8s` ➔ `kubernetes`, `iot` ➔ `homeassistant`, `metrics` ➔ `grafana`, `gitops` / `argocd` ➔ `kubernetes`).
@@ -67,26 +27,13 @@ flowchart TD
 
 Every tool call is evaluated by the `GuardrailEngine` before it is dispatched upstream. The first failing check rejects the call.
 
-```mermaid
-flowchart LR
-    REQ([Tool call]) --> C1[Tool allowlist]
-    subgraph GE["GuardrailEngine, checked in order"]
-        direction LR
-        C1 --> C2[Protected namespaces] --> C3[GitHub repos] --> C4[Exec commands]
-    end
-    C4 --> OK([Dispatch upstream])
-    GE -.->|first failing check| X([Rejected])
-
-    classDef check fill:#0f766e,stroke:#134e4a,color:#fff;
-    classDef reject fill:#b91c1c,stroke:#7f1d1d,color:#fff;
-    classDef pass fill:#15803d,stroke:#14532d,color:#fff;
-    classDef entry fill:#64748b,stroke:#334155,color:#fff;
-
-    class C1,C2,C3,C4 check;
-    class X reject;
-    class OK pass;
-    class REQ entry;
-```
+<p align="center">
+  <a href="../../../docs/diagrams/guardrail-pipeline.html">
+    <img src="../../../docs/assets/guardrail-pipeline.png" alt="homelab-mcp Guardrail Engine Pipeline" width="100%" />
+  </a>
+  <br>
+  <em>Click diagram to launch interactive guardrail pipeline viewer.</em>
+</p>
 
 ### Security capabilities
 1. **Namespace Isolation**: Protected namespaces like `kube-system` are read-only. Only Kubernetes tools that match a read-only pattern (`*_get`, `*_list`, `*_log`, `*_top`, and similar) may target them, so every other tool, including new or unknown ones, is rejected. The target namespace is read from the `namespace` argument, from the `metadata.namespace` of a `resource` manifest, and from the name of a `Namespace` object. A manifest that cannot be parsed is rejected. Calls that name no namespace use the namespace from your kubeconfig.

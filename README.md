@@ -16,160 +16,27 @@ An AI operator for the whole homelab: Kubernetes, the network, the smart home, a
 
 Two packages, one unified homelab operations platform. External IDEs (Claude Desktop, Cursor) discover tools with relevance-scored scoped search on `homelab-mcp`. LYOKO's supervisor delegates to domain specialists that receive a scoped domain toolset (or domain-locked discovery for large catalogs). Every call still goes through authentication and safety guardrails.
 
-```mermaid
-flowchart TD
-    %% External clients
-    subgraph Ingress ["Ingress & Triggers"]
-        direction LR
-        AM([Alertmanager])
-        TG([Telegram Operator])
-        IDE([Claude Desktop / IDEs])
-    end
-
-    %% LYOKO Multi-Agent Engine
-    subgraph LYOKO ["LYOKO (Multi-Agent LangGraph Engine)"]
-        direction TB
-        WH[Webhook Controller]
-        CH[Chat Handler]
-        SUP["Supervisor & Planner"]
-        MEM_ENG["Semantic Memory & Feedback Engine"]
-        
-        subgraph Specialists ["Domain Specialists"]
-            direction LR
-            K8S_S["☸️ K8s SRE"]
-            NET_S["🌐 Network Spec"]
-            HA_S["🏠 SmartHome Spec"]
-            OBS_S["📊 Metrics Spec"]
-        end
-
-        WH --> SUP
-        CH --> SUP
-        SUP --> K8S_S
-        SUP --> NET_S
-        SUP --> HA_S
-        SUP --> OBS_S
-        SUP <--> MEM_ENG
-    end
-
-    %% Persistent Storage
-    subgraph DB ["Persistent Storage"]
-        direction TB
-        PG[(PostgreSQL + pgvector<br/>HNSW Cosine Index)]
-    end
-
-    %% homelab-mcp Tool Hub
-    subgraph GW ["homelab-mcp (Tool Hub & Safety Harness)"]
-        direction TB
-        AUTH[Auth Verifier]
-        SEARCH["Scoped Tool Search / Domain Catalogs"]
-        GUARD[Guardrail Engine]
-        AUTH --> GUARD
-        AUTH -.-> SEARCH
-    end
-
-    %% Upstreams
-    subgraph UP ["Upstream Infrastructure"]
-        direction LR
-        U_K8S[(Kubernetes)]
-        U_HA[(Home Assistant)]
-        U_NET[(UniFi Network)]
-        U_GRAF[(Grafana / Prometheus)]
-        U_GH[(GitHub)]
-    end
-
-    %% Ingress Connections
-    AM -->|"webhooks"| WH
-    TG <-->|"chat, feedback & approvals"| CH
-    IDE -->|"HTTP / stdio (Direct MCP)"| AUTH
-
-    %% Memory Connection
-    MEM_ENG <-->|"dense embeddings & past lessons"| PG
-
-    %% LYOKO & MCP Connections
-    K8S_S -->|"scoped tools"| AUTH
-    NET_S -->|"scoped tools"| AUTH
-    HA_S -->|"scoped tools"| AUTH
-    OBS_S -->|"scoped tools"| AUTH
-    GUARD --> U_K8S
-    GUARD --> U_HA
-    GUARD --> U_NET
-    GUARD --> U_GRAF
-    GUARD --> U_GH
-
-    %% Styling
-    classDef ingress fill:#475569,stroke:#334155,color:#fff;
-    classDef agent fill:#7c3aed,stroke:#5b21b6,color:#fff;
-    classDef spec fill:#9333ea,stroke:#6b21a8,color:#fff;
-    classDef gateway fill:#0f766e,stroke:#115e59,color:#fff;
-    classDef upstream fill:#b45309,stroke:#92400e,color:#fff;
-    classDef storage fill:#1e3a8a,stroke:#172554,color:#fff;
-
-    class AM,TG,IDE ingress;
-    class WH,CH,SUP,MEM_ENG agent;
-    class K8S_S,NET_S,HA_S,OBS_S spec;
-    class AUTH,SEARCH,GUARD gateway;
-    class U_K8S,U_HA,U_NET,U_GRAF,U_GH upstream;
-    class PG storage;
-```
+<p align="center">
+  <a href="docs/diagrams/system-architecture.html">
+    <img src="docs/assets/system-architecture.png" alt="Homelab AIOps Platform Architecture" width="100%" />
+  </a>
+  <br>
+  <em>Click diagram to launch interactive viewer with tracing, filters, and theme switching.</em>
+</p>
 
 ### Example: an OOMKilled pod with learned memory
 
 Every incident follows the same loop: investigate with read-only tools, retrieve prior operator lessons, decide on a fix, get approval for each change, apply it, verify, and report. If the operator previously taught the agent a specific rule for that service (e.g. *"compact WAL logs before restarting"*), the agent incorporates it into its diagnosis and remediation plan.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant AM as Alertmanager
-    participant L as LYOKO Supervisor
-    participant S as K8s Specialist
-    participant DB as PostgreSQL (pgvector)
-    participant G as homelab-mcp
-    participant O as Operator (Telegram)
-    participant K as Kubernetes
+<p align="center">
+  <a href="docs/diagrams/incident-remediation-sequence.html">
+    <img src="docs/assets/incident-remediation-sequence.png" alt="Autonomous Incident Remediation & Episodic Memory Sequence" width="100%" />
+  </a>
+  <br>
+  <em>Click diagram to launch interactive sequence timeline viewer.</em>
+</p>
 
-    AM->>L: POST /webhook/alertmanager (KubePodOOMKilled)
 
-    par Semantic memory lookup
-        L->>DB: Search past feedback & incident rules (cosine distance)
-        DB-->>L: Prior lessons & operator guidelines
-    and Read-only investigation
-        L->>S: ask_kubernetes_specialist (investigate OOM)
-        loop Domain tools
-            S->>G: k8s_pods_get, k8s_pods_log, k8s_events_list
-            G->>K: Read pod, logs, events
-            K-->>G: Exit code 137
-            G-->>S: Evidence
-        end
-        S-->>L: Diagnosis evidence
-    end
-
-    L->>L: Root cause and plan (incorporating memory rules)
-
-    L->>S: ask_kubernetes_specialist (raise memory limit)
-    S->>G: k8s_resources_create_or_update
-    Note over S,G: The tool gate holds the call
-    L->>O: Approval request with tool, arguments & [💡 Teach Rule]
-
-    alt Approved
-        O-->>L: Approve
-        G->>G: Guardrail check
-        G->>K: Apply change
-        L->>L: Wait for stabilization
-        L->>S: ask_kubernetes_specialist (verify)
-        S->>G: k8s_pods_get (read-only)
-        G-->>S: Pod running
-        S-->>L: Verified
-    else Teach Rule / Redirect
-        O-->>L: Teach Rule (e.g. "/feedback Do not increase RAM, compact WAL")
-        L->>DB: Store vector embedding & rule in agent_memory
-        Note over L: Memory updated for next incidents
-    else Denied or timed out
-        O-->>L: Deny
-        Note over L: Nothing changed, incident escalated
-    end
-
-    L->>O: Incident report (including applied memories)
-```
 
 Tool names come from the upstream servers, so they depend on your deployment. External IDEs discover them with `gateway_list_tools`. LYOKO specialists receive a scoped domain catalog via `gateway_get_domain_tools` (small domains bind the tools directly; large domains keep domain-locked search).
 

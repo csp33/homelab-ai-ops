@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Autonomous Incident Remediation & Episodic Memory",
+    "quality_profile": "showcase",
+    "viewBox": [960, 920],
+    "column_fit": "spread",
+    "views": [
+      {
+        "id": "alert-and-memory",
+        "label": "Alert & Memory Lookup",
+        "focus": ["alertmanager", "lyoko", "postgres"],
+        "note": "Alertmanager triggers LYOKO, which queries past operator rules via pgvector."
+      },
+      {
+        "id": "investigation-and-gating",
+        "label": "Read-Only Diagnostics & Tool Gate",
+        "focus": ["lyoko", "mcp_gw", "k8s_cluster", "operator_tg"],
+        "note": "Read-only inspection executes freely; state-changing fixes are gated for operator approval."
+      },
+      {
+        "id": "remediation-and-recovery",
+        "label": "Safe Mutation & Incident Resolution",
+        "focus": ["operator_tg", "lyoko", "mcp_gw", "k8s_cluster"],
+        "note": "Approved mutation is verified by guardrails, applied to Kubernetes, and confirmed recovered."
+      }
+    ]
+  },
+  "participants": [
+    { "id": "alertmanager", "type": "external", "label": "Alertmanager", "sublabel": "Prometheus Alerts", "brand": "prometheus" },
+    { "id": "lyoko", "type": "backend", "label": "LYOKO Agent", "sublabel": "LangGraph Loop", "brand": "openai" },
+    { "id": "postgres", "type": "database", "label": "Vector Memory", "sublabel": "PostgreSQL pgvector", "brand": "postgresql" },
+    { "id": "mcp_gw", "type": "security", "label": "homelab-mcp", "sublabel": "Tool Gate & Safety" },
+    { "id": "operator_tg", "type": "frontend", "label": "Operator", "sublabel": "Telegram HITL", "brand": "telegram" },
+    { "id": "k8s_cluster", "type": "cloud", "label": "Kubernetes", "sublabel": "Cluster Workloads", "brand": "kubernetes" }
+  ],
+  "segments": [
+    { "from": 160, "to": 300, "label": "Alert & Episodic Memory Retrieval" },
+    { "from": 310, "to": 550, "label": "Read-Only Diagnostics & Tool Gate" },
+    { "from": 560, "to": 830, "label": "HITL Operator Approval & Verified Recovery" }
+  ],
+  "messages": [
+    { "id": "alert-post", "from": "alertmanager", "to": "lyoko", "y": 190, "label": "POST /alertmanager (KubePodOOMKilled)", "variant": "emphasis" },
+    { "id": "memory-query", "from": "lyoko", "to": "postgres", "y": 235, "label": "dense vector search (cosine similarity)", "variant": "default" },
+    { "id": "memory-return", "from": "postgres", "to": "lyoko", "y": 275, "label": "prior lessons & taught service rules", "variant": "return" },
+
+    { "id": "diag-read", "from": "lyoko", "to": "mcp_gw", "y": 330, "label": "pods_get, pods_log, events_list", "variant": "default" },
+    { "id": "k8s-inspect", "from": "mcp_gw", "to": "k8s_cluster", "y": 370, "label": "read pod metadata & termination logs", "variant": "default" },
+    { "id": "k8s-evidence", "from": "k8s_cluster", "to": "mcp_gw", "y": 410, "label": "OOMKilled (Exit Code 137)", "variant": "return" },
+    { "id": "mcp-diag-res", "from": "mcp_gw", "to": "lyoko", "y": 450, "label": "evidence & root cause facts", "variant": "return" },
+
+    { "id": "rem-request", "from": "lyoko", "to": "mcp_gw", "y": 495, "label": "resources_create_or_update (raise limit)", "variant": "emphasis" },
+    { "id": "gate-hold", "from": "mcp_gw", "to": "lyoko", "y": 535, "label": "ToolGate: hold call for operator approval", "variant": "security" },
+
+    { "id": "hitl-prompt", "from": "lyoko", "to": "operator_tg", "y": 585, "label": "Telegram HITL buttons [Approve] [💡 Teach]", "variant": "emphasis" },
+    { "id": "hitl-approve", "from": "operator_tg", "to": "lyoko", "y": 630, "label": "Approve action", "variant": "return" },
+
+    { "id": "rem-dispatch", "from": "lyoko", "to": "mcp_gw", "y": 675, "label": "dispatch approved mutation", "variant": "emphasis" },
+    { "id": "k8s-apply", "from": "mcp_gw", "to": "k8s_cluster", "y": 715, "label": "apply patch (guardrails checked)", "variant": "security" },
+    { "id": "k8s-verify", "from": "k8s_cluster", "to": "mcp_gw", "y": 755, "label": "pod running & ready", "variant": "return" },
+    { "id": "final-report", "from": "lyoko", "to": "operator_tg", "y": 800, "label": "Incident Report (RESOLVED)", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "lyoko", "from": 185, "to": 805, "type": "backend" },
+    { "participant": "postgres", "from": 230, "to": 280, "type": "database" },
+    { "participant": "mcp_gw", "from": 325, "to": 455, "type": "security" },
+    { "participant": "mcp_gw", "from": 490, "to": 540, "type": "security" },
+    { "participant": "mcp_gw", "from": 670, "to": 760, "type": "security" },
+    { "participant": "k8s_cluster", "from": 365, "to": 415, "type": "cloud" },
+    { "participant": "k8s_cluster", "from": 710, "to": 760, "type": "cloud" },
+    { "participant": "operator_tg", "from": 580, "to": 635, "type": "frontend" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Episodic Vector Memory",
+      "items": [
+        "Alert queries PostgreSQL pgvector using dense embeddings",
+        "Historical incident fixes and taught operator rules guide the plan",
+        "Prevents repeating previous misconfigurations or flapping fixes"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Zero-Trust ToolGate",
+      "items": [
+        "Diagnostics and read-only inspection execute freely",
+        "State-changing mutations are intercepted and held by the ToolGate",
+        "Operator approves changes via Telegram inline action buttons"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Closed-Loop Verification",
+      "items": [
+        "Post-remediation stabilization window verifies actual recovery",
+        "GuardrailEngine ensures mutations remain within allowed namespaces",
+        "Structured incident summary delivered directly to the operator"
+      ]
+    }
+  ]
+}

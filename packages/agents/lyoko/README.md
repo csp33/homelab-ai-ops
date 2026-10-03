@@ -21,72 +21,13 @@ Every event enters the graph at `route` and takes one of two branches:
 - **Incident Remediation**: Autonomous 4-stage SRE workflow (`diagnose` ➔ `remediate` ➔ `verify` ➔ `notify`). Each of the first three stages is a supervisor run that delegates to the same domain specialists.
 
 
-```mermaid
-flowchart TD
-    %% Ingress
-    AM([Alertmanager Webhook]) -->|alert| RT
-    MSG([Telegram Message]) -->|message| RT
-    RT{route}
-
-    %% Branches
-    RT -->|question or instruction| SUP["🧭 Supervisor & Coordinator"]
-    RT -->|alert or reported incident| D["1. diagnose"]
-
-    %% Domain Specialists shared by both branches
-    subgraph Specialists ["Domain Specialists"]
-        direction LR
-        K8S["☸️ K8s Specialist"]
-        NET["🌐 Network Specialist"]
-        HA["🏠 SmartHome Specialist"]
-        OBS["📊 Metrics Specialist"]
-    end
-
-    SUP --> K8S
-    SUP --> NET
-    SUP --> HA
-    SUP --> OBS
-
-    %% Incident Branch
-    subgraph INC ["Autonomous Incident Branch"]
-        direction LR
-        D --> R["2. remediate"]
-        R --> V["3. verify"]
-        V --> N["4. notify"]
-    end
-
-    D -.->|"supervisor delegates"| Specialists
-    R -.->|"supervisor delegates"| Specialists
-    V -.->|"supervisor delegates"| Specialists
-
-    %% ToolGate & MCP Gateway
-    GATE{"🛡️ ToolGate<br/>(Read-only vs HITL Approval)"}
-    MCP["🚪 homelab-mcp Gateway"]
-
-    K8S --> GATE
-    NET --> GATE
-    HA --> GATE
-    OBS --> GATE
-    GATE -->|"authorized calls"| MCP
-
-    %% Operator HITL
-    GATE <-->|"inline approvals"| TG([📱 Telegram Operator])
-    N -->|"incident report"| TG
-
-    %% Styling
-    classDef ingress fill:#475569,stroke:#334155,color:#fff;
-    classDef router fill:#b45309,stroke:#92400e,color:#fff;
-    classDef supervisor fill:#7c3aed,stroke:#5b21b6,color:#fff;
-    classDef specialist fill:#9333ea,stroke:#6b21a8,color:#fff;
-    classDef incident fill:#0369a1,stroke:#075985,color:#fff;
-    classDef gate fill:#0f766e,stroke:#115e59,color:#fff;
-
-    class AM,MSG,TG ingress;
-    class RT router;
-    class SUP supervisor;
-    class K8S,NET,HA,OBS specialist;
-    class D,R,V,N incident;
-    class GATE,MCP gate;
-```
+<p align="center">
+  <a href="../../../docs/diagrams/lyoko-workflow.html">
+    <img src="../../../docs/assets/lyoko-workflow.png" alt="LYOKO LangGraph StateGraph Architecture" width="100%" />
+  </a>
+  <br>
+  <em>Click diagram to launch interactive StateGraph workflow viewer.</em>
+</p>
 
 | Node / Component | What it does |
 | :--- | :--- |
