@@ -2,6 +2,7 @@
 
 import contextlib
 import html
+import inspect
 import logging
 import re
 from collections.abc import Awaitable, Callable
@@ -542,7 +543,9 @@ class TelegramConnector(ChatConnector):
 
         for handler in self._approval_handlers:
             try:
-                await handler(response)
+                res = handler(response)
+                if inspect.isawaitable(res):
+                    await res
             except Exception as exc:
                 logger.error("Error executing approval handler: %s", exc)
 
