@@ -105,7 +105,7 @@ class OpenAILLMAdapter(LLMClientInterface):
                         messages.append(SystemMessage(content=system_prompt))
                     messages.append(HumanMessage(content=prompt_text))
 
-                    for _ in range(max_iterations):
+                    for step in range(max_iterations):
                         response = await model_with_tools.ainvoke(messages)
                         messages.append(response)
 
@@ -115,6 +115,13 @@ class OpenAILLMAdapter(LLMClientInterface):
                         for tool_call in response.tool_calls:
                             tool_name = tool_call["name"]
                             tool_args = tool_call["args"]
+                            logger.info(
+                                "ReAct step %d/%d: calling '%s' with %s",
+                                step + 1,
+                                max_iterations,
+                                tool_name,
+                                tool_args,
+                            )
                             tool = tools_by_name.get(tool_name)
                             if tool is None:
                                 tool_output = f"Error: Tool '{tool_name}' not found."
@@ -135,7 +142,17 @@ class OpenAILLMAdapter(LLMClientInterface):
                                 )
                             )
 
-                    raise RuntimeError(f"Agent exceeded maximum allowed steps ({max_iterations})")
+                    logger.warning(
+                        "ReAct agent reached maximum allowed steps (%d). Requesting final summary.",
+                        max_iterations,
+                    )
+                    messages.append(
+                        HumanMessage(
+                            content="You have reached the maximum allowed steps. Please summarize your findings, actions taken, and current status based on the information gathered so far without making further tool calls."
+                        )
+                    )
+                    final_response = await self.client.ainvoke(messages)
+                    return str(final_response.content)
 
                 loop_runnable = RunnableLambda(_react_loop, name=trace_name or "chat-agent")
                 return await loop_runnable.ainvoke(prompt, config=config if config else None)
