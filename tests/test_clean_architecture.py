@@ -105,3 +105,25 @@ def test_init_files_are_empty():
     assert not non_empty, "The following __init__.py files must remain empty:\n" + "\n".join(
         non_empty
     )
+
+
+def test_application_and_domain_file_size_limits():
+    """Ensure domain and application layer files adhere to SRP and do not grow into unmodularized god files (> 280 lines)."""
+    MAX_LINES = 280
+    oversized: list[str] = []
+
+    target_dirs = list(WORKSPACE_ROOT.glob("packages/**/domain")) + list(
+        WORKSPACE_ROOT.glob("packages/**/application")
+    )
+    for target_dir in target_dirs:
+        for py_file in target_dir.rglob("*.py"):
+            lines = py_file.read_text(encoding="utf-8").splitlines()
+            if len(lines) > MAX_LINES:
+                oversized.append(
+                    f"{py_file.relative_to(WORKSPACE_ROOT)} has {len(lines)} lines (max allowed: {MAX_LINES})"
+                )
+
+    assert not oversized, (
+        "Application and domain files must be modularized and kept under single-responsibility limits:\n"
+        + "\n".join(oversized)
+    )
