@@ -64,11 +64,14 @@ async def test_app_lifespan_lifecycle():
 
 
 @pytest.mark.asyncio
-async def test_webhook_and_chat_use_the_graph_stored_in_app_state():
+async def test_webhook_and_chat_use_the_graph_stored_in_app_state(monkeypatch):
     """Lifespan replaces the graph (to add the checkpointer); every entry point must follow."""
     from unittest.mock import MagicMock
 
     from lyoko.domain.models.chat import ChatUser, IncomingMessage
+
+    monkeypatch.setattr("lyoko.config.settings.alert_debounce_seconds", 0.0)
+    monkeypatch.setattr("lyoko.config.settings.alert_dedup_cooldown_seconds", 0)
 
     app = create_app()
     replacement = MagicMock()
@@ -78,6 +81,7 @@ async def test_webhook_and_chat_use_the_graph_stored_in_app_state():
     alert = {"alerts": [{"status": "firing", "labels": {"alertname": "HighLatency"}}]}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post("/webhook/alertmanager", json=alert)
+
     assert resp.status_code == 200
     replacement.ainvoke.assert_awaited_once()
     assert replacement.ainvoke.call_args.args[0]["event_type"] == "alert"

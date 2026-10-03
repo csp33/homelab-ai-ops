@@ -116,6 +116,38 @@ class AgentSettings(BaseSettings):
         description="Maximum supervisor delegation iterations per phase",
     )
 
+    # Alert Storm Protection & Cascade Trace Prevention
+    alert_debounce_seconds: float = Field(
+        default=10.0,
+        ge=0.0,
+        description="Seconds to debounce and aggregate incoming alerts before launching an incident",
+    )
+    alert_storm_threshold: int = Field(
+        default=8,
+        ge=1,
+        description="Number of alerts in window required to trip the alert storm circuit breaker",
+    )
+    alert_storm_window_seconds: int = Field(
+        default=60,
+        ge=1,
+        description="Sliding window in seconds to monitor alert velocity for storm detection",
+    )
+    alert_storm_cooldown_seconds: int = Field(
+        default=120,
+        ge=1,
+        description="Seconds to keep the circuit breaker open before attempting recovery",
+    )
+    alert_dedup_cooldown_seconds: int = Field(
+        default=300,
+        ge=0,
+        description="Seconds to suppress duplicate alerts for recently resolved/escalated incidents",
+    )
+    max_concurrent_incidents: int = Field(
+        default=2,
+        ge=1,
+        description="Maximum concurrent LangGraph incident investigation workflows allowed",
+    )
+
     # General Environment
     environment: str = Field(
         default="local",

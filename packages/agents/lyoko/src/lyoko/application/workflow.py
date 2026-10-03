@@ -78,6 +78,7 @@ class LyokoState(TypedDict, total=False):
     requires_escalation: bool
     matched_memories: list[dict[str, Any]]
     lessons_context: str
+    correlated_alerts: list[dict[str, Any]]
 
 
 def create_lyoko_graph(
