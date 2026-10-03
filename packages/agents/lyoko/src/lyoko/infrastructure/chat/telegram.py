@@ -26,6 +26,7 @@ from telegram.ext import (
     CommandHandler,
     ContextTypes,
     MessageHandler,
+    TypeHandler,
     filters,
 )
 
@@ -33,7 +34,7 @@ logger = logging.getLogger("lyoko.chat.telegram")
 
 
 class TelegramDraftStreamer:
-    """Streams draft messages to Telegram using the native sendMessageDraft API with rate-limiting."""
+    """Streams draft messages to Telegram using the native sendMessageDraft API with rate-limiting and stop support."""
 
     def __init__(
         self,
@@ -55,9 +56,19 @@ class TelegramDraftStreamer:
         self._last_sent_text = ""
         self._lock = asyncio.Lock()
         self._disabled = False
+        self._stopped = asyncio.Event()
+
+    def stop(self) -> None:
+        """Signal that message generation should stop immediately."""
+        self._stopped.set()
+        self._disabled = True
+
+    def is_stopped(self) -> bool:
+        """Return True if message generation was stopped."""
+        return self._stopped.is_set()
 
     async def start_thinking(self) -> None:
-        """Send initial empty draft to show native 'Thinking...' placeholder."""
+        """Send initial empty draft to show native 'Thinking...' placeholder with Stop button."""
         if not self.bot or not hasattr(self.bot, "send_message_draft"):
             return
         try:
@@ -66,6 +77,7 @@ class TelegramDraftStreamer:
                 chat_id=target_chat_id,
                 draft_id=self.draft_id,
                 text="",
+                api_kwargs={"can_stop": True},
             )
         except Exception as exc:
             logger.debug(
@@ -77,6 +89,8 @@ class TelegramDraftStreamer:
 
     async def on_token(self, token: str) -> None:
         """Receive a token, append to buffer, and update draft if throttle interval elapsed."""
+        if self._stopped.is_set():
+            raise asyncio.CancelledError("Message generation stopped by user via Telegram")
         if self._disabled or not self.bot or not hasattr(self.bot, "send_message_draft"):
             return
         self._accumulated_text += token
@@ -88,7 +102,7 @@ class TelegramDraftStreamer:
         if self._accumulated_text == self._last_sent_text:
             return
         async with self._lock:
-            if self._disabled:
+            if self._disabled or self._stopped.is_set():
                 return
             try:
                 target_chat_id = int(self.chat_id)
@@ -98,6 +112,7 @@ class TelegramDraftStreamer:
                     chat_id=target_chat_id,
                     draft_id=self.draft_id,
                     text=self._accumulated_text,
+                    api_kwargs={"can_stop": True},
                 )
             except Exception as exc:
                 logger.debug("send_message_draft error: %s", exc)
@@ -202,6 +217,32 @@ def _convert_markdown_tables(text: str, code_blocks: list[str]) -> str:
     return "\n".join(output)
 
 
+def _convert_markdown_blockquotes(text: str) -> str:
+    """Convert lines starting with '&gt;' into Telegram expandable blockquotes."""
+    lines = text.split("\n")
+    output: list[str] = []
+    quote_buffer: list[str] = []
+
+    def flush_quote():
+        if quote_buffer:
+            content = "\n".join(quote_buffer)
+            output.append(f"<blockquote expandable>{content}</blockquote>")
+            quote_buffer.clear()
+
+    for line in lines:
+        stripped_line = line.lstrip()
+        if stripped_line.startswith("&gt;"):
+            inner = stripped_line[4:]
+            if inner.startswith(" "):
+                inner = inner[1:]
+            quote_buffer.append(inner)
+        else:
+            flush_quote()
+            output.append(line)
+    flush_quote()
+    return "\n".join(output)
+
+
 def markdown_to_telegram_html(text: str) -> str:
     """Convert standard Markdown output from LLMs to Telegram-compatible HTML formatting."""
     if not text:
@@ -243,6 +284,9 @@ def markdown_to_telegram_html(text: str) -> str:
 
     # 7. Links [title](url)
     processed = re.sub(r"\[(.+?)\]\((https?://[^\s)]+)\)", r'<a href="\2">\1</a>', processed)
+
+    # 7b. Expandable Blockquotes (> quote -> <blockquote expandable>quote</blockquote>)
+    processed = _convert_markdown_blockquotes(processed)
 
     # 8. Restore inline code (HTML escaped content inside <code>)
     for i, code in enumerate(inline_codes):
@@ -311,6 +355,7 @@ class TelegramConnector(ChatConnector):
 
         self._message_handlers: list[Callable[[IncomingMessage], Awaitable[str | None]]] = []
         self._approval_handlers: list[Callable[[ApprovalResponse], Awaitable[None]]] = []
+        self._active_streamers: dict[tuple[str, int], TelegramDraftStreamer] = {}
         self._app: Application | None = None
 
     def is_user_authorized(self, user_id: str | int | None) -> bool:
@@ -336,6 +381,40 @@ class TelegramConnector(ChatConnector):
     ) -> None:
         """Register a callback for approval button responses."""
         self._approval_handlers.append(handler)
+
+    async def _handle_stopped_generation(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle MessageGenerationStopped event when user clicks Stop on a streaming draft."""
+        stopped = getattr(update, "stopped_message_generation", None)
+        if not stopped and hasattr(update, "to_dict"):
+            stopped = update.to_dict().get("stopped_message_generation")
+        if not stopped:
+            return
+
+        chat_data = (
+            getattr(stopped, "chat", None)
+            if hasattr(stopped, "chat")
+            else (stopped.get("chat") if isinstance(stopped, dict) else None)
+        )
+        chat_id = str(
+            getattr(chat_data, "id", "")
+            or (chat_data.get("id", "") if isinstance(chat_data, dict) else "")
+        )
+        draft_id = (
+            getattr(stopped, "draft_id", None)
+            if hasattr(stopped, "draft_id")
+            else (stopped.get("draft_id") if isinstance(stopped, dict) else None)
+        )
+
+        if chat_id and draft_id is not None:
+            key = (str(chat_id), int(draft_id))
+            streamer = self._active_streamers.get(key)
+            if streamer is not None:
+                logger.info(
+                    "User requested stop for streaming draft %s in chat %s", draft_id, chat_id
+                )
+                streamer.stop()
 
     async def _handle_telegram_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -424,96 +503,117 @@ class TelegramConnector(ChatConnector):
             else (self._app.bot if self._app else None)
         )
         streamer = TelegramDraftStreamer(bot=bot_instance, chat_id=chat_id)
-        with contextlib.suppress(Exception):
-            await streamer.start_thinking()
+        streamer_key = (str(chat_id), streamer.draft_id)
+        self._active_streamers[streamer_key] = streamer
+        try:
+            with contextlib.suppress(Exception):
+                await streamer.start_thinking()
 
-        text = str(msg.text).strip()
+            text = str(msg.text).strip()
 
-        # 4. Handle /feedback or /teach command
-        if text.startswith("/feedback") or text.startswith("/teach"):
-            await self._handle_feedback_command(msg, text)
-            return
+            # 4. Handle /feedback or /teach command
+            if text.startswith("/feedback") or text.startswith("/teach"):
+                await self._handle_feedback_command(msg, text)
+                return
 
-        username = None
-        if user and getattr(user, "username", None) and not hasattr(user.username, "_mock_name"):
-            username = str(user.username)
-        elif chat and getattr(chat, "username", None) and not hasattr(chat.username, "_mock_name"):
-            username = str(chat.username)
+            username = None
+            if (
+                user
+                and getattr(user, "username", None)
+                and not hasattr(user.username, "_mock_name")
+            ):
+                username = str(user.username)
+            elif (
+                chat
+                and getattr(chat, "username", None)
+                and not hasattr(chat.username, "_mock_name")
+            ):
+                username = str(chat.username)
 
-        first_name = "User"
-        if (
-            user
-            and getattr(user, "first_name", None)
-            and not hasattr(user.first_name, "_mock_name")
-        ):
-            first_name = str(user.first_name)
-        elif chat and getattr(chat, "title", None) and not hasattr(chat.title, "_mock_name"):
-            first_name = str(chat.title)
+            first_name = "User"
+            if (
+                user
+                and getattr(user, "first_name", None)
+                and not hasattr(user.first_name, "_mock_name")
+            ):
+                first_name = str(user.first_name)
+            elif chat and getattr(chat, "title", None) and not hasattr(chat.title, "_mock_name"):
+                first_name = str(chat.title)
 
-        reply_to_message_id: str | None = None
-        replied = getattr(msg, "reply_to_message", None)
-        replied_id = getattr(replied, "message_id", None) if replied is not None else None
-        if isinstance(replied_id, int) and not isinstance(replied_id, bool):
-            reply_to_message_id = str(replied_id)
+            reply_to_message_id: str | None = None
+            replied = getattr(msg, "reply_to_message", None)
+            replied_id = getattr(replied, "message_id", None) if replied is not None else None
+            if isinstance(replied_id, int) and not isinstance(replied_id, bool):
+                reply_to_message_id = str(replied_id)
 
-        incoming = IncomingMessage(
-            message_id=str(msg.message_id),
-            chat_id=chat_id,
-            user=ChatUser(
-                user_id=user_id or chat_id,
-                username=username,
-                first_name=first_name,
-            ),
-            text=text,
-            reply_to_message_id=reply_to_message_id,
-        )
+            incoming = IncomingMessage(
+                message_id=str(msg.message_id),
+                chat_id=chat_id,
+                user=ChatUser(
+                    user_id=user_id or chat_id,
+                    username=username,
+                    first_name=first_name,
+                ),
+                text=text,
+                reply_to_message_id=reply_to_message_id,
+            )
 
-        for handler in self._message_handlers:
-            try:
-                accepts_on_token = False
+            for handler in self._message_handlers:
                 try:
-                    sig = inspect.signature(handler)
-                    accepts_on_token = "on_token" in sig.parameters or any(
-                        p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
-                    )
-                except (ValueError, TypeError):
-                    pass
-
-                if accepts_on_token:
-                    reply = await handler(incoming, on_token=streamer.on_token)
-                else:
-                    reply = await handler(incoming)
-                if reply:
-                    formatted_reply = markdown_to_telegram_html(reply)
+                    accepts_on_token = False
                     try:
-                        await msg.reply_text(
-                            formatted_reply,
-                            parse_mode="HTML",
-                            reply_to_message_id=msg.message_id,
-                            allow_sending_without_reply=True,
+                        sig = inspect.signature(handler)
+                        accepts_on_token = "on_token" in sig.parameters or any(
+                            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
                         )
-                    except Exception as html_err:
-                        logger.warning("Failed to reply with HTML, falling back: %s", html_err)
+                    except (ValueError, TypeError):
+                        pass
+
+                    if accepts_on_token:
+                        reply = await handler(incoming, on_token=streamer.on_token)
+                    else:
+                        reply = await handler(incoming)
+
+                    if reply and not streamer.is_stopped():
+                        formatted_reply = markdown_to_telegram_html(reply)
                         try:
                             await msg.reply_text(
-                                reply,
+                                formatted_reply,
+                                parse_mode="HTML",
                                 reply_to_message_id=msg.message_id,
                                 allow_sending_without_reply=True,
                             )
-                        except Exception:
-                            await self.send_message(
-                                chat_id=chat_id,
-                                text=reply,
-                                reply_to_message_id=msg.message_id,
-                            )
-            except Exception as exc:
-                logger.error("Error executing message handler: %s", exc)
-                with contextlib.suppress(Exception):
-                    await msg.reply_text(
-                        f"⚠️ Error processing request: {exc}",
-                        reply_to_message_id=msg.message_id,
-                        allow_sending_without_reply=True,
+                        except Exception as html_err:
+                            logger.warning("Failed to reply with HTML, falling back: %s", html_err)
+                            try:
+                                await msg.reply_text(
+                                    reply,
+                                    reply_to_message_id=msg.message_id,
+                                    allow_sending_without_reply=True,
+                                )
+                            except Exception:
+                                await self.send_message(
+                                    chat_id=chat_id,
+                                    text=reply,
+                                    reply_to_message_id=msg.message_id,
+                                )
+                except (asyncio.CancelledError, GeneratorExit):
+                    logger.info(
+                        "Message generation cancelled by user for draft %s in chat %s",
+                        streamer.draft_id,
+                        chat_id,
                     )
+                    return
+                except Exception as exc:
+                    logger.error("Error executing message handler: %s", exc)
+                    with contextlib.suppress(Exception):
+                        await msg.reply_text(
+                            f"⚠️ Error processing request: {exc}",
+                            reply_to_message_id=msg.message_id,
+                            allow_sending_without_reply=True,
+                        )
+        finally:
+            self._active_streamers.pop(streamer_key, None)
 
     async def _handle_feedback_command(self, msg: Any, text: str) -> None:
         """Process /feedback or /teach operator instruction and persist to PostgreSQL."""
@@ -680,6 +780,7 @@ class TelegramConnector(ChatConnector):
         # approval would then block the very button click that grants it, so handle them
         # concurrently.
         self._app = Application.builder().token(self.bot_token).concurrent_updates(True).build()
+        self._app.add_handler(TypeHandler(Update, self._handle_stopped_generation), group=-1)
         self._app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_telegram_message)
         )

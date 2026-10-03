@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -700,6 +701,7 @@ async def test_telegram_draft_streamer_thinking_and_tokens():
         chat_id=12345,
         draft_id=999,
         text="",
+        api_kwargs={"can_stop": True},
     )
 
     mock_bot.send_message_draft.reset_mock()
@@ -710,6 +712,70 @@ async def test_telegram_draft_streamer_thinking_and_tokens():
     last_call = mock_bot.send_message_draft.call_args[1]
     assert last_call["text"] == "Hello world!"
     assert last_call["draft_id"] == 999
+    assert last_call["api_kwargs"] == {"can_stop": True}
+
+
+@pytest.mark.asyncio
+async def test_telegram_draft_streamer_stop():
+    """Verify stop() marks streamer stopped and on_token raises CancelledError."""
+    from lyoko.infrastructure.chat.telegram import TelegramDraftStreamer
+
+    mock_bot = MagicMock()
+    mock_bot.send_message_draft = AsyncMock()
+
+    streamer = TelegramDraftStreamer(bot=mock_bot, chat_id="12345", draft_id=123)
+    assert streamer.is_stopped() is False
+
+    streamer.stop()
+    assert streamer.is_stopped() is True
+
+    with pytest.raises(asyncio.CancelledError):
+        await streamer.on_token("token after stop")
+
+
+def test_markdown_to_telegram_html_expandable_blockquote():
+    """Verify markdown blockquotes are converted to <blockquote expandable>."""
+    from lyoko.infrastructure.chat.telegram import markdown_to_telegram_html
+
+    # Single line blockquote
+    single = "> This is a quote"
+    assert (
+        markdown_to_telegram_html(single) == "<blockquote expandable>This is a quote</blockquote>"
+    )
+
+    # Multi-line blockquote with formatting
+    multi = "> Line 1 with **bold**\n> Line 2 with `code`"
+    expected = (
+        "<blockquote expandable>Line 1 with <b>bold</b>\nLine 2 with <code>code</code></blockquote>"
+    )
+    assert markdown_to_telegram_html(multi) == expected
+
+    # Blockquote followed by regular text
+    mixed = "> Quote header\n\nRegular text after quote"
+    expected_mixed = "<blockquote expandable>Quote header</blockquote>\n\nRegular text after quote"
+    assert markdown_to_telegram_html(mixed) == expected_mixed
+
+
+@pytest.mark.asyncio
+async def test_telegram_connector_handle_stopped_generation():
+    """Verify _handle_stopped_generation cancels active streamer."""
+    from lyoko.infrastructure.chat.telegram import TelegramDraftStreamer
+
+    connector = TelegramConnector(
+        bot_token="fake:token", allowed_user_ids={"12345"}, default_chat_id="12345"
+    )
+    streamer = TelegramDraftStreamer(bot=MagicMock(), chat_id="12345", draft_id=777)
+    connector._active_streamers[("12345", 777)] = streamer
+
+    mock_update = MagicMock()
+    mock_stopped = MagicMock()
+    mock_stopped.chat.id = 12345
+    mock_stopped.draft_id = 777
+    mock_update.stopped_message_generation = mock_stopped
+
+    await connector._handle_stopped_generation(mock_update, MagicMock())
+
+    assert streamer.is_stopped() is True
 
 
 @pytest.mark.asyncio
