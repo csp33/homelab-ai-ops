@@ -283,6 +283,18 @@ class MCPGatewayService:
         bounded_limit = max(1, min(limit, 50))
         return tools[:bounded_limit]
 
+    async def get_domain_tools(self, domain: str) -> list[ToolDefinition]:
+        """Retrieve all allowed tools belonging to a specific upstream domain."""
+        tools = await self.discover_tools()
+        canonical_target = UPSTREAM_ALIASES.get(domain.strip().lower(), domain.strip().lower())
+        return [
+            t
+            for t in tools
+            if canonical_target == str(t.upstream_type).lower()
+            or canonical_target in str(t.upstream_type).lower()
+            or canonical_target in t.name.lower()
+        ]
+
     async def execute_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         """Validate safety guardrails and route tool execution to the upstream MCP server."""
         if name not in self._tool_routing:
