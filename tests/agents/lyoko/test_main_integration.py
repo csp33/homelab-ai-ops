@@ -12,10 +12,15 @@ from lyoko.main import build_chat_manager, create_app
 async def test_app_health_endpoint():
     app = create_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get("/healthz")
-        assert resp.status_code == 200
-        assert resp.json()["status"] == "healthy"
-        assert resp.json()["service"] == "lyoko-agent"
+        resp_healthz = await client.get("/healthz")
+        assert resp_healthz.status_code == 200
+        assert resp_healthz.json()["status"] == "healthy"
+        assert resp_healthz.json()["service"] == "lyoko-agent"
+
+        resp_health = await client.get("/health")
+        assert resp_health.status_code == 200
+        assert resp_health.json()["status"] == "healthy"
+        assert resp_health.json()["service"] == "lyoko-agent"
 
 
 @pytest.mark.asyncio
