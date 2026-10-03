@@ -1,4 +1,8 @@
-# homelab-aiops
+<div align="center">
+
+# Homelab AIOps
+
+**Autonomous SRE and multi-agent operations platform for Kubernetes and smart infrastructure.**
 
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
@@ -8,146 +12,85 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-336791.svg?style=flat&logo=postgresql&logoColor=white)](https://github.com/pgvector/pgvector)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-An AI operator for the whole homelab: Kubernetes, the network, the smart home, and observability. It receives incidents, works out the cause, and fixes them through a single authenticated, guardrail-protected tool gateway, with a human approving anything that is not explicitly trusted. It continuously learns from operator feedback via persistent vector episodic memory (**PostgreSQL** + **pgvector**). Powered by **FastMCP** and **LangGraph**.
+<p align="center">
+  Unified operations across <b>Kubernetes</b>, <b>UniFi Network</b>, <b>Home Assistant</b>, <b>Grafana</b>, and <b>GitHub</b>.
+</p>
 
-[Architecture](#architecture) · [Packages](#packages) · [Features](#features) · [Quick Start](#quick-start) · [Security](#security)
+[Quick Start](docs/quickstart.md) · [Architecture](docs/architecture.md) · [Security](docs/security-guardrails.md) · [Packages](#packages)
+
+</div>
+
+---
+
+## Overview
+
+**Homelab AIOps** pairs an event-driven SRE multi-agent engine (**LYOKO**) with a unified, guardrail-protected tool gateway (**`homelab-mcp`**). 
+
+When incidents occur, the system diagnoses root causes using read-only specialists, retrieves prior lessons from persistent vector memory (**PostgreSQL + pgvector**), and requests human approval (HITL) via **Telegram** before applying any state modification.
+
+---
+
+## Key Capabilities
+
+- **Continuous Episodic Memory**: Stores incident resolutions and operator rules as vector embeddings in PostgreSQL. Retrieves relevant lessons during triage and allows operators to teach custom operational guidelines on the fly.
+- **Zero-Trust Safety Harness**: Investigation and verification phases are strictly read-only. Destructive shell commands and protected namespaces are blocked at the gateway, while state-changing operations require explicit operator approval.
+- **Unified Tool Gateway**: Aggregates Kubernetes, UniFi Network, Home Assistant, Grafana, and GitHub behind a single authenticated FastMCP gateway over Streamable HTTP and stdio.
+- **Hierarchical Multi-Agent Engine**: A central LangGraph supervisor coordinates specialized domain subagents for cluster, network, smart home, and observability operations.
+
+---
 
 ## Architecture
 
-Two packages, one unified homelab operations platform. External IDEs (Claude Desktop, Cursor) discover tools with relevance-scored scoped search on `homelab-mcp`. LYOKO's supervisor delegates to domain specialists that receive a scoped domain toolset (or domain-locked discovery for large catalogs). Every call still goes through authentication and safety guardrails.
-
 <p align="center">
-  <a href="docs/diagrams/system-architecture.html">
-    <img src="docs/assets/system-architecture.png" alt="Homelab AIOps Platform Architecture" width="100%" />
-  </a>
-  <br>
-  <em>Click diagram to launch interactive viewer with tracing, filters, and theme switching.</em>
+  <img src="docs/assets/system-architecture.png" alt="Homelab AIOps Platform Architecture" width="100%" />
 </p>
 
-### Example: an OOMKilled pod with learned memory
+---
 
-Every incident follows the same loop: investigate with read-only tools, retrieve prior operator lessons, decide on a fix, get approval for each change, apply it, verify, and report. If the operator previously taught the agent a specific rule for that service (e.g. *"compact WAL logs before restarting"*), the agent incorporates it into its diagnosis and remediation plan.
+## Operating Modes
 
-<p align="center">
-  <a href="docs/diagrams/incident-remediation-sequence.html">
-    <img src="docs/assets/incident-remediation-sequence.png" alt="Autonomous Incident Remediation & Episodic Memory Sequence" width="100%" />
-  </a>
-  <br>
-  <em>Click diagram to launch interactive sequence timeline viewer.</em>
-</p>
+1. **Autonomous Incident Remediation**: Awakened by Prometheus Alertmanager webhooks. Runs an end-to-end loop: `Diagnose (Read-only) ➔ Remediate (Approval-Gated) ➔ Verify (Read-only) ➔ Notify & Learn`.
+2. **Interactive Operator Assistant**: A conversational Telegram assistant for day-to-day operations, log queries, resource adjustments, and teaching operator rules.
 
-
-
-Tool names come from the upstream servers, so they depend on your deployment. External IDEs discover them with `gateway_list_tools`. LYOKO specialists receive a scoped domain catalog via `gateway_get_domain_tools` (small domains bind the tools directly; large domains keep domain-locked search).
+---
 
 ## Packages
 
 | Package | Role | Description |
 | :--- | :--- | :--- |
-| [`homelab-mcp`](packages/mcps/homelab-mcp) | Tool gateway | FastMCP gateway that aggregates upstream MCP servers behind authentication and safety guardrails. |
-| [`lyoko`](packages/agents/lyoko) | Autonomous agent | Event-driven remediation agent built with LangGraph, FastAPI, persistent semantic memory, and a Telegram chat assistant. |
+| [`homelab-mcp`](packages/mcps/homelab-mcp) | Tool Gateway | FastMCP server aggregating upstream APIs with authentication, scoped tool search, and namespace guardrails. |
+| [`lyoko`](packages/agents/lyoko) | Multi-Agent Engine | LangGraph orchestrator with hierarchical domain specialists, Telegram approvals, and episodic vector memory. |
 
-## Features
-
-- **Semantic Memory & Operator Feedback**: Learns continuously from operator interactions. Past incident resolutions and operator rules are stored in PostgreSQL with 1536-dimensional vector embeddings and HNSW indexes (`pgvector`). During diagnosis, LYOKO retrieves relevant past lessons to prevent repeating mistakes. Operators can teach rules via interactive Telegram buttons (`[💡 Teach Rule / Redirect]`), commands (`/feedback`, `/teach`), or REST API (`POST /api/v1/feedback`).
-- **Guardrails**: block destructive commands (`rm -rf`, `mkfs`, fork bombs), mutations in protected namespaces (`kube-system`), and tools outside the allowlist.
-- **Autonomous remediation**: for any alert, the supervisor delegates to domain specialists that investigate with read-only tools, propose a fix, and apply it. Every state-changing tool call needs human approval unless you put it on the auto-approve list, and specialists cannot change anything while diagnosing or verifying.
-- **Whole-homelab assistant**: a Telegram assistant coordinated by the same supervisor and specialists. It follows the same approval policy as alerts: reads run, trusted changes run, and any other change asks you first. A message that reports a broken service is handled like an alert, with investigation, fix, verification and report.
-- **One gateway**: Kubernetes, Home Assistant, UniFi, Grafana, and GitHub tools behind a single endpoint over Streamable HTTP (`/mcp`) and stdio.
-- **Authentication**: Google OIDC and bearer-token verification for users and agents.
-- **Reproducible toolchain**: Python 3.13+, `uv` workspace, `ruff`, Alembic migrations.
+---
 
 ## Quick Start
 
-### 1. Prerequisites
-
-- [Python 3.13+](https://www.python.org/downloads/)
-- [`uv`](https://docs.astral.sh/uv/) (Ultra-fast Python package installer and resolver)
-- `kubectl` configured with cluster context (or in-cluster ServiceAccount)
-
-### 2. Installation & Setup
-
 ```bash
-# Clone repository
+# 1. Clone repository
 git clone https://github.com/csp33/homelab-aiops.git
 cd homelab-aiops
 
-# Install workspace dependencies deterministically
-uv sync
-
-# Configure your environment variables
+# 2. Configure environment (set OPENAI_API_KEY)
 cp .env.example .env
+
+# 3. Launch full stack with Docker Compose
+docker compose up -d
 ```
 
-### 3. Configure `.env`
+For environment variables, local `uv` development, and testing guides, see the [Quick Start Guide](docs/quickstart.md).
 
-Edit `.env` with your homelab details:
+---
 
-```ini
-# LLM Provider
-OPENAI_API_KEY=sk-your-openai-api-key-here
-OPENAI_MODEL=gpt-4o-mini
+## Documentation
 
-# homelab-mcp Gateway Settings
-MCP_HOST=0.0.0.0
-MCP_PORT=8000
-MCP_TRANSPORT=http
+- [Quick Start Guide](docs/quickstart.md): Step-by-step installation, `.env` options, and verification.
+- [System Architecture](docs/architecture.md): Multi-agent design, sequence diagrams, and vector memory model.
+- [Security & Guardrails](docs/security-guardrails.md): Namespace protections, command execution filtering, and GitOps policies.
+- [`homelab-mcp` Gateway](packages/mcps/homelab-mcp/README.md): Available tools, scoped search, and IDE integration.
+- [`lyoko` Agent](packages/agents/lyoko/README.md): StateGraph workflows, Alertmanager integration, and Langfuse tracing.
 
-# Home Assistant (Optional)
-HASS_URL=http://homeassistant.default.svc.cluster.local:8123
-HASS_TOKEN=your-long-lived-access-token
+---
 
-# UniFi Network Controller (Optional)
-UNIFI_HOST=https://192.168.1.1
-UNIFI_USER=admin
-UNIFI_PASSWORD=your-unifi-password
+## License
 
-# LYOKO Agent Settings
-LYOKO_HOST=0.0.0.0
-LYOKO_PORT=9000
-MCP_SERVER_URL=http://localhost:8000/mcp
-
-# Persistent Storage & Vector Memory (PostgreSQL + pgvector)
-POSTGRES_HOST=postgresql-rw.postgresql-cnpg.svc.cluster.local
-POSTGRES_PORT=5432
-POSTGRES_DB=lyoko
-POSTGRES_USER=lyoko
-POSTGRES_PASSWORD=your-postgres-password
-
-# Telegram Bot (Optional for interactive HITL and /feedback)
-TELEGRAM_BOT_TOKEN=your-telegram-bot-token
-TELEGRAM_ALLOWED_USER_IDS=123456789
-TELEGRAM_DEFAULT_CHAT_ID=123456789
-```
-
-### 4. Running the Services
-
-```bash
-# 1. Start homelab-mcp Tool Gateway (port 8000)
-uv run --package homelab-mcp python -m homelab_mcp.server
-
-# 2. Start LYOKO Remediation Agent (port 9000)
-uv run --package lyoko python -m lyoko.main
-```
-
-### 5. Running Tests & Quality Checks
-
-```bash
-# Run pytest test suite
-uv run pytest
-
-# Check formatting and lint rules
-uv run ruff check .
-```
-
-## Security
-
-> [!IMPORTANT]
-> This platform executes real operations on physical infrastructure and Kubernetes clusters. Safety guardrails are enforced at the gateway application layer before any upstream tool execution.
-
-- **Protected Namespaces**: Critical system namespaces (e.g. `kube-system`) are strictly read-only by default. Destructive or mutating operations are blocked.
-- **Dangerous Command Interception**: Execution payloads are parsed and matched against dangerous pattern signatures (e.g., recursive deletion, partition formatting).
-- **Zero-Leak Policy**: All sensitive tokens and credentials must be injected through environment variables.
-
-> [!NOTE]
-> When operating against clusters managed by GitOps controllers (such as Argo CD or Flux), live mutations to Deployment specs can cause sync drift. For permanent configuration changes, configure your agent to generate Git pull requests.
+Distributed under the [MIT License](LICENSE).

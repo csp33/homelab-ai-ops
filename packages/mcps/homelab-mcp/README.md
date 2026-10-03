@@ -9,11 +9,7 @@
 ## Architecture
 
 <p align="center">
-  <a href="../../../docs/diagrams/homelab-mcp-architecture.html">
-    <img src="../../../docs/assets/homelab-mcp-architecture.png" alt="homelab-mcp Gateway Architecture" width="100%" />
-  </a>
-  <br>
-  <em>Click diagram to launch interactive gateway architecture viewer.</em>
+  <img src="../../../docs/assets/homelab-mcp-architecture.png" alt="homelab-mcp Gateway Architecture" width="100%" />
 </p>
 
 `homelab-mcp` provides **Scoped Tool Search** with **Multi-Token Relevance Scoring**:
@@ -28,11 +24,7 @@
 Every tool call is evaluated by the `GuardrailEngine` before it is dispatched upstream. The first failing check rejects the call.
 
 <p align="center">
-  <a href="../../../docs/diagrams/guardrail-pipeline.html">
-    <img src="../../../docs/assets/guardrail-pipeline.png" alt="homelab-mcp Guardrail Engine Pipeline" width="100%" />
-  </a>
-  <br>
-  <em>Click diagram to launch interactive guardrail pipeline viewer.</em>
+  <img src="../../../docs/assets/guardrail-pipeline.png" alt="homelab-mcp Guardrail Engine Pipeline" width="100%" />
 </p>
 
 ### Security capabilities

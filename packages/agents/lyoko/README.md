@@ -22,11 +22,7 @@ Every event enters the graph at `route` and takes one of two branches:
 
 
 <p align="center">
-  <a href="../../../docs/diagrams/lyoko-workflow.html">
-    <img src="../../../docs/assets/lyoko-workflow.png" alt="LYOKO LangGraph StateGraph Architecture" width="100%" />
-  </a>
-  <br>
-  <em>Click diagram to launch interactive StateGraph workflow viewer.</em>
+  <img src="../../../docs/assets/lyoko-workflow.png" alt="LYOKO LangGraph StateGraph Architecture" width="100%" />
 </p>
 
 | Node / Component | What it does |
