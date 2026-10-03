@@ -1,8 +1,8 @@
 """Unit tests for SupervisorAgent multi-agent coordination."""
 
 from unittest.mock import AsyncMock, MagicMock
-import pytest
 
+import pytest
 from lyoko.application.supervisor import SUPERVISOR_SYSTEM_PROMPT, SupervisorAgent
 from lyoko.domain.interfaces.llm import LLMClientInterface
 
