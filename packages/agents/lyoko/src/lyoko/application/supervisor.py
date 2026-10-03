@@ -159,6 +159,6 @@ class SupervisorAgent:
             trace_name="supervisor-coordination",
             tags=supervisor_tags,
             metadata=metadata or {},
-            max_steps=max_steps or settings.max_agent_steps,
+            max_steps=max_steps or settings.max_supervisor_steps,
             parent_config=parent_config,
         )

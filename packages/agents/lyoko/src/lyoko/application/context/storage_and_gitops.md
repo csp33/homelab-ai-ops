@@ -19,11 +19,16 @@
 - **Declarative Source of Truth**:
   - All deployments, Helm values, and manifests originate from the GitOps charts repository (`k8s-at-home-charts`).
   - Live resource patches (`kubectl patch`) can be reverted by Argo CD reconciliation. Prefer non-conflicting mutation techniques (scaling, rollout restarts, Argo CD sync/refresh) or proposing Git changes.
-- **Argo CD RBAC Permissions (`argoproj.io`)**:
+- **Argo CD RBAC Permissions & CRD Location (`argoproj.io`)**:
+  - All Argo CD CRDs (`applications`, `applicationsets`, `appprojects` with `apiVersion: argoproj.io/v1alpha1`) **always reside in the `argocd` namespace**.
   - The `lyoko` ServiceAccount has RBAC permissions on `argoproj.io`:
     - Resources: `applications`, `applicationsets`, `appprojects`.
     - Verbs: `get`, `list`, `watch`, `patch`, `update`.
-  - Use these permissions to inspect application sync status, health status, sync diffs, and trigger sync operations or refresh when needed.
+  - **Argo CD Diagnostic Procedure**:
+    - Query Application CRDs in namespace `argocd`: `k8s_resources_get(apiVersion="argoproj.io/v1alpha1", kind="Application", name="<app-name>", namespace="argocd")`.
+    - Inspect `.status.operationState` to read the exact sync failure message and per-resource `syncResult.resources` (e.g. failing PreSync/Sync hooks or blocked deployments).
+    - Inspect `.status.health.status`, `.status.sync.status`, and `.status.conditions`.
+    - Target resources managed by the Application reside in `spec.destination.namespace`.
 - **Renovate Container Image Conventions**:
   - Vaultwarden uses Alpine tags (`*-alpine`).
   - Nextcloud uses Apache tags (`*-apache`).
