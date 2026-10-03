@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from lyoko.application.prompts.loader import load_prompt
+from lyoko.config import settings
 from lyoko.domain.interfaces.llm import LLMClientInterface
 
 logger = logging.getLogger("lyoko.supervisor")
@@ -34,6 +35,7 @@ class SupervisorAgent:
         user_id: str | None = None,
         tags: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
+        parent_config: Any = None,
     ) -> str:
         """Delegate a task directly to a specific domain specialist."""
         specialist = self.get_specialist(domain)
@@ -46,6 +48,7 @@ class SupervisorAgent:
             user_id=user_id,
             tags=tags,
             metadata=metadata,
+            parent_config=parent_config,
         )
 
     async def coordinate(
@@ -55,6 +58,9 @@ class SupervisorAgent:
         user_id: str | None = None,
         tags: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
+        tools: list[Any] | None = None,
+        parent_config: Any = None,
+        max_steps: int | None = None,
     ) -> str:
         """Coordinate multi-agent task execution."""
         logger.info("Supervisor coordinating request: %s", prompt)
@@ -67,9 +73,12 @@ class SupervisorAgent:
         return await self.llm.chat(
             prompt=prompt,
             system_prompt=SUPERVISOR_SYSTEM_PROMPT,
+            tools=tools,
             session_id=session_id,
             user_id=user_id,
             trace_name="supervisor-coordination",
             tags=supervisor_tags,
             metadata=metadata or {},
+            max_steps=max_steps or settings.max_agent_steps,
+            parent_config=parent_config,
         )

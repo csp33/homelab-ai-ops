@@ -1,6 +1,6 @@
 """Routing and the two branches of the LYOKO graph: chat and incident."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from langchain_core.callbacks import BaseCallbackHandler
@@ -404,3 +404,23 @@ async def test_graph_nodes_are_named_after_the_phase():
 
     assert "route" in recorder.chain_names
     assert "chat" in recorder.chain_names
+
+
+@pytest.mark.asyncio
+async def test_chat_branch_uses_supervisor_when_provided():
+    mock_supervisor = MagicMock()
+    mock_supervisor.coordinate = AsyncMock(return_value="Supervisor handled request.")
+
+    workflow = create_lyoko_graph(
+        mcp_client=FakeMCPClient(),
+        llm=ScriptedLLM(route="CHAT"),
+        supervisor=mock_supervisor,
+    )
+
+    result = await workflow.ainvoke(_message("what is the status of the network?"))
+    assert result["reply"] == "Supervisor handled request."
+    mock_supervisor.coordinate.assert_awaited_once()
+    assert (
+        mock_supervisor.coordinate.await_args.kwargs["prompt"]
+        == "what is the status of the network?"
+    )

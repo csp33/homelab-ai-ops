@@ -58,6 +58,7 @@ async def test_supervisor_delegate_to_specialist():
         user_id=None,
         tags=None,
         metadata=None,
+        parent_config=None,
     )
 
     missing_res = await supervisor.delegate("unknown", "List all clients")

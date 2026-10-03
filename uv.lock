@@ -1516,7 +1516,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.13.0,<3.0.0" },
     { name = "pydantic-settings", specifier = ">=2.15.0,<3.0.0" },
     { name = "python-dotenv", specifier = ">=1.2.0,<2.0.0" },
-    { name = "python-telegram-bot", specifier = ">=22.0" },
+    { name = "python-telegram-bot", specifier = ">=22.0,<23.0.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54.0,<1.0.0" },
 ]
 

@@ -44,6 +44,7 @@ class DomainSpecialistAgent:
         tags: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
         authorizer: Any = None,
+        parent_config: Any = None,
     ) -> str:
         """Execute a domain specialist query."""
         logger.info("Running specialist %s for query: %s", self.name, prompt)
@@ -64,4 +65,5 @@ class DomainSpecialistAgent:
             trace_name=f"specialist-{self.domain}",
             tags=specialist_tags,
             metadata=metadata or {},
+            parent_config=parent_config,
         )
