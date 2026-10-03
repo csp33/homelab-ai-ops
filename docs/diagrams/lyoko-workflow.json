@@ -8,68 +8,256 @@
       {
         "id": "event-routing",
         "label": "Ingress & Routing",
-        "focus": ["event_in", "route_node", "supervisor", "diagnose"],
+        "focus": [
+          "event_in",
+          "route_node",
+          "supervisor",
+          "diagnose"
+        ],
         "note": "Alertmanager webhooks take the incident path; Telegram messages are classified by an LLM."
       },
       {
         "id": "specialist-chat",
         "label": "Interactive Chat & Specialists",
-        "focus": ["route_node", "supervisor", "specialists", "toolgate", "mcp_gateway"],
+        "focus": [
+          "route_node",
+          "supervisor",
+          "specialists",
+          "toolgate",
+          "mcp_gateway"
+        ],
         "note": "Supervisor coordinates 4 domain specialists through the scoped tool gateway."
       },
       {
         "id": "incident-remediation",
         "label": "Autonomous Remediation & HITL Gate",
-        "focus": ["diagnose", "remediate", "toolgate", "mcp_gateway", "verify", "notify"],
+        "focus": [
+          "diagnose",
+          "remediate",
+          "toolgate",
+          "mcp_gateway",
+          "verify",
+          "notify"
+        ],
         "note": "4-stage SRE remediation loop with zero-trust ToolGate safety."
       }
     ]
   },
   "lanes": [
-    { "id": "ingress_lane", "label": "Ingress & Router" },
-    { "id": "chat_lane", "label": "Interactive Multi-Agent Chat" },
-    { "id": "incident_lane", "label": "Autonomous Incident Remediation" },
-    { "id": "gateway_lane", "label": "ToolGate & Safety Execution" }
+    {
+      "id": "chat_lane",
+      "label": "Chat branch"
+    },
+    {
+      "id": "main_lane",
+      "label": "Route and incident branch"
+    },
+    {
+      "id": "gate_lane",
+      "label": "Shared ToolGate and gateway"
+    }
   ],
   "phases": [
-    { "id": "phase_intake", "label": "Event Intake", "fromCol": 0, "toCol": 1 },
-    { "id": "phase_exec", "label": "Diagnosis & Action", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
-    { "id": "phase_verify", "label": "Verification & Reporting", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+    {
+      "id": "p1",
+      "label": "Intake",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "p2",
+      "label": "Investigate and act",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p3",
+      "label": "Verify and report",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
   ],
   "groups": [
-    { "id": "chat_group", "label": "Supervisor Orchestration", "lane": "chat_lane", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
-    { "id": "sre_group", "label": "SRE Remediation Cycle", "lane": "incident_lane", "fromCol": 2, "toCol": 5, "variant": "security" },
-    { "id": "gate_group", "label": "Zero-Trust Tool Harness", "lane": "gateway_lane", "fromCol": 3, "toCol": 4, "variant": "dashed" }
+    {
+      "id": "chat_group",
+      "label": "Supervisor orchestration",
+      "lane": "chat_lane",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "gate_group",
+      "label": "Zero-trust harness",
+      "lane": "gate_lane",
+      "fromCol": 3,
+      "toCol": 4,
+      "variant": "security"
+    }
   ],
-  "mainPath": ["event_in", "route_node", "diagnose", "remediate", "toolgate", "mcp_gateway", "verify", "notify"],
+  "mainPath": [
+    "event_in",
+    "route_node",
+    "diagnose",
+    "remediate",
+    "toolgate",
+    "mcp_gateway",
+    "verify",
+    "notify"
+  ],
   "nodes": [
-    { "id": "event_in", "lane": "ingress_lane", "col": 0, "type": "external", "label": "Event Ingress", "sublabel": "Alert or Telegram", "width": 140 },
-    { "id": "route_node", "lane": "ingress_lane", "col": 1, "type": "backend", "label": "Route Classifier", "sublabel": "LLM Intent Routing", "width": 140 },
-
-    { "id": "supervisor", "lane": "chat_lane", "col": 2, "type": "backend", "label": "Supervisor Agent", "sublabel": "Plan & Delegate", "brand": "openai", "width": 140 },
-    { "id": "specialists", "lane": "chat_lane", "col": 3, "type": "backend", "label": "Domain Specialists", "sublabel": "K8s · Net · IoT · Obs", "width": 140 },
-
-    { "id": "diagnose", "lane": "incident_lane", "col": 2, "type": "backend", "label": "1. Diagnose", "sublabel": "Read-only inspection", "width": 140 },
-    { "id": "remediate", "lane": "incident_lane", "col": 3, "type": "backend", "label": "2. Remediate", "sublabel": "Execute fix plan", "width": 140 },
-    { "id": "verify", "lane": "incident_lane", "col": 4, "type": "cloud", "label": "3. Verify", "sublabel": "Post-fix health check", "width": 140 },
-    { "id": "notify", "lane": "incident_lane", "col": 5, "type": "frontend", "label": "4. Notify", "sublabel": "Structured SRE report", "brand": "telegram", "width": 140 },
-
-    { "id": "toolgate", "lane": "gateway_lane", "col": 3, "type": "security", "label": "ToolGate Policy", "sublabel": "Read vs HITL Approval", "width": 140 },
-    { "id": "mcp_gateway", "lane": "gateway_lane", "col": 4, "type": "security", "label": "homelab-mcp Gateway", "sublabel": "FastMCP Tool Exec", "width": 140 }
+    {
+      "id": "event_in",
+      "lane": "main_lane",
+      "col": 0,
+      "type": "external",
+      "label": "Event Ingress",
+      "sublabel": "Alert or Telegram",
+      "width": 140
+    },
+    {
+      "id": "route_node",
+      "lane": "main_lane",
+      "col": 1,
+      "type": "backend",
+      "label": "Route Classifier",
+      "sublabel": "LLM Intent Routing",
+      "width": 140
+    },
+    {
+      "id": "supervisor",
+      "lane": "chat_lane",
+      "col": 2,
+      "type": "backend",
+      "label": "Supervisor Agent",
+      "sublabel": "Plan & Delegate",
+      "brand": "openai",
+      "width": 140
+    },
+    {
+      "id": "specialists",
+      "lane": "chat_lane",
+      "col": 3,
+      "type": "backend",
+      "label": "Domain Specialists",
+      "sublabel": "K8s \u00b7 Net \u00b7 IoT \u00b7 Obs",
+      "width": 140
+    },
+    {
+      "id": "diagnose",
+      "lane": "main_lane",
+      "col": 2,
+      "type": "backend",
+      "label": "1. Diagnose",
+      "sublabel": "Read-only inspection",
+      "width": 140
+    },
+    {
+      "id": "remediate",
+      "lane": "main_lane",
+      "col": 3,
+      "type": "backend",
+      "label": "2. Remediate",
+      "sublabel": "Execute fix plan",
+      "width": 140
+    },
+    {
+      "id": "verify",
+      "lane": "main_lane",
+      "col": 4,
+      "type": "cloud",
+      "label": "3. Verify",
+      "sublabel": "Post-fix health check",
+      "width": 140
+    },
+    {
+      "id": "notify",
+      "lane": "main_lane",
+      "col": 5,
+      "type": "frontend",
+      "label": "4. Notify",
+      "sublabel": "Structured SRE report",
+      "brand": "telegram",
+      "width": 140
+    },
+    {
+      "id": "toolgate",
+      "lane": "gate_lane",
+      "col": 3,
+      "type": "security",
+      "label": "ToolGate Policy",
+      "sublabel": "All tool calls, both branches",
+      "width": 140
+    },
+    {
+      "id": "mcp_gateway",
+      "lane": "gate_lane",
+      "col": 4,
+      "type": "security",
+      "label": "homelab-mcp Gateway",
+      "sublabel": "FastMCP Tool Exec",
+      "width": 140
+    }
   ],
   "edges": [
-    { "id": "e_in_route", "from": "event_in", "to": "route_node", "variant": "default" },
-    { "id": "e_route_chat", "from": "route_node", "to": "supervisor", "label": "chat query", "variant": "emphasis" },
-    { "id": "e_route_inc", "from": "route_node", "to": "diagnose", "label": "alert / incident", "variant": "security" },
-
-    { "id": "e_sup_spec", "from": "supervisor", "to": "specialists", "label": "delegate domain", "variant": "emphasis" },
-    { "id": "e_spec_gate", "from": "specialists", "to": "toolgate", "variant": "default" },
-
-    { "id": "e_diag_rem", "from": "diagnose", "to": "remediate", "label": "root cause & plan", "variant": "emphasis" },
-    { "id": "e_rem_gate", "from": "remediate", "to": "toolgate", "label": "mutation call", "variant": "security" },
-    { "id": "e_gate_mcp", "from": "toolgate", "to": "mcp_gateway", "label": "approved ops", "variant": "security" },
-    { "id": "e_mcp_verify", "from": "mcp_gateway", "to": "verify", "label": "stabilization window", "variant": "emphasis" },
-    { "id": "e_verify_notify", "from": "verify", "to": "notify", "variant": "default" }
+    {
+      "id": "e1",
+      "from": "event_in",
+      "to": "route_node"
+    },
+    {
+      "id": "e2",
+      "from": "route_node",
+      "to": "supervisor",
+      "label": "chat",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e3",
+      "from": "route_node",
+      "to": "diagnose",
+      "label": "incident",
+      "variant": "security"
+    },
+    {
+      "id": "e4",
+      "from": "supervisor",
+      "to": "specialists",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e5",
+      "from": "diagnose",
+      "to": "remediate",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e6",
+      "from": "remediate",
+      "to": "toolgate",
+      "label": "mutation",
+      "variant": "security"
+    },
+    {
+      "id": "e7",
+      "from": "toolgate",
+      "to": "mcp_gateway",
+      "label": "approved",
+      "variant": "security"
+    },
+    {
+      "id": "e8",
+      "from": "mcp_gateway",
+      "to": "verify",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e9",
+      "from": "verify",
+      "to": "notify"
+    }
   ],
   "cards": [
     {
