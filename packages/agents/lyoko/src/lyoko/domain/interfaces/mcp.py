@@ -26,6 +26,18 @@ class MCPClientInterface(ABC):
         """
 
     @abstractmethod
+    async def get_domain_langchain_tools(
+        self,
+        domain: str,
+        authorizer: ToolAuthorizer | None = None,
+    ) -> list[Any]:
+        """Return LangChain tools scoped to one upstream domain for a specialist agent.
+
+        Small domains are bound as direct callable tools (no tool search). Large domains keep
+        a domain-scoped discovery trio so the specialist cannot leave its upstream.
+        """
+
+    @abstractmethod
     async def verify_connection(self) -> None:
         """Check that the gateway is reachable and accepts our credentials.
 

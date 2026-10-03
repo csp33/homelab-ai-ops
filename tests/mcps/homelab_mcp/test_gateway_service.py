@@ -213,9 +213,19 @@ async def test_gateway_search_tools_ranking_and_aliases(mock_auth):
             ),
         ]
     )
+    mock_k8s = MagicMock(spec=UpstreamMCPInterface)
+    mock_k8s.list_tools = AsyncMock(
+        return_value=[
+            ToolDefinition(
+                name="k8s_resources_get",
+                description="Get a Kubernetes resource by apiVersion, kind, and name",
+                upstream_type=UpstreamType.KUBERNETES,
+            ),
+        ]
+    )
 
     gateway = MCPGatewayService(
-        upstreams={UpstreamType.UNIFI: mock_unifi},
+        upstreams={UpstreamType.UNIFI: mock_unifi, UpstreamType.KUBERNETES: mock_k8s},
         auth_port=mock_auth,
     )
 
@@ -246,3 +256,8 @@ async def test_gateway_search_tools_ranking_and_aliases(mock_auth):
     domain_tools = await gateway.get_domain_tools("network")
     assert len(domain_tools) == 4
     assert all(t.upstream_type == UpstreamType.UNIFI for t in domain_tools)
+
+    # 6. GitOps / Argo CD aliases resolve to the kubernetes domain
+    gitops_tools = await gateway.get_domain_tools("gitops")
+    assert [t.name for t in gitops_tools] == ["k8s_resources_get"]
+    assert gitops_tools == await gateway.get_domain_tools("kubernetes")

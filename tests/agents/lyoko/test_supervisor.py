@@ -58,8 +58,32 @@ async def test_supervisor_delegate_to_specialist():
         user_id=None,
         tags=None,
         metadata=None,
+        authorizer=None,
         parent_config=None,
     )
 
     missing_res = await supervisor.delegate("unknown", "List all clients")
     assert "No specialist registered" in missing_res
+
+
+@pytest.mark.asyncio
+async def test_supervisor_builds_delegation_tools_and_uses_them_by_default():
+    mock_k8s = MagicMock()
+    mock_k8s.run = AsyncMock(return_value="Application is OutOfSync")
+    mock_llm = MagicMock(spec=LLMClientInterface)
+    mock_llm.chat = AsyncMock(return_value="Root cause found via specialist.")
+
+    supervisor = SupervisorAgent(
+        specialists={"kubernetes": mock_k8s},
+        llm=mock_llm,
+    )
+
+    tools = supervisor.get_delegation_tools()
+    assert len(tools) == 1
+    assert tools[0].name == "ask_kubernetes_specialist"
+
+    result = await supervisor.coordinate(prompt="Why is gambling-song-staging OutOfSync?")
+    assert "specialist" in result.lower()
+    call_kwargs = mock_llm.chat.await_args.kwargs
+    assert call_kwargs["tools"][0].name == "ask_kubernetes_specialist"
+    assert "gateway_list_tools" not in [t.name for t in call_kwargs["tools"]]

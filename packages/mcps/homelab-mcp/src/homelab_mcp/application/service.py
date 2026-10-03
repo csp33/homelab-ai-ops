@@ -46,6 +46,10 @@ UPSTREAM_ALIASES: dict[str, str] = {
     "gh": "github",
     "git": "github",
     "repo": "github",
+    # Argo CD / GitOps live as Kubernetes CRDs (argoproj.io)
+    "gitops": "kubernetes",
+    "argocd": "kubernetes",
+    "argo": "kubernetes",
 }
 
 READ_PREFIXES = ("get_", "list_", "top_", "describe_", "inspect_", "show_", "fetch_", "find_")

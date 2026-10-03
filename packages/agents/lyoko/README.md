@@ -116,7 +116,7 @@ If no approval channel is configured, changes are refused. They are never approv
 
 LYOKO connects directly to Telegram as a bidirectional operations assistant:
 - **RBAC Authorization**: Restricts access via `TELEGRAM_ALLOWED_USER_IDS` and `TELEGRAM_ALLOWED_CHAT_IDS`.
-- **Targeted Tool Discovery**: Queries tools on demand using `gateway_list_tools(query="...")` and `gateway_get_tool_schema` to maintain lean context windows (<2,000 tokens per turn).
+- **Supervisor delegation**: The chat supervisor delegates to domain specialists (`ask_kubernetes_specialist`, `ask_unifi_specialist`, ...). Specialists receive a scoped domain toolset (or domain-locked discovery for large catalogs) instead of searching the whole gateway.
 - **Approvals in chat**: a change you ask for shows the same Approve / Deny buttons as an alert. Messages are handled concurrently, so a request waiting for your answer does not block other messages or the button click itself.
 - **Clean HTML Formatting**: Automatically converts LLM Markdown into Telegram-compliant HTML tags without mangling underscore identifiers (`MOVISTAR_25EO_IOT`).
 

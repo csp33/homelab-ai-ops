@@ -30,7 +30,7 @@ async def test_domain_specialist_run_executes_with_scoped_domain():
     mock_llm = MagicMock(spec=LLMClientInterface)
     mock_llm.chat = AsyncMock(return_value="Top client: humberto (435 GB)")
     mock_mcp = MagicMock(spec=MCPClientInterface)
-    mock_mcp.get_langchain_tools = MagicMock(return_value=["mock_tool_1", "mock_tool_2"])
+    mock_mcp.get_domain_langchain_tools = AsyncMock(return_value=["mock_tool_1", "mock_tool_2"])
 
     agent = DomainSpecialistAgent(
         name="NetworkSpecialist",
@@ -42,6 +42,7 @@ async def test_domain_specialist_run_executes_with_scoped_domain():
 
     tools = await agent.get_tools()
     assert len(tools) == 2
+    mock_mcp.get_domain_langchain_tools.assert_awaited_once_with("unifi", authorizer=None)
 
     response = await agent.run("Top bandwidth consumers", session_id="test-session")
     assert "humberto" in response
