@@ -22,10 +22,11 @@ flowchart TD
         direction TB
         T["Transport: Streamable HTTP (/mcp) & stdio"]
         AUTH["Auth Verifier (OIDC & Bearer)"]
-        SEARCH["Scoped Tool Search Engine<br/>(Relevance Scoring, Token Weighting & Aliases)"]
+        SEARCH["Scoped Tool Search / Domain Catalogs"]
         GUARD["Guardrail Engine (Namespace & Exec Safety)"]
         
-        T --> AUTH --> SEARCH --> GUARD
+        T --> AUTH --> GUARD
+        AUTH -.-> SEARCH
     end
 
     %% Upstreams
@@ -56,7 +57,8 @@ flowchart TD
 ```
 
 `homelab-mcp` provides **Scoped Tool Search** with **Multi-Token Relevance Scoring**:
-- **Domain Scoping**: Clients can search within specific domains (e.g. `upstream="unifi"`, `upstream="kubernetes"`) with automatic category alias resolution (`network` ➔ `unifi`, `k8s` ➔ `kubernetes`, `iot` ➔ `homeassistant`, `metrics` ➔ `grafana`).
+- **Domain Scoping**: Clients can search within specific domains (e.g. `upstream="unifi"`, `upstream="kubernetes"`) with automatic category alias resolution (`network` ➔ `unifi`, `k8s` ➔ `kubernetes`, `iot` ➔ `homeassistant`, `metrics` ➔ `grafana`, `gitops` / `argocd` ➔ `kubernetes`).
+- **Domain Catalogs**: `gateway_get_domain_tools(domain)` returns the full allowed tool list for one upstream, including parameter schemas. LYOKO specialists use this to bind a scoped toolset.
 - **Relevance Weighting**: Matches on tool `name` and `description` are scored with multi-token full-match bonuses, ensuring high-intent tools (e.g. `unifi_get_top_clients` for "top client traffic") reliably rank at position #1.
 - **Read vs Mutation Intent Bias**: Read-only tools (`get_*`, `list_*`, `top_*`) are prioritized unless explicit mutation keywords (`create`, `delete`, `restart`, `block`) are searched.
 
@@ -93,11 +95,11 @@ flowchart LR
 
 ## Tool domains
 
-Tool names come straight from each upstream server. Run `gateway_list_tools` (optionally with `upstream="grafana"`, `query="pod"`, and so on) to see what is available in your deployment.
+Tool names come straight from each upstream server. Run `gateway_list_tools` (optionally with `upstream="grafana"`, `query="pod"`, and so on) to search, or `gateway_get_domain_tools(domain="kubernetes")` to fetch a full domain catalog with parameter schemas.
 
 | Domain | Upstream MCP provider | Capabilities | Example tools |
 | :--- | :--- | :--- | :--- |
-| **Kubernetes** | [`kubernetes-mcp-server`](https://github.com/containers/kubernetes-mcp-server) | Pod and resource inspection, logs, events, node and pod metrics, scaling, applying manifests, exec. | `pods_get`<br/>`pods_log`<br/>`resources_scale`<br/>`resources_create_or_update` |
+| **Kubernetes** | [`kubernetes-mcp-server`](https://github.com/containers/kubernetes-mcp-server) | Pod and resource inspection, logs, events, node and pod metrics, scaling, applying manifests, exec. Argo CD Applications are inspected as CRDs. | `k8s_pods_get`<br/>`k8s_pods_log`<br/>`k8s_resources_scale`<br/>`k8s_resources_create_or_update` |
 | **Home Assistant** | [`homeassistant-ai/ha-mcp`](https://github.com/homeassistant-ai/ha-mcp) | Entity state inspection, service calls, automations, areas, helpers, add-ons, configuration. | `ha_get_state`<br/>`ha_call_service`<br/>`ha_set_entity` |
 | **UniFi Network** | [`sirkirby/unifi-mcp`](https://github.com/sirkirby/unifi-mcp) | Network topology, clients, devices, switches, APs, firewall, VPN, routing, statistics, support bundles. | `unifi_tool_index`<br/>`unifi_execute`<br/>`unifi_get_support_bundle` |
 | **Grafana** | [`grafana/mcp-grafana`](https://github.com/grafana/mcp-grafana) | Dashboards, datasources, and queries against your Grafana instance. | Discover with `gateway_list_tools` |

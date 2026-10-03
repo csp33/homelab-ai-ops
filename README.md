@@ -14,7 +14,7 @@ An AI operator for the whole homelab: Kubernetes, the network, the smart home, a
 
 ## Architecture
 
-Two packages, one unified homelab operations platform. Every tool call, whether from an external IDE (Claude Desktop, Cursor) or from LYOKO's multi-agent supervisor, goes through the `homelab-mcp` gateway with relevance-scored scoped tool search, authentication, and safety guardrails.
+Two packages, one unified homelab operations platform. External IDEs (Claude Desktop, Cursor) discover tools with relevance-scored scoped search on `homelab-mcp`. LYOKO's supervisor delegates to domain specialists that receive a scoped domain toolset (or domain-locked discovery for large catalogs). Every call still goes through authentication and safety guardrails.
 
 ```mermaid
 flowchart TD
@@ -61,9 +61,10 @@ flowchart TD
     subgraph GW ["homelab-mcp (Tool Hub & Safety Harness)"]
         direction TB
         AUTH[Auth Verifier]
-        SEARCH["Scoped Tool Search Engine<br/>(Relevance Scoring & Token Matching)"]
+        SEARCH["Scoped Tool Search / Domain Catalogs"]
         GUARD[Guardrail Engine]
-        AUTH --> SEARCH --> GUARD
+        AUTH --> GUARD
+        AUTH -.-> SEARCH
     end
 
     %% Upstreams
@@ -119,7 +120,8 @@ Every incident follows the same loop: investigate with read-only tools, retrieve
 sequenceDiagram
     autonumber
     participant AM as Alertmanager
-    participant L as LYOKO
+    participant L as LYOKO Supervisor
+    participant S as K8s Specialist
     participant DB as PostgreSQL (pgvector)
     participant G as homelab-mcp
     participant O as Operator (Telegram)
@@ -131,18 +133,21 @@ sequenceDiagram
         L->>DB: Search past feedback & incident rules (cosine distance)
         DB-->>L: Prior lessons & operator guidelines
     and Read-only investigation
-        loop Tool investigation
-            L->>G: pods_get, pods_log, events_list
+        L->>S: ask_kubernetes_specialist (investigate OOM)
+        loop Domain tools
+            S->>G: k8s_pods_get, k8s_pods_log, k8s_events_list
             G->>K: Read pod, logs, events
             K-->>G: Exit code 137
-            G-->>L: Evidence
+            G-->>S: Evidence
         end
+        S-->>L: Diagnosis evidence
     end
 
     L->>L: Root cause and plan (incorporating memory rules)
 
-    L->>G: resources_create_or_update (raise memory limit)
-    Note over L,G: The tool gate holds the call
+    L->>S: ask_kubernetes_specialist (raise memory limit)
+    S->>G: k8s_resources_create_or_update
+    Note over S,G: The tool gate holds the call
     L->>O: Approval request with tool, arguments & [💡 Teach Rule]
 
     alt Approved
@@ -150,8 +155,10 @@ sequenceDiagram
         G->>G: Guardrail check
         G->>K: Apply change
         L->>L: Wait for stabilization
-        L->>G: pods_get (read-only)
-        G-->>L: Pod running
+        L->>S: ask_kubernetes_specialist (verify)
+        S->>G: k8s_pods_get (read-only)
+        G-->>S: Pod running
+        S-->>L: Verified
     else Teach Rule / Redirect
         O-->>L: Teach Rule (e.g. "/feedback Do not increase RAM, compact WAL")
         L->>DB: Store vector embedding & rule in agent_memory
@@ -164,7 +171,7 @@ sequenceDiagram
     L->>O: Incident report (including applied memories)
 ```
 
-Tool names come from the upstream servers, so they depend on your deployment. The agent finds them with `gateway_list_tools`.
+Tool names come from the upstream servers, so they depend on your deployment. External IDEs discover them with `gateway_list_tools`. LYOKO specialists receive a scoped domain catalog via `gateway_get_domain_tools` (small domains bind the tools directly; large domains keep domain-locked search).
 
 ## Packages
 
@@ -177,8 +184,8 @@ Tool names come from the upstream servers, so they depend on your deployment. Th
 
 - **Semantic Memory & Operator Feedback**: Learns continuously from operator interactions. Past incident resolutions and operator rules are stored in PostgreSQL with 1536-dimensional vector embeddings and HNSW indexes (`pgvector`). During diagnosis, LYOKO retrieves relevant past lessons to prevent repeating mistakes. Operators can teach rules via interactive Telegram buttons (`[💡 Teach Rule / Redirect]`), commands (`/feedback`, `/teach`), or REST API (`POST /api/v1/feedback`).
 - **Guardrails**: block destructive commands (`rm -rf`, `mkfs`, fork bombs), mutations in protected namespaces (`kube-system`), and tools outside the allowlist.
-- **Autonomous remediation**: for any alert, an agent investigates with read-only tools, proposes a fix, and applies it. Every state-changing tool call needs human approval unless you put it on the auto-approve list, and the agent cannot change anything while diagnosing or verifying.
-- **Whole-homelab assistant**: a Telegram assistant that can inspect and operate Kubernetes, Home Assistant, UniFi, and Grafana through the same gateway. It follows the same approval policy as alerts: reads run, trusted changes run, and any other change asks you first. A message that reports a broken service is handled like an alert, with investigation, fix, verification and report.
+- **Autonomous remediation**: for any alert, the supervisor delegates to domain specialists that investigate with read-only tools, propose a fix, and apply it. Every state-changing tool call needs human approval unless you put it on the auto-approve list, and specialists cannot change anything while diagnosing or verifying.
+- **Whole-homelab assistant**: a Telegram assistant coordinated by the same supervisor and specialists. It follows the same approval policy as alerts: reads run, trusted changes run, and any other change asks you first. A message that reports a broken service is handled like an alert, with investigation, fix, verification and report.
 - **One gateway**: Kubernetes, Home Assistant, UniFi, Grafana, and GitHub tools behind a single endpoint over Streamable HTTP (`/mcp`) and stdio.
 - **Authentication**: Google OIDC and bearer-token verification for users and agents.
 - **Reproducible toolchain**: Python 3.13+, `uv` workspace, `ruff`, Alembic migrations.
