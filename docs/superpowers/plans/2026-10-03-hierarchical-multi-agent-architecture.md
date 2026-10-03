@@ -176,7 +176,32 @@ git commit -m "feat(lyoko): implement multi-agent supervisor for cross-domain or
 
 ---
 
-### Task 4: Full Workspace Integration, Clean Architecture Audit & Verification
+### Task 4: Refresh Documentation & Polish Architecture Diagrams
+
+**Files:**
+- Modify: `README.md`
+- Modify: `packages/mcps/homelab-mcp/README.md`
+- Modify: `packages/agents/lyoko/README.md`
+
+**Objectives:**
+- Update root `README.md` architecture diagram to illustrate the multi-agent supervisor, domain specialists, and scoped tool search with clean, modern Mermaid styling (using clear subgraphs, distinct node classes, and clean layout).
+- Update `packages/mcps/homelab-mcp/README.md` to document Scoped Tool Search (`gateway_list_tools`), relevance scoring, and category aliases.
+- Update `packages/agents/lyoko/README.md` to document the Multi-Agent Supervisor pattern, cross-domain coordination, and domain specialists with their respective tool scopes.
+
+- [ ] **Step 1: Update root `README.md` with new multi-agent architecture and clean diagrams**
+- [ ] **Step 2: Update `packages/mcps/homelab-mcp/README.md` with scoped tool search details**
+- [ ] **Step 3: Update `packages/agents/lyoko/README.md` with supervisor & specialists workflow diagrams**
+- [ ] **Step 4: Verify Markdown rendering and diagram syntax**
+- [ ] **Step 5: Commit documentation updates**
+
+```bash
+git add README.md packages/mcps/homelab-mcp/README.md packages/agents/lyoko/README.md
+git commit -m "docs: refresh READMEs and architecture diagrams for hierarchical multi-agent architecture"
+```
+
+---
+
+### Task 5: Full Workspace Integration, Clean Architecture Audit & Verification
 
 **Files:**
 - Test: `tests/`
@@ -202,3 +227,4 @@ Expected: PASS
 ```bash
 git push origin investigate_root_cause
 ```
+
