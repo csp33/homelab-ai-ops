@@ -1,12 +1,17 @@
-# Hierarchical Multi-Agent Architecture Implementation Plan
+# Hierarchical Multi-Agent & Scoped MCP Architecture Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement a hierarchical multi-agent architecture in `homelab-aiops` with domain-specialized subagents (K8s, UniFi Network, Home Assistant, Observability) receiving direct tool pools without tool-search overhead, orchestrated by a top-level Supervisor and exposed as `Agent-as-a-Tool` via MCP for external IDEs (Claude Desktop / Cursor).
+**Goal:** Implement a cost-optimal hierarchical multi-agent architecture where `homelab-mcp` exposes scoped domain endpoints for external IDEs (Claude Desktop/Cursor, $0 OpenAI API cost), while `LYOKO` uses domain-specialized subagents with direct tool pools for Telegram and autonomous Alertmanager remediation.
 
-**Architecture:** 
-- `homelab-mcp`: Exposes domain-partitioned tool pools (`k8s`, `unifi`, `homeassistant`, `grafana`, `github`) and security guardrails.
-- `LYOKO`: Contains specialized domain agents (`K8sSpecialist`, `NetworkSpecialist`, `SmartHomeSpecialist`, `ObservabilitySpecialist`) with direct domain tool injection (`tools=[...]`), a top-level `SupervisorAgent` in LangGraph that breaks multi-step user requests into specialist calls, and an MCP server endpoint exposing high-level `Agent-as-a-Tool` functions (`ask_network_expert`, `ask_k8s_sre`, `ask_smarthome_expert`, `diagnose_incident`).
+**Architecture:**
+- **`homelab-mcp` (Tool Hub & Scoped Endpoints)**:
+  - Serves domain-partitioned tool pools (`kubernetes`, `unifi`, `homeassistant`, `grafana`, `github`) via `get_domain_tools(domain)`.
+  - Exposes dedicated FastMCP scoped routes (e.g. `/mcp/k8s`, `/mcp/network`, `/mcp/iot`) so Claude Desktop/Cursor can connect directly to domain tools and execute reasoning on Anthropic's subscription.
+- **`LYOKO` (Autonomous & Telegram Multi-Agent Graph)**:
+  - `SupervisorAgent` in LangGraph: Triages incoming requests and coordinates multi-step cross-domain actions.
+  - `DomainSpecialistAgent` instances (`K8sSpecialist`, `NetworkSpecialist`, `SmartHomeSpecialist`, `ObservabilitySpecialist`): Initialized with direct domain tool pools (`tools=[...]`), eliminating runtime `tool_search` overhead and latency.
+  - `ToolGate`: Centralized safety gate enforcing read-only vs HITL Telegram approval.
 
 **Tech Stack:** Python 3.13+, LangGraph, LangChain, FastMCP, FastAPI, Pydantic v2, pytest-asyncio.
 
@@ -20,7 +25,7 @@
 
 ---
 
-### Task 1: Domain Tool Pools in `homelab-mcp`
+### Task 1: Domain Tool Pools & Scoped Endpoints in `homelab-mcp`
 
 **Files:**
 - Modify: `packages/mcps/homelab-mcp/src/homelab_mcp/application/service.py`
@@ -29,7 +34,7 @@
 
 **Interfaces:**
 - Produces: `async def get_domain_tools(self, domain: str) -> list[ToolDefinition]` in `MCPGatewayService`
-- Exposes: MCP tool `gateway_get_domain_tools(domain: str) -> list[dict]` in `infrastructure/mcp/server.py`
+- Exposes: Scoped FastMCP sub-apps or domain filtering endpoints (`gateway_get_domain_tools`)
 
 - [ ] **Step 1: Write failing unit test for `get_domain_tools`**
 
@@ -60,7 +65,7 @@ async def test_gateway_get_domain_tools(mock_auth):
 Run: `uv run pytest tests/mcps/homelab_mcp/test_gateway_service.py -k test_gateway_get_domain_tools -v`
 Expected: FAIL (`AttributeError: 'MCPGatewayService' object has no attribute 'get_domain_tools'`)
 
-- [ ] **Step 3: Implement `get_domain_tools` in `MCPGatewayService` and server tool**
+- [ ] **Step 3: Implement `get_domain_tools` in `MCPGatewayService`**
 
 ```python
 async def get_domain_tools(self, domain: str) -> list[ToolDefinition]:
@@ -89,7 +94,7 @@ git commit -m "feat(mcp): add get_domain_tools to retrieve curated domain tool p
 
 ---
 
-### Task 2: Domain Specialist Prompts & Subagents in `lyoko`
+### Task 2: Domain Specialist Agents & Curated Prompts in `lyoko`
 
 **Files:**
 - Create: `packages/agents/lyoko/src/lyoko/application/specialists/__init__.py`
@@ -133,7 +138,7 @@ Expected: FAIL (`ModuleNotFoundError: No module named 'lyoko.application.special
 
 - [ ] **Step 3: Implement `DomainSpecialistAgent` and prompts**
 
-Create `DomainSpecialistAgent` with direct domain tools binding and dedicated system prompts for network, k8s, domotics, and metrics.
+Create `DomainSpecialistAgent` binding direct domain tools into the LLM context.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -158,10 +163,10 @@ git commit -m "feat(lyoko): implement domain specialist agents and specialized p
 - Test: `tests/agents/lyoko/test_supervisor.py`
 
 **Interfaces:**
-- Produces: `class SupervisorAgent` exposing callable specialist tools (`ask_network_expert`, `ask_k8s_sre`, `ask_smarthome_expert`, `ask_metrics_expert`).
+- Produces: `class SupervisorAgent` orchestrating specialists as tools/subgraphs for complex or cross-domain queries.
 - Integrates with: `LyokoState` in `workflow.py`.
 
-- [ ] **Step 1: Write failing test for Supervisor multi-step coordination**
+- [ ] **Step 1: Write failing test for Supervisor multi-step delegation**
 
 ```python
 @pytest.mark.asyncio
@@ -186,7 +191,7 @@ async def test_supervisor_multi_step_delegation():
 Run: `uv run pytest tests/agents/lyoko/test_supervisor.py -v`
 Expected: FAIL
 
-- [ ] **Step 3: Implement `SupervisorAgent` and integrate into `workflow.py`**
+- [ ] **Step 3: Implement `SupervisorAgent` and wire into LangGraph StateGraph**
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -202,55 +207,7 @@ git commit -m "feat(lyoko): implement multi-agent supervisor for cross-domain or
 
 ---
 
-### Task 4: FastMCP Agent-as-a-Tool Endpoint for External IDEs
-
-**Files:**
-- Create: `packages/agents/lyoko/src/lyoko/infrastructure/mcp/server.py`
-- Modify: `packages/agents/lyoko/src/lyoko/infrastructure/web/controller.py`
-- Modify: `packages/agents/lyoko/src/lyoko/main.py`
-- Test: `tests/agents/lyoko/test_mcp_agent_server.py`
-
-**Interfaces:**
-- Produces: FastMCP endpoint at `/mcp` exposing:
-  - `ask_network_expert(query: str) -> str`
-  - `ask_k8s_sre(query: str) -> str`
-  - `ask_smarthome(query: str) -> str`
-  - `diagnose_incident(alert_or_query: str) -> str`
-
-- [ ] **Step 1: Write failing test for Lyoko FastMCP server tools**
-
-```python
-@pytest.mark.asyncio
-async def test_lyoko_mcp_agent_as_a_tool():
-    mcp_server = create_lyoko_mcp_server(mock_supervisor)
-    tools = await mcp_server.list_tools()
-    tool_names = [t.name for t in tools]
-    assert "ask_network_expert" in tool_names
-    assert "ask_k8s_sre" in tool_names
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `uv run pytest tests/agents/lyoko/test_mcp_agent_server.py -v`
-Expected: FAIL
-
-- [ ] **Step 3: Implement `create_lyoko_mcp_server` and mount in FastAPI**
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `uv run pytest tests/agents/lyoko/test_mcp_agent_server.py -v`
-Expected: PASS
-
-- [ ] **Step 5: Commit changes**
-
-```bash
-git add packages/agents/lyoko/src/lyoko/infrastructure/mcp/ packages/agents/lyoko/src/lyoko/infrastructure/web/controller.py tests/agents/lyoko/test_mcp_agent_server.py
-git commit -m "feat(lyoko): expose FastMCP Agent-as-a-Tool endpoint for Claude Desktop and Cursor"
-```
-
----
-
-### Task 5: Full Test Suite Verification & Clean Architecture Audit
+### Task 4: Full Workspace Integration, Clean Architecture Audit & Verification
 
 **Files:**
 - Test: `tests/`
@@ -271,7 +228,7 @@ Expected: PASS (0 architectural violations)
 Run: `uv run ruff check . && uv run ruff format --check .`
 Expected: PASS
 
-- [ ] **Step 4: Final commit and branch validation**
+- [ ] **Step 4: Final commit and branch push**
 
 ```bash
 git status
