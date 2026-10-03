@@ -863,6 +863,56 @@ class TelegramConnector(ChatConnector):
             )
         return _to_sent_message(sent, str(target))
 
+    async def edit_message(
+        self,
+        chat_id: str,
+        message_id: str | int,
+        text: str,
+        parse_mode: str = "HTML",
+    ) -> SentMessage | None:
+        """Edit an existing proactive text message in a chat, group, or channel."""
+        if not self._app or not self._app.bot:
+            return None
+        target = chat_id or self.default_chat_id
+        if not target or message_id is None:
+            return None
+
+        try:
+            msg_id = int(message_id)
+        except (ValueError, TypeError):
+            return None
+
+        if parse_mode == "HTML":
+            formatted = markdown_to_telegram_html(text)
+            try:
+                sent = await self._app.bot.edit_message_text(
+                    chat_id=target,
+                    message_id=msg_id,
+                    text=formatted,
+                    parse_mode="HTML",
+                )
+                return _to_sent_message(sent, str(target)) or SentMessage(
+                    chat_id=str(target), message_id=str(msg_id)
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to edit HTML formatted message in Telegram, falling back: %s", exc
+                )
+
+        try:
+            sent = await self._app.bot.edit_message_text(
+                chat_id=target,
+                message_id=msg_id,
+                text=text,
+                parse_mode=parse_mode if parse_mode != "HTML" else None,
+            )
+        except Exception as exc:
+            logger.debug("Failed to edit plain message in Telegram: %s", exc)
+            return None
+        return _to_sent_message(sent, str(target)) or SentMessage(
+            chat_id=str(target), message_id=str(msg_id)
+        )
+
     async def send_approval_request(self, request: ApprovalRequest) -> SentMessage | None:
         """Send interactive approval prompt with inline action buttons to chat or channel."""
         if not self._app or not self._app.bot:

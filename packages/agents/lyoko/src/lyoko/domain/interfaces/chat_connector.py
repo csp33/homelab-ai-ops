@@ -32,6 +32,16 @@ class ChatConnector(ABC):
         """Send a message and return a reference to it when the platform exposes one."""
 
     @abstractmethod
+    async def edit_message(
+        self,
+        chat_id: str,
+        message_id: str | int,
+        text: str,
+        parse_mode: str = "Markdown",
+    ) -> SentMessage | None:
+        """Edit an existing message previously sent by the connector."""
+
+    @abstractmethod
     async def send_approval_request(self, request: ApprovalRequest) -> SentMessage | None:
         """Send an approval prompt and return a reference to it when available."""
 

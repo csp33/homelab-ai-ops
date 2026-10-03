@@ -62,11 +62,12 @@ class ChatManager:
         reply_to_message_id: str | int | None = None,
         parse_mode: str = "Markdown",
         session_id: str | None = None,
-    ) -> None:
+    ) -> list[SentMessage]:
         """Send message across all registered connectors with fault tolerance.
 
         If ``session_id`` is given, replies to the sent message continue that session.
         """
+        results: list[SentMessage] = []
         for conn in self.connectors:
             try:
                 sent = await conn.send_message(
@@ -76,8 +77,34 @@ class ChatManager:
                     parse_mode=parse_mode,
                 )
                 self._link_sent_message(sent, session_id)
+                if isinstance(sent, SentMessage):
+                    results.append(sent)
             except Exception as e:
                 logger.error("Error broadcasting message via connector: %s", e)
+        return results
+
+    async def edit_message(
+        self,
+        chat_id: str,
+        message_id: str | int,
+        text: str,
+        parse_mode: str = "Markdown",
+    ) -> list[SentMessage]:
+        """Edit an existing message across all registered connectors with fault tolerance."""
+        results: list[SentMessage] = []
+        for conn in self.connectors:
+            try:
+                sent = await conn.edit_message(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text=text,
+                    parse_mode=parse_mode,
+                )
+                if isinstance(sent, SentMessage):
+                    results.append(sent)
+            except Exception as e:
+                logger.error("Error editing message via connector: %s", e)
+        return results
 
     async def broadcast_approval_request(self, request: ApprovalRequest) -> None:
         """Send approval request across all registered connectors with fault tolerance.

@@ -210,6 +210,44 @@ async def test_workflow_works_with_a_checkpointer():
     assert "credentials" in saved.values["root_cause"]
 
 
+@pytest.mark.asyncio
+async def test_incident_workflow_live_status_updates(monkeypatch):
+    from lyoko.domain.models.chat import SentMessage
+
+    monkeypatch.setattr(
+        "lyoko.application.workflow.settings.auto_approved_tools", ["resources_scale"]
+    )
+    chat = AsyncMock()
+    chat.broadcast_message.return_value = [SentMessage(chat_id="12345", message_id="777")]
+    chat.edit_message.return_value = [SentMessage(chat_id="12345", message_id="777")]
+
+    llm = ScriptedLLM(
+        diagnose=DIAGNOSIS_ACTIONABLE,
+        remediate=_scale_with_auto_approval,
+        verify=_read_only_check,
+    )
+    workflow = create_lyoko_graph(mcp_client=FakeMCPClient(), chat_manager=chat, llm=llm)
+
+    state = _state({"alertname": "KubePodCrashLooping", "namespace": "media", "pod": "radarr-0"})
+    state["chat_id"] = "12345"
+    final_state = await workflow.ainvoke(state)
+
+    assert final_state["is_resolved"] is True
+    assert final_state["progress_message_id"] == "777"
+    assert final_state["progress_chat_id"] == "12345"
+
+    # Verify initial progress broadcast
+    chat.broadcast_message.assert_awaited_once()
+    initial_text = chat.broadcast_message.await_args.kwargs["text"]
+    assert "Phase: Diagnose" in initial_text
+
+    # Verify progressive edits (after diagnose, after remediate, and final report on notify)
+    assert chat.edit_message.await_count >= 3
+    final_edit_text = chat.edit_message.await_args_list[-1].kwargs["text"]
+    assert "📋 *[LYOKO Incident Report]*" in final_edit_text
+    assert "*Status:* RESOLVED" in final_edit_text
+
+
 def test_incident_context_formats_correlated_alerts():
     from lyoko.application.nodes.helpers import incident_context
 
