@@ -298,11 +298,23 @@ class MCPGatewayService:
             or canonical_target in t.name.lower()
         ]
 
+    def _normalize_tool_name(self, name: str) -> str:
+        """Strip optional category prefix if caller passed e.g. 'kubernetes.pods_list'."""
+        if name in self._tool_routing:
+            return name
+        if "." in name:
+            _, base_name = name.split(".", 1)
+            if base_name in self._tool_routing:
+                return base_name
+        return name
+
     async def execute_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         """Validate safety guardrails and route tool execution to the upstream MCP server."""
+        name = self._normalize_tool_name(name)
         if name not in self._tool_routing:
             # Re-attempt quick discovery in case tools were registered dynamically
             await self.discover_tools()
+            name = self._normalize_tool_name(name)
 
         if (
             name not in self._tool_routing
