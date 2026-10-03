@@ -66,20 +66,18 @@ When incidents occur, the system diagnoses root causes using read-only specialis
 ## Quick Start
 
 ```bash
-# 1. Clone repository and install dependencies
+# 1. Clone repository
 git clone https://github.com/csp33/homelab-aiops.git
 cd homelab-aiops
-uv sync
 
-# 2. Configure environment
+# 2. Configure environment (set OPENAI_API_KEY)
 cp .env.example .env
 
-# 3. Start services
-uv run --package homelab-mcp python -m homelab_mcp.server   # Tool Gateway on :8000
-uv run --package lyoko python -m lyoko.main                 # Remediation Agent on :9000
+# 3. Launch full stack with Docker Compose
+docker compose up -d
 ```
 
-For environment variables, PostgreSQL setup, and testing guides, see the [Quick Start Guide](docs/quickstart.md).
+For environment variables, local `uv` development, and testing guides, see the [Quick Start Guide](docs/quickstart.md).
 
 ---
 

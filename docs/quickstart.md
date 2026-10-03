@@ -1,152 +1,135 @@
 # Quick Start Guide
 
-This guide walks you through setting up, configuring, and running `homelab-aiops` in your local environment or cluster.
+This guide walks you through setting up and running `homelab-aiops`.
 
 ---
 
-## 1. Prerequisites
+## Prerequisites
 
-Before starting, ensure you have the following tools installed and accessible:
-
-- **[Python 3.13+](https://www.python.org/downloads/)**
-- **[`uv`](https://docs.astral.sh/uv/)**: Ultra-fast Python package installer and workspace resolver.
-- **[PostgreSQL](https://www.postgresql.org/) with [`pgvector`](https://github.com/pgvector/pgvector)**: Required for LYOKO's episodic memory and vector similarity search.
-- **`kubectl`**: Configured with a valid cluster context (or running within an in-cluster `ServiceAccount`).
+- **[Docker](https://docs.docker.com/get-docker/) & Docker Compose**: Recommended for running the complete stack (PostgreSQL + pgvector, homelab-mcp, LYOKO).
+- **[Python 3.13+](https://www.python.org/downloads/) & [`uv`](https://docs.astral.sh/uv/)**: Required only if developing or running locally without Docker.
 - **OpenAI API Key**: For LLM reasoning and dense vector embeddings (`text-embedding-3-small`).
+- **`kubectl`**: Configured with a valid cluster context (or in-cluster `ServiceAccount`).
 
 ---
 
-## 2. Installation & Workspace Setup
+## Method 1: Docker Compose (Recommended)
 
-Clone the repository and install all workspace package dependencies deterministically using `uv`:
+The easiest way to run the full platform is with Docker Compose. This automatically spins up PostgreSQL (with pgvector), the `homelab-mcp` gateway, and the `lyoko` remediation agent.
+
+### 1. Clone & Configure
 
 ```bash
-# 1. Clone the repository
+# Clone the repository
 git clone https://github.com/csp33/homelab-aiops.git
 cd homelab-aiops
 
-# 2. Synchronize workspace dependencies
-uv sync
-
-# 3. Create your environment configuration file
+# Create and configure environment file
 cp .env.example .env
 ```
 
----
-
-## 3. Environment Configuration
-
-Edit `.env` to supply credentials and endpoints for your infrastructure. Below is a documented configuration template:
+Edit `.env` to supply at minimum your `OPENAI_API_KEY`:
 
 ```ini
-# ==============================================================================
-# Environment & LLM Provider
-# ==============================================================================
-ENVIRONMENT=local
 OPENAI_API_KEY=sk-your-openai-api-key-here
 OPENAI_MODEL=gpt-4o-mini
+```
 
-# ==============================================================================
-# homelab-mcp Gateway Configuration
-# ==============================================================================
-MCP_HOST=0.0.0.0
-MCP_PORT=8000
-MCP_TRANSPORT=http
-AUTH_ENABLED=false
-SERVICE_TOKEN=""
+### 2. Start the Stack
 
-# ==============================================================================
-# LYOKO Autonomous Agent Configuration
-# ==============================================================================
-LYOKO_HOST=0.0.0.0
-LYOKO_PORT=9000
-MCP_SERVER_URL=http://localhost:8000/mcp
-MCP_FAIL_FAST=true
+```bash
+# Build and launch all services in the background
+docker compose up -d
+```
 
-# ==============================================================================
-# Persistent Storage & Episodic Vector Memory (PostgreSQL + pgvector)
-# ==============================================================================
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_DB=lyoko
-POSTGRES_USER=lyoko
-POSTGRES_PASSWORD=your-postgres-password
-POSTGRES_CHECKPOINTER_URL=postgresql://lyoko:your-postgres-password@localhost:5432/lyoko
+This launches:
+- **`postgres`**: PostgreSQL database with `pgvector` extension on port `5432`.
+- **`homelab-mcp`**: Tool Gateway on `http://localhost:8000/mcp`.
+- **`lyoko`**: Autonomous Remediation Agent on `http://localhost:9000`.
 
-# ==============================================================================
-# Telegram Operator & HITL Approvals (Optional)
-# ==============================================================================
-TELEGRAM_ENABLED=false
-TELEGRAM_BOT_TOKEN=your-telegram-bot-token
-TELEGRAM_ALLOWED_USER_IDS=[]
-TELEGRAM_ALLOWED_CHAT_IDS=[]
-TELEGRAM_DEFAULT_CHAT_ID=""
+### 3. Verify Health
 
-# ==============================================================================
-# Upstream Integrations (Optional)
-# ==============================================================================
-# Home Assistant
-HASS_ENABLED=true
-HASS_URL=http://homeassistant.local:8123
-HASS_TOKEN=your-long-lived-access-token
+```bash
+# Check LYOKO agent health endpoint
+curl http://localhost:9000/health
+# Response: {"status":"ok"}
 
-# UniFi Network Controller
-UNIFI_ENABLED=true
-UNIFI_URL=https://192.168.1.1
-UNIFI_USER=admin
-UNIFI_PASSWORD=your-unifi-password
+# View real-time logs
+docker compose logs -f
+```
 
-# Grafana / Prometheus
-GRAFANA_ENABLED=true
-GRAFANA_URL=http://grafana.monitoring.svc.cluster.local:3000
-GRAFANA_TOKEN=your-grafana-service-account-token
-
-# GitHub MCP
-GITHUB_ENABLED=true
-GITHUB_TOKEN=your-github-personal-access-token
+To stop the stack:
+```bash
+docker compose down
 ```
 
 ---
 
-## 4. Running the Platform
+## Method 2: Local Development (Python & `uv`)
 
-Run both services in separate terminal sessions:
+For local code development and debugging:
 
-### Step 1: Start `homelab-mcp` Tool Gateway
+### 1. Install Dependencies
+
 ```bash
-uv run --package homelab-mcp python -m homelab_mcp.server
+# Deterministically synchronize workspace virtual environment
+uv sync
+
+# Configure your environment
+cp .env.example .env
 ```
-The gateway initializes upstream connections and listens on `http://localhost:8000/mcp`.
 
-### Step 2: Start `lyoko` Autonomous Remediation Agent
+### 2. Start PostgreSQL
+
+Ensure PostgreSQL with `pgvector` is running locally (e.g., via `docker compose up -d postgres`).
+
+### 3. Run Services
+
+In separate terminal windows:
+
 ```bash
+# Terminal 1: Tool Gateway
+uv run --package homelab-mcp python -m homelab_mcp.server
+
+# Terminal 2: Remediation Agent
 uv run --package lyoko python -m lyoko.main
 ```
-The agent starts the FastAPI webhook receiver on `http://localhost:9000` and establishes the Telegram polling worker if enabled.
 
----
-
-## 5. Verification & Health Checks
-
-Verify that both components are running and healthy:
+### 4. Run Test Suite & Quality Checks
 
 ```bash
-# Check LYOKO agent health
-curl http://localhost:9000/health
-# Response: {"status": "ok"}
-
-# Run test suite across all monorepo packages
+# Run pytest test suite across all workspace packages
 uv run pytest
 
-# Run linting and code quality checks
+# Run Ruff linter and formatter checks
 uv run ruff check .
 ```
 
 ---
 
-## Next Steps & Deep Dives
+## Configuration Reference
 
-- [System Architecture & Incident Lifecycle](architecture.md): Explore multi-agent coordination and sequence flows.
-- [Security & Guardrails](security-guardrails.md): Learn about namespace isolation and human-in-the-loop policies.
-- [homelab-mcp Package Guide](../packages/mcps/homelab-mcp/README.md): Configure tools for local IDEs (Claude Desktop, Cursor).
-- [LYOKO Agent Guide](../packages/agents/lyoko/README.md): Configure Alertmanager webhooks and Telegram alerts.
+Key environment variables in `.env`:
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `OPENAI_API_KEY` | `""` | OpenAI API key for LLM diagnosis and embeddings. |
+| `OPENAI_MODEL` | `gpt-4o-mini` | Reasoning model for supervisor and domain specialists. |
+| `MCP_HOST` / `MCP_PORT` | `0.0.0.0` / `8000` | Gateway listening interface and HTTP port. |
+| `LYOKO_HOST` / `LYOKO_PORT` | `0.0.0.0` / `9000` | Agent webhook receiver host and port. |
+| `POSTGRES_HOST` / `POSTGRES_DB` | `localhost` / `lyoko` | PostgreSQL host and database name. |
+| `TELEGRAM_ENABLED` | `false` | Enable Telegram operator assistant and HITL approvals. |
+| `TELEGRAM_BOT_TOKEN` | `""` | Telegram Bot token from `@BotFather`. |
+| `HASS_ENABLED` / `HASS_URL` | `true` / `""` | Home Assistant upstream MCP configuration. |
+| `UNIFI_ENABLED` / `UNIFI_URL` | `true` / `""` | UniFi Network controller upstream MCP configuration. |
+| `GRAFANA_ENABLED` / `GRAFANA_URL` | `true` / `""` | Grafana / Prometheus upstream MCP configuration. |
+| `GITHUB_ENABLED` | `true` | GitHub MCP provider for GitOps PR automation. |
+
+---
+
+## Related Guides
+
+- [System Architecture & Incident Lifecycle](architecture.md)
+- [Security & Guardrails](security-guardrails.md)
+- [`homelab-mcp` Gateway Documentation](../packages/mcps/homelab-mcp/README.md)
+- [`lyoko` Agent Documentation](../packages/agents/lyoko/README.md)
