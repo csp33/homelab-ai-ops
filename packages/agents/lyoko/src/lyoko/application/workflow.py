@@ -209,12 +209,48 @@ def create_lyoko_graph(
         if llm is None:
             return {"reply": _NO_LLM_REPLY.format(text=text)}
 
+        # Query semantic memory for relevant past experiences / operator feedback
+        lessons_context = ""
+        if memory_repository is not None:
+            try:
+                query_embedding = None
+                if embeddings_service is not None:
+                    query_embedding = await embeddings_service.embed_text(text)
+
+                memories = await memory_repository.search_memories(
+                    query_embedding=query_embedding,
+                    limit=3,
+                )
+
+                if memories:
+                    lessons_lines = []
+                    for m in memories:
+                        lessons_lines.append(
+                            f"- [Relevance: {m.similarity:.0%}] Operator Rule: '{m.memory.operator_feedback}'"
+                            + (
+                                f" | Context: {m.memory.incident_pattern}"
+                                if m.memory.incident_pattern
+                                else ""
+                            )
+                        )
+                    lessons_context = (
+                        "\n\n--- PRIOR OPERATOR PREFERENCES & LEARNED RULES ---\n"
+                        + "\n".join(lessons_lines)
+                        + "\n----------------------------------------------------\n"
+                    )
+                    logger.info(
+                        f"Retrieved {len(memories)} relevant past memories/preferences for chat query: {text[:50]}"
+                    )
+            except Exception as exc:
+                logger.warning("Failed to query semantic memory in chat: %s", exc, exc_info=True)
+
+        prompt_with_memory = f"{text}{lessons_context}"
         gate = make_gate(state, GateMode.APPROVAL)
         tools = mcp_client.get_langchain_tools(authorizer=gate.authorize)
         try:
             if supervisor is not None:
                 answer = await supervisor.coordinate(
-                    prompt=text,
+                    prompt=prompt_with_memory,
                     session_id=state.get("session_id"),
                     tools=tools,
                     parent_config=config,
@@ -226,7 +262,7 @@ def create_lyoko_graph(
                     config,
                     phase="chat",
                     system_prompt=CHAT_SYSTEM_PROMPT,
-                    prompt=text,
+                    prompt=prompt_with_memory,
                 )
         except Exception as exc:
             logger.error("Failed to generate LLM response: %s", exc)
