@@ -13,6 +13,14 @@ from lyoko.application.chat_agent import InteractiveChatAgent
 from lyoko.application.chat_manager import ChatManager
 from lyoko.application.chat_sessions import ChatSessionTracker
 from lyoko.application.hitl import ApprovalManager
+from lyoko.application.specialists import (
+    K8S_SPECIALIST_PROMPT,
+    NETWORK_SPECIALIST_PROMPT,
+    OBSERVABILITY_SPECIALIST_PROMPT,
+    SMARTHOME_SPECIALIST_PROMPT,
+    DomainSpecialistAgent,
+)
+from lyoko.application.supervisor import SupervisorAgent
 from lyoko.application.workflow import create_lyoko_graph
 from lyoko.config import settings
 from lyoko.domain.exceptions import MCPGatewayError
@@ -42,6 +50,51 @@ def build_llm_adapter() -> LLMClientInterface | None:
         api_key=api_key,
         model_name=settings.openai_model,
     )
+
+
+def build_domain_specialists(
+    mcp_client: MCPClientInterface | None,
+    llm: LLMClientInterface | None,
+) -> dict[str, DomainSpecialistAgent]:
+    """Instantiate domain specialist subagents."""
+    return {
+        "kubernetes": DomainSpecialistAgent(
+            name="k8s_specialist",
+            domain="kubernetes",
+            system_prompt=K8S_SPECIALIST_PROMPT,
+            llm=llm,
+            mcp_client=mcp_client,
+        ),
+        "unifi": DomainSpecialistAgent(
+            name="network_specialist",
+            domain="unifi",
+            system_prompt=NETWORK_SPECIALIST_PROMPT,
+            llm=llm,
+            mcp_client=mcp_client,
+        ),
+        "homeassistant": DomainSpecialistAgent(
+            name="smarthome_specialist",
+            domain="homeassistant",
+            system_prompt=SMARTHOME_SPECIALIST_PROMPT,
+            llm=llm,
+            mcp_client=mcp_client,
+        ),
+        "grafana": DomainSpecialistAgent(
+            name="observability_specialist",
+            domain="grafana",
+            system_prompt=OBSERVABILITY_SPECIALIST_PROMPT,
+            llm=llm,
+            mcp_client=mcp_client,
+        ),
+    }
+
+
+def build_supervisor(
+    specialists: dict[str, DomainSpecialistAgent],
+    llm: LLMClientInterface | None,
+) -> SupervisorAgent:
+    """Instantiate central multi-agent supervisor."""
+    return SupervisorAgent(specialists=specialists, llm=llm)
 
 
 def build_chat_manager(approval_manager: ApprovalManager) -> ChatManager:
@@ -164,6 +217,11 @@ async def lifespan(app: FastAPI):
         app.state.chat_manager = chat_manager
         wire_chat_agent(app, chat_manager)
 
+    specialists = getattr(app.state, "specialists", None) or build_domain_specialists(
+        mcp_client, llm
+    )
+    supervisor = getattr(app.state, "supervisor", None) or build_supervisor(specialists, llm)
+
     # Rebuilt now that the checkpointer exists. Everything reads the graph from app.state.
     workflow_engine = create_lyoko_graph(
         mcp_client,
@@ -171,9 +229,13 @@ async def lifespan(app: FastAPI):
         chat_manager=chat_manager,
         checkpointer=checkpointer,
         llm=llm,
+        supervisor=supervisor,
+        specialists=specialists,
     )
 
     app.state.llm = llm
+    app.state.specialists = specialists
+    app.state.supervisor = supervisor
     app.state.workflow_engine = workflow_engine
     app.state.db_pool = pool
     app.state.checkpointer = checkpointer
@@ -192,6 +254,8 @@ def create_app() -> FastAPI:
     approval_manager = ApprovalManager()
     chat_manager = build_chat_manager(approval_manager)
     tracer = build_tracer()
+    specialists = build_domain_specialists(mcp_client, llm)
+    supervisor = build_supervisor(specialists, llm)
 
     app = FastAPI(title="LYOKO Auto-Remediation Agent", lifespan=lifespan)
 
@@ -201,9 +265,13 @@ def create_app() -> FastAPI:
         approval_manager=approval_manager,
         chat_manager=chat_manager,
         llm=llm,
+        supervisor=supervisor,
+        specialists=specialists,
     )
     app.state.llm = llm
     app.state.mcp_client = mcp_client
+    app.state.specialists = specialists
+    app.state.supervisor = supervisor
     app.state.approval_manager = approval_manager
     app.state.chat_manager = chat_manager
     app.state.workflow_engine = workflow_engine

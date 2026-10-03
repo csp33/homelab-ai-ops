@@ -123,6 +123,8 @@ def create_lyoko_graph(
     chat_manager: ChatManager | None = None,
     checkpointer: Any = None,
     llm: LLMClientInterface | None = None,
+    supervisor: Any = None,
+    specialists: dict[str, Any] | None = None,
 ) -> Any:
     """Build the LangGraph StateGraph that routes, answers, investigates and remediates."""
 
@@ -198,21 +200,30 @@ def create_lyoko_graph(
     # ------------------------------------------------------------------
 
     async def chat_node(state: LyokoState, config: RunnableConfig) -> dict[str, Any]:
-        """Answer the operator. Changes go through the gate: trusted ones run, others ask."""
+        """Answer the operator. Coordinates through the multi-agent supervisor with ToolGate safety."""
         text = state.get("text", "")
         if llm is None:
             return {"reply": _NO_LLM_REPLY.format(text=text)}
 
         gate = make_gate(state, GateMode.APPROVAL)
+        tools = mcp_client.get_langchain_tools(authorizer=gate.authorize)
         try:
-            answer = await run_agent(
-                state,
-                gate,
-                config,
-                phase="chat",
-                system_prompt=CHAT_SYSTEM_PROMPT,
-                prompt=text,
-            )
+            if supervisor is not None:
+                answer = await supervisor.coordinate(
+                    prompt=text,
+                    session_id=state.get("session_id"),
+                    tools=tools,
+                    parent_config=config,
+                )
+            else:
+                answer = await run_agent(
+                    state,
+                    gate,
+                    config,
+                    phase="chat",
+                    system_prompt=CHAT_SYSTEM_PROMPT,
+                    prompt=text,
+                )
         except Exception as exc:
             logger.error("Failed to generate LLM response: %s", exc)
             return {"reply": f"⚠️ Error processing your question: {exc}"}

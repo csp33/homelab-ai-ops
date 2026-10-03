@@ -236,3 +236,8 @@ async def test_gateway_search_tools_ranking_and_aliases(mock_auth):
     # 4. Test explicit mutation query: searching 'delete client' should rank unifi_delete_client_group first
     delete_search = await gateway.search_tools(query="delete client")
     assert delete_search[0].name == "unifi_delete_client_group"
+
+    # 5. Test get_domain_tools
+    domain_tools = await gateway.get_domain_tools("network")
+    assert len(domain_tools) == 4
+    assert all(t.upstream_type == UpstreamType.UNIFI for t in domain_tools)

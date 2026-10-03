@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from lyoko.main import create_app, lifespan
+from lyoko.main import build_domain_specialists, build_supervisor, create_app, lifespan
 
 
 @pytest.mark.asyncio
@@ -13,6 +13,18 @@ async def test_healthz_endpoint():
     async with lifespan(app):
         # Without postgres credentials, app state has no checkpointer
         assert app.state.workflow_engine is not None
+        assert "kubernetes" in app.state.specialists
+        assert "unifi" in app.state.specialists
+        assert "homeassistant" in app.state.specialists
+        assert "grafana" in app.state.specialists
+        assert app.state.supervisor is not None
+
+
+def test_build_domain_specialists_and_supervisor():
+    specialists = build_domain_specialists(mcp_client=None, llm=None)
+    assert set(specialists.keys()) == {"kubernetes", "unifi", "homeassistant", "grafana"}
+    supervisor = build_supervisor(specialists, llm=None)
+    assert supervisor.specialists == specialists
 
 
 @pytest.mark.asyncio

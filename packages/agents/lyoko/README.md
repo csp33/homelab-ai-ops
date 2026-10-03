@@ -15,51 +15,89 @@ It serves two roles:
 Both roles are one **LangGraph StateGraph** and share the same tools, the same approval policy, and the same Langfuse traces.
 
 ## How it works
+ 
+Every event enters the graph at `route` and takes one of two branches:
+- **Interactive Chat**: The **Supervisor Agent** coordinates cross-domain requests and multi-step plans by delegating to specialized domain subagents (**K8s SRE**, **Network Specialist**, **Smart Home Specialist**, **Observability Specialist**).
+- **Incident Remediation**: Autonomous 4-stage SRE workflow (`diagnose` ➔ `remediate` ➔ `verify` ➔ `notify`) leveraging domain specialists for targeted root-cause analysis and verified recovery.
 
-Every event enters the graph at `route` and takes one of two branches. The agent steps (`chat`, `diagnose`, `remediate`, `verify`) are tool-using runs: the model discovers the tools the gateway exposes and decides what to inspect and change, so the graph is not tied to Kubernetes, to a particular alert, or to a particular fix. A pod that keeps crashing, an access point that dropped offline, and a Home Assistant integration that stopped responding all go through the same path.
-
+ 
 ```mermaid
-flowchart LR
-    AM([Alertmanager]) -->|alert| RT
-    MSG([Telegram message]) -->|message| RT
+flowchart TD
+    %% Ingress
+    AM([Alertmanager Webhook]) -->|alert| RT
+    MSG([Telegram Message]) -->|message| RT
     RT{route}
 
-    RT -->|question or request| C[chat]
-    RT -->|alert, or a problem reported in chat| D
+    %% Branches
+    RT -->|question or instruction| SUP["🧭 Supervisor & Coordinator"]
+    RT -->|alert or reported incident| D["1. diagnose"]
 
-    subgraph INC["Incident branch"]
+    %% Chat Branch Multi-Agent Specialists
+    subgraph Specialists ["Domain Specialists"]
         direction LR
-        D[diagnose] --> R[remediate] --> V[verify] --> N[notify]
+        K8S["☸️ K8s Specialist"]
+        NET["🌐 Network Specialist"]
+        HA["🏠 SmartHome Specialist"]
+        OBS["📊 Metrics Specialist"]
     end
 
-    C <-->|tools, changes gated| MCP[homelab-mcp]
-    D <-->|read-only tools| MCP
-    R <-->|tools, gated| MCP
-    V <-->|read-only tools| MCP
+        SUP --> K8S
+        SUP --> NET
+        SUP --> HA
+        SUP --> OBS
+    end
 
-    C <-->|approve or deny| TG([Telegram])
-    R <-->|approve or deny| TG
-    N -->|incident report| TG
+    %% Incident Branch
+    subgraph INC ["Autonomous Incident Branch"]
+        direction LR
+        D --> R["2. remediate"]
+        R --> V["3. verify"]
+        V --> N["4. notify"]
+    end
 
-    classDef external fill:#64748b,stroke:#334155,color:#fff;
-    classDef router fill:#b45309,stroke:#78350f,color:#fff;
-    classDef step fill:#7c3aed,stroke:#4c1d95,color:#fff;
-    classDef gateway fill:#0f766e,stroke:#134e4a,color:#fff;
+    %% ToolGate & MCP Gateway
+    GATE{"🛡️ ToolGate<br/>(Read-only vs HITL Approval)"}
+    MCP["🚪 homelab-mcp Gateway"]
 
-    class AM,MSG,TG external;
+    K8S --> GATE
+    NET --> GATE
+    HA --> GATE
+    OBS --> GATE
+    D --> GATE
+    R --> GATE
+    V --> GATE
+    GATE -->|"authorized calls"| MCP
+
+    %% Operator HITL
+    GATE <-->|"inline approvals"| TG([📱 Telegram Operator])
+    N -->|"incident report"| TG
+
+    %% Styling
+    classDef ingress fill:#475569,stroke:#334155,color:#fff;
+    classDef router fill:#b45309,stroke:#92400e,color:#fff;
+    classDef supervisor fill:#7c3aed,stroke:#5b21b6,color:#fff;
+    classDef specialist fill:#9333ea,stroke:#6b21a8,color:#fff;
+    classDef incident fill:#0369a1,stroke:#075985,color:#fff;
+    classDef gate fill:#0f766e,stroke:#115e59,color:#fff;
+
+    class AM,MSG,TG ingress;
     class RT router;
-    class C,D,R,V,N step;
-    class MCP gateway;
+    class SUP supervisor;
+    class K8S,NET,HA,OBS specialist;
+    class D,R,V,N incident;
+    class GATE,MCP gate;
 ```
 
-| Node | What it does |
+| Node / Component | What it does |
 | :--- | :--- |
-| `route` | Alerts always take the incident branch, without an LLM call. For a Telegram message, a short LLM call decides between `chat` and the incident branch: a question or a direct instruction goes to `chat`, a report that something is broken goes to the incident branch. An unclear answer or a failed call falls back to `chat`. |
-| `chat` | Answers the operator in one tool-using run and carries out what they ask. Reads run immediately. A change runs if its tool is auto-approved and otherwise waits for the operator's approval. |
-| `diagnose` | Investigates with read-only tools, across any system the gateway exposes, and answers with a root cause, whether it can be fixed with the available tools, and a plan. The run is read-only. Anything that could change state is refused. If it cannot be fixed automatically, `remediate` and `verify` are skipped. |
-| `remediate` | Carries out the plan. Each state-changing tool call is checked by the tool gate: auto-approved tools run, everything else waits for the operator. A denial or a timeout stops the run and escalates the incident. |
-| `verify` | After a stabilization delay, checks with read-only tools that the problem is actually gone. Skipped when nothing was changed. |
-| `notify` | Builds a structured incident report: status (`RESOLVED` or `ESCALATED`), root cause, the changes that were approved, denied, or refused, and the verification result. An alert's report is posted to Telegram. For a message, the report is the reply. |
+| `route` | Alerts always take the incident branch. For a Telegram message, an LLM classifier decides between `chat` (interactive queries/instructions) and the incident branch (reports of broken infrastructure). |
+| `Supervisor` | Coordinates cross-domain operations and plans multi-step actions (e.g. scale a pod in K8s, then reload an integration in Home Assistant) by delegating to specialized domain subagents. |
+| `Domain Specialists` | Focused experts with scoped toolsets: `K8sSpecialist` (pods, logs, rollouts), `NetworkSpecialist` (clients, bandwidth, APs, VLANs), `SmartHomeSpecialist` (entities, devices, automations), `ObservabilitySpecialist` (Prometheus metrics, alerts). |
+| `diagnose` | Investigates with read-only tools across any upstream system to determine root cause, whether it is auto-fixable, and generates a remediation plan. |
+| `remediate` | Executes the remediation plan. State-changing actions are strictly gated by the `ToolGate` and require operator approval via Telegram inline buttons. |
+| `verify` | Checks after a stabilization window that the issue has cleared and the workload/network has recovered. |
+| `notify` | Builds a structured incident report (`RESOLVED` or `ESCALATED`) with approved/denied actions and recovery verification. |
+
 
 ### Tool gate
 
