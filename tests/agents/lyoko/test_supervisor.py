@@ -15,8 +15,10 @@ async def test_supervisor_initialization():
 
 @pytest.mark.asyncio
 async def test_supervisor_coordinates_multi_step():
-    mock_k8s = AsyncMock(return_value="Pod memory updated to 512Mi")
-    mock_ha = AsyncMock(return_value="Zigbee integration reloaded successfully")
+    mock_k8s = MagicMock()
+    mock_k8s.run = AsyncMock(return_value="Pod memory updated to 512Mi")
+    mock_ha = MagicMock()
+    mock_ha.run = AsyncMock(return_value="Zigbee integration reloaded successfully")
 
     mock_llm = MagicMock(spec=LLMClientInterface)
     mock_llm.chat = AsyncMock(
@@ -37,3 +39,26 @@ async def test_supervisor_coordinates_multi_step():
     )
     assert "completed" in result.lower()
     mock_llm.chat.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_supervisor_delegate_to_specialist():
+    mock_unifi = MagicMock()
+    mock_unifi.run = AsyncMock(return_value="Found 45 connected WiFi clients")
+
+    supervisor = SupervisorAgent(
+        specialists={"unifi": mock_unifi},
+    )
+
+    res = await supervisor.delegate("unifi", "List all clients")
+    assert res == "Found 45 connected WiFi clients"
+    mock_unifi.run.assert_awaited_once_with(
+        prompt="List all clients",
+        session_id=None,
+        user_id=None,
+        tags=None,
+        metadata=None,
+    )
+
+    missing_res = await supervisor.delegate("unknown", "List all clients")
+    assert "No specialist registered" in missing_res

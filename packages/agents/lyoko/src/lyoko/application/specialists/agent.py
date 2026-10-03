@@ -28,6 +28,14 @@ class DomainSpecialistAgent:
         self.mcp_client = mcp_client
         self.tools = tools or []
 
+    async def get_tools(self, authorizer: Any = None) -> list[Any]:
+        """Resolve tools scoped to this specialist's domain."""
+        if self.tools:
+            return self.tools
+        if self.mcp_client is not None and hasattr(self.mcp_client, "get_langchain_tools"):
+            return self.mcp_client.get_langchain_tools(authorizer=authorizer)
+        return []
+
     async def run(
         self,
         prompt: str,
@@ -35,6 +43,7 @@ class DomainSpecialistAgent:
         user_id: str | None = None,
         tags: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
+        authorizer: Any = None,
     ) -> str:
         """Execute a domain specialist query."""
         logger.info("Running specialist %s for query: %s", self.name, prompt)
@@ -44,10 +53,12 @@ class DomainSpecialistAgent:
         specialist_tags = list(tags or [])
         specialist_tags.extend(["specialist", f"specialist:{self.domain}"])
 
+        tools = await self.get_tools(authorizer=authorizer)
+
         return await self.llm.chat(
             prompt=prompt,
             system_prompt=self.system_prompt,
-            tools=self.tools if self.tools else None,
+            tools=tools if tools else None,
             session_id=session_id,
             user_id=user_id,
             trace_name=f"specialist-{self.domain}",

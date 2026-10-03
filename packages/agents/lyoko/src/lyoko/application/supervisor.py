@@ -3,21 +3,12 @@
 import logging
 from typing import Any
 
+from lyoko.application.prompts.loader import load_prompt
 from lyoko.domain.interfaces.llm import LLMClientInterface
 
 logger = logging.getLogger("lyoko.supervisor")
 
-SUPERVISOR_SYSTEM_PROMPT = """You are the Central Multi-Agent Supervisor for LYOKO.
-You coordinate domain specialist subagents across the homelab infrastructure:
-- Kubernetes SRE Specialist (`kubernetes`): Pods, deployments, logs, restarts, resource limits.
-- UniFi Network Specialist (`unifi`): Network clients, bandwidth consumption, WiFi, switches, ports, VLANs.
-- Smart Home Specialist (`homeassistant`): Devices, entities, climate, lighting, integrations.
-- Observability Specialist (`grafana`): Prometheus metrics, dashboards, alert histories.
-
-Your primary responsibilities:
-1. TRIAGE & INTENT DECOMPOSITION: Analyze user requests. If a request spans multiple domains (e.g. scale a pod in K8s and reload an integration in Home Assistant), decompose it into a logical multi-step plan.
-2. SPECIALIST DELEGATION: Delegate domain-specific tasks to the appropriate specialist agent.
-3. SYNTHESIS: Consolidate responses from specialists into a cohesive, structured, and clear response for the operator."""
+SUPERVISOR_SYSTEM_PROMPT = load_prompt("supervisor.md")
 
 
 class SupervisorAgent:
@@ -30,6 +21,32 @@ class SupervisorAgent:
     ) -> None:
         self.specialists = specialists or {}
         self.llm = llm
+
+    def get_specialist(self, domain: str) -> Any | None:
+        """Retrieve a specialist by domain name."""
+        return self.specialists.get(domain)
+
+    async def delegate(
+        self,
+        domain: str,
+        prompt: str,
+        session_id: str | None = None,
+        user_id: str | None = None,
+        tags: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Delegate a task directly to a specific domain specialist."""
+        specialist = self.get_specialist(domain)
+        if specialist is None:
+            return f"Supervisor: No specialist registered for domain '{domain}'."
+        logger.info("Supervisor delegating to %s specialist: %s", domain, prompt)
+        return await specialist.run(
+            prompt=prompt,
+            session_id=session_id,
+            user_id=user_id,
+            tags=tags,
+            metadata=metadata,
+        )
 
     async def coordinate(
         self,

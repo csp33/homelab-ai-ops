@@ -123,6 +123,8 @@ def create_lyoko_graph(
     chat_manager: ChatManager | None = None,
     checkpointer: Any = None,
     llm: LLMClientInterface | None = None,
+    supervisor: Any = None,
+    specialists: dict[str, Any] | None = None,
 ) -> Any:
     """Build the LangGraph StateGraph that routes, answers, investigates and remediates."""
 
