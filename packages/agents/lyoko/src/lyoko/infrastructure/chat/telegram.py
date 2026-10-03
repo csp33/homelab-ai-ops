@@ -716,21 +716,26 @@ class TelegramConnector(ChatConnector):
         action_type = parts[0]
         incident_id = parts[1] if len(parts) > 1 else ""
         approved = action_type.lower() == "approve"
+        is_force = action_type.lower() == "force"
         is_feedback = action_type.lower() in ["feedback", "teach", "redirect"]
 
         reason = (
             "User confirmed via Telegram button"
             if approved
             else (
-                "User requested redirection / teaching new rule"
-                if is_feedback
-                else "User rejected via Telegram button"
+                "User forced investigation via Telegram button"
+                if is_force
+                else (
+                    "User requested redirection / teaching new rule"
+                    if is_feedback
+                    else "User rejected via Telegram button"
+                )
             )
         )
 
         response = ApprovalResponse(
             incident_id=incident_id,
-            approved=approved,
+            approved=approved or is_force,
             user_id=user_id,
             action_id=action_type,
             reason=reason,
@@ -747,6 +752,8 @@ class TelegramConnector(ChatConnector):
         user_name = html.escape(update.effective_user.first_name or user_id)
         if approved:
             status_text = f"✅ <b>Approved</b> by admin ({user_name})."
+        elif is_force:
+            status_text = f"🚀 <b>Investigation forced</b> by admin ({user_name})."
         elif is_feedback:
             status_text = (
                 f"💡 <b>Redirection / Teaching mode activated</b> by {user_name}.\n\n"

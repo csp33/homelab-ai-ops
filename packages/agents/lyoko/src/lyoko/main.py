@@ -270,6 +270,7 @@ async def lifespan(app: FastAPI):
     supervisor = getattr(app.state, "supervisor", None) or build_supervisor(specialists, llm)
 
     alert_guard = AlertStormProtector(chat_manager=chat_manager)
+    chat_manager.register_approval_handler(alert_guard.handle_force_approval)
     app.state.alert_guard = alert_guard
 
     # Rebuilt now that the checkpointer exists. Everything reads the graph from app.state.
@@ -311,6 +312,7 @@ def create_app() -> FastAPI:
     specialists = build_domain_specialists(mcp_client, llm)
     supervisor = build_supervisor(specialists, llm)
     alert_guard = AlertStormProtector(chat_manager=chat_manager)
+    chat_manager.register_approval_handler(alert_guard.handle_force_approval)
 
     app = FastAPI(title="LYOKO Auto-Remediation Agent", lifespan=lifespan)
 

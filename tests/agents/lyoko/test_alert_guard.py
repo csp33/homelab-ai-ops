@@ -158,5 +158,55 @@ async def test_circuit_breaker_trips_on_alert_storm(custom_settings: AgentSettin
     await asyncio.sleep(0.2)
 
     assert protector.circuit_state == CircuitState.OPEN
-    # Chat manager should receive warning notification
-    assert mock_chat_manager.broadcast_message.called or mock_chat_manager.send_message.called
+    # Chat manager should receive warning notification with approval button or broadcast
+    assert (
+        mock_chat_manager.broadcast_approval_request.called
+        or mock_chat_manager.broadcast_message.called
+        or mock_chat_manager.send_message.called
+    )
+
+
+@pytest.mark.asyncio
+async def test_force_approval_dispatches_suppressed_incident(custom_settings: AgentSettings):
+    from lyoko.domain.models.chat import ApprovalResponse
+
+    mock_chat = AsyncMock()
+    dispatched_incidents: list[Incident] = []
+
+    async def mock_dispatch(incident: Incident) -> None:
+        dispatched_incidents.append(incident)
+
+    protector = AlertStormProtector(
+        settings=custom_settings,
+        chat_manager=mock_chat,
+        dispatch_callback=mock_dispatch,
+    )
+
+    alert = {
+        "status": "firing",
+        "labels": {"alertname": "KubePodCrashLooping", "namespace": "media", "pod": "sonarr-123"},
+        "fingerprint": "fp-sonarr-123",
+    }
+
+    # 1. First dispatch
+    await protector.ingest_alerts([alert])
+    await asyncio.sleep(0.2)
+    assert len(dispatched_incidents) == 1
+    key = protector.get_incident_key(dispatched_incidents[0])
+    protector.mark_completed(key)
+
+    # 2. Ingest while in cooldown (should be suppressed, but saved so operator can force it)
+    await protector.ingest_alerts([alert])
+    await asyncio.sleep(0.2)
+    assert len(dispatched_incidents) == 1
+    assert mock_chat.broadcast_approval_request.called
+
+    # 3. Operator clicks "Procesar de todas formas"
+    resp = ApprovalResponse(incident_id=key, approved=True, user_id="12345", action_id="force")
+    handled = await protector.handle_force_approval(resp)
+    assert handled is True
+    await asyncio.sleep(0.2)
+
+    # Now it must be dispatched!
+    assert len(dispatched_incidents) == 2
+    assert dispatched_incidents[1].pod_name == "sonarr-123"

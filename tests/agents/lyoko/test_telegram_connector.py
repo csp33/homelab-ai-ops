@@ -206,10 +206,40 @@ async def test_telegram_connector_callback_query_rejection():
 
     await connector._handle_callback_query(mock_update, MagicMock())
 
+    assert "Rejected" in mock_query.edit_message_text.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_telegram_connector_callback_query_force():
+    connector = TelegramConnector(
+        bot_token="fake:token", allowed_user_ids={"12345"}, default_chat_id="12345"
+    )
+    received_approvals: list[ApprovalResponse] = []
+
+    async def approval_handler(resp: ApprovalResponse) -> None:
+        received_approvals.append(resp)
+
+    connector.register_approval_handler(approval_handler)
+
+    mock_update = MagicMock()
+    mock_update.effective_user.id = 12345
+    mock_update.effective_user.first_name = "Admin"
+    mock_query = MagicMock()
+    mock_query.data = "force:inc-abc"
+    mock_query.message.text = "Alert suppressed in cooldown"
+    mock_query.answer = AsyncMock()
+    mock_query.edit_message_text = AsyncMock()
+    mock_update.callback_query = mock_query
+
+    await connector._handle_callback_query(mock_update, MagicMock())
+
+    mock_query.answer.assert_called_once()
     assert len(received_approvals) == 1
     assert received_approvals[0].incident_id == "inc-abc"
-    assert received_approvals[0].approved is False
-    assert "Rejected" in mock_query.edit_message_text.call_args[0][0]
+    assert received_approvals[0].approved is True
+    assert received_approvals[0].action_id == "force"
+    mock_query.edit_message_text.assert_called_once()
+    assert "Investigation forced" in mock_query.edit_message_text.call_args[0][0]
 
 
 @pytest.mark.asyncio

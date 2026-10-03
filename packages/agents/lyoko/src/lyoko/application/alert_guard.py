@@ -4,7 +4,8 @@ Prevents trace spam and token cost explosions during cascading infrastructure fa
 1. Debouncing and grouping bursts of firing alerts into a single consolidated Incident.
 2. Deduplicating in-flight investigations and suppressing flapping alerts via cooldown TTL.
 3. Providing an emergency Circuit Breaker when alert velocity exceeds storm thresholds.
-4. Throttling concurrent LangGraph runs using an asyncio Semaphore.
+4. Enabling manual operator override ("Procesar de todas formas") via interactive Telegram buttons.
+5. Throttling concurrent LangGraph runs using an asyncio Semaphore.
 """
 
 import asyncio
@@ -15,8 +16,13 @@ from collections.abc import Awaitable, Callable
 from enum import StrEnum
 from typing import Any
 
+from lyoko.application.alert_notifications import (
+    build_storm_approval_request,
+    build_suppressed_approval_request,
+)
 from lyoko.config import AgentSettings
 from lyoko.config import settings as default_settings
+from lyoko.domain.models.chat import ApprovalResponse
 from lyoko.domain.models.incident import Incident, compute_incident_key
 
 logger = logging.getLogger("lyoko.alert_guard")
@@ -46,7 +52,8 @@ class AlertStormProtector:
         self._recent_alert_timestamps: deque[float] = deque()
 
         self._in_flight_keys: set[str] = set()
-        self._cooldown_cache: dict[str, float] = {}  # key -> monotonic expiry
+        self._cooldown_cache: dict[str, float] = {}
+        self._suppressed_incidents: dict[str, Incident] = {}
 
         self._pending_alerts: list[dict[str, Any]] = []
         self._debounce_task: asyncio.Task[None] | None = None
@@ -55,7 +62,6 @@ class AlertStormProtector:
 
     @property
     def circuit_state(self) -> CircuitState:
-        """Current state of the alert storm circuit breaker."""
         now = time.monotonic()
         if (
             self._circuit_state == CircuitState.OPEN
@@ -92,59 +98,43 @@ class AlertStormProtector:
             )
 
     async def ingest_alerts(self, raw_alerts: list[dict[str, Any]]) -> None:
-        """Ingest incoming raw Alertmanager alerts and apply storm protection."""
-        firing_alerts = [a for a in raw_alerts if a.get("status") == "firing"]
-        if not firing_alerts:
+        firing = [a for a in raw_alerts if a.get("status") == "firing"]
+        if not firing:
             return
 
         now = time.monotonic()
         async with self._lock:
-            # 1. Update velocity meter
-            window_start = now - self._settings.alert_storm_window_seconds
-            while self._recent_alert_timestamps and self._recent_alert_timestamps[0] < window_start:
+            win_start = now - self._settings.alert_storm_window_seconds
+            while self._recent_alert_timestamps and self._recent_alert_timestamps[0] < win_start:
                 self._recent_alert_timestamps.popleft()
 
-            for _ in firing_alerts:
+            for _ in firing:
                 self._recent_alert_timestamps.append(now)
 
             alert_count = len(self._recent_alert_timestamps)
-            current_state = self.circuit_state
-
-            # 2. Check if circuit breaker trips
             if (
                 alert_count > self._settings.alert_storm_threshold
-                and current_state != CircuitState.OPEN
+                and self.circuit_state != CircuitState.OPEN
             ):
                 self._circuit_state = CircuitState.OPEN
                 self._circuit_tripped_at = now
-                logger.warning(
-                    "Alert storm detected (%d alerts in %ds)! Tripping circuit breaker to OPEN.",
-                    alert_count,
-                    self._settings.alert_storm_window_seconds,
-                )
-                await self._notify_storm(firing_alerts, alert_count)
-                # Clear pending debounce to avoid cascading executions
+                logger.warning("Alert storm (%d alerts)! Tripping breaker to OPEN.", alert_count)
+                await self._notify_storm(firing, alert_count)
                 self._pending_alerts.clear()
                 if self._debounce_task and not self._debounce_task.done():
                     self._debounce_task.cancel()
                 return
 
             if self.circuit_state == CircuitState.OPEN:
-                logger.warning(
-                    "Circuit breaker is OPEN. Dropping %d alerts to prevent trace spam.",
-                    len(firing_alerts),
-                )
+                logger.warning("Circuit breaker OPEN. Dropping %d alerts.", len(firing))
                 return
 
             if self._circuit_state == CircuitState.HALF_OPEN:
                 self._circuit_state = CircuitState.CLOSED
-                logger.info("Circuit breaker recovered to CLOSED.")
 
-            # 3. Filter in-flight and cooldown duplicates
-            filtered_alerts: list[dict[str, Any]] = []
-            for alert in firing_alerts:
+            filtered: list[dict[str, Any]] = []
+            for alert in firing:
                 labels = {str(k): str(v) for k, v in (alert.get("labels") or {}).items()}
-                annotations = {str(k): str(v) for k, v in (alert.get("annotations") or {}).items()}
                 candidate = Incident(
                     alert_name=labels.get("alertname", "UnknownAlert"),
                     namespace=labels.get("namespace", ""),
@@ -152,32 +142,27 @@ class AlertStormProtector:
                     deployment_name=labels.get("deployment") or labels.get("app"),
                     fingerprint=alert.get("fingerprint"),
                     labels=labels,
-                    annotations=annotations,
+                    annotations={
+                        str(k): str(v) for k, v in (alert.get("annotations") or {}).items()
+                    },
                 )
                 key = self.get_incident_key(candidate)
                 if self.is_in_flight(key):
-                    logger.info(
-                        "Alert %s (%s) is already in flight. Skipping.", candidate.alert_name, key
-                    )
                     continue
                 if self.is_in_cooldown(key):
-                    logger.info(
-                        "Alert %s (%s) is in cooldown. Skipping.", candidate.alert_name, key
-                    )
+                    self._suppressed_incidents[key] = candidate
+                    await self._notify_suppressed(candidate, key)
                     continue
-                filtered_alerts.append(alert)
+                filtered.append(alert)
 
-            if not filtered_alerts:
+            if not filtered:
                 return
 
-            # 4. Debounce and aggregate
-            self._pending_alerts.extend(filtered_alerts)
-
+            self._pending_alerts.extend(filtered)
             if self._settings.alert_debounce_seconds <= 0:
                 await self._flush_pending_locked()
-            else:
-                if self._debounce_task is None or self._debounce_task.done():
-                    self._debounce_task = asyncio.create_task(self._debounce_timer())
+            elif self._debounce_task is None or self._debounce_task.done():
+                self._debounce_task = asyncio.create_task(self._debounce_timer())
 
     async def _debounce_timer(self) -> None:
         try:
@@ -190,51 +175,35 @@ class AlertStormProtector:
     async def _flush_pending_locked(self) -> None:
         if not self._pending_alerts:
             return
-
-        # Group alerts by namespace
         grouped: dict[str, list[dict[str, Any]]] = {}
-        for alert in self._pending_alerts:
-            labels = alert.get("labels") or {}
-            ns = labels.get("namespace", "")
-            grouped.setdefault(ns, []).append(alert)
-
+        for a in self._pending_alerts:
+            grouped.setdefault(a.get("labels", {}).get("namespace", ""), []).append(a)
         self._pending_alerts.clear()
 
         for _ns, alerts in grouped.items():
-            primary_raw = alerts[0]
-
-            correlated_raw = alerts[1:]
-
-            primary_labels = {str(k): str(v) for k, v in (primary_raw.get("labels") or {}).items()}
-            primary_annotations = {
-                str(k): str(v) for k, v in (primary_raw.get("annotations") or {}).items()
-            }
-
-            correlated_list = [
-                {
-                    "alertname": a.get("labels", {}).get("alertname", "UnknownAlert"),
-                    "namespace": a.get("labels", {}).get("namespace", ""),
-                    "pod": a.get("labels", {}).get("pod", ""),
-                    "labels": a.get("labels", {}),
-                    "annotations": a.get("annotations", {}),
-                }
-                for a in correlated_raw
-            ]
-
+            primary, corrs = alerts[0], alerts[1:]
+            p_labels = {str(k): str(v) for k, v in (primary.get("labels") or {}).items()}
             incident = Incident(
-                alert_name=primary_labels.get("alertname", "UnknownAlert"),
-                namespace=primary_labels.get("namespace", ""),
-                pod_name=primary_labels.get("pod", ""),
-                deployment_name=primary_labels.get("deployment") or primary_labels.get("app"),
-                fingerprint=primary_raw.get("fingerprint"),
-                labels=primary_labels,
-                annotations=primary_annotations,
-                correlated_alerts=correlated_list,
+                alert_name=p_labels.get("alertname", "UnknownAlert"),
+                namespace=p_labels.get("namespace", ""),
+                pod_name=p_labels.get("pod", ""),
+                deployment_name=p_labels.get("deployment") or p_labels.get("app"),
+                fingerprint=primary.get("fingerprint"),
+                labels=p_labels,
+                annotations={str(k): str(v) for k, v in (primary.get("annotations") or {}).items()},
+                correlated_alerts=[
+                    {
+                        "alertname": c.get("labels", {}).get("alertname", "UnknownAlert"),
+                        "namespace": c.get("labels", {}).get("namespace", ""),
+                        "pod": c.get("labels", {}).get("pod", ""),
+                        "labels": c.get("labels", {}),
+                        "annotations": c.get("annotations", {}),
+                    }
+                    for c in corrs
+                ],
             )
-
             key = self.get_incident_key(incident)
             self.mark_in_flight(key)
-
             if self._dispatch_callback:
                 if self._settings.alert_debounce_seconds <= 0:
                     await self._dispatch_with_semaphore(incident, key)
@@ -249,25 +218,53 @@ class AlertStormProtector:
         finally:
             self.mark_completed(key)
 
+    async def handle_force_approval(self, response: ApprovalResponse) -> bool:
+        """Handle operator clicking 'Procesar de todas formas' button."""
+        if response.action_id != "force":
+            return False
+        incident = self._suppressed_incidents.pop(response.incident_id, None)
+        if incident is None:
+            return False
+        key = self.get_incident_key(incident)
+        self._cooldown_cache.pop(key, None)
+        self.mark_in_flight(key)
+        if self._dispatch_callback:
+            asyncio.create_task(self._dispatch_with_semaphore(incident, key))
+        return True
+
     async def _notify_storm(self, alerts: list[dict[str, Any]], count: int) -> None:
         if not self._chat_manager:
             return
-
-        alert_names = [a.get("labels", {}).get("alertname", "UnknownAlert") for a in alerts]
-        summary_text = (
-            f"⚡ **Alert Storm Circuit Breaker Activated**\n\n"
-            f"Received **{count} alerts** within {self._settings.alert_storm_window_seconds}s. "
-            f"Automated LLM investigations are paused for {self._settings.alert_storm_cooldown_seconds}s "
-            f"to prevent trace explosion and token costs.\n\n"
-            f"**Recent Alerts:**\n" + "\n".join(f"- `{name}`" for name in alert_names[:10])
+        storm_key = f"storm-{int(time.time())}"
+        storm_inc, req = build_storm_approval_request(
+            storm_key=storm_key,
+            alerts=alerts,
+            count=count,
+            window_seconds=self._settings.alert_storm_window_seconds,
+            cooldown_seconds=self._settings.alert_storm_cooldown_seconds,
+            default_chat_id=self._settings.telegram_default_chat_id or "",
         )
-
+        self._suppressed_incidents[storm_key] = storm_inc
         try:
-            if hasattr(self._chat_manager, "broadcast_message"):
-                await self._chat_manager.broadcast_message(summary_text)
-            elif hasattr(self._chat_manager, "send_message"):
-                await self._chat_manager.send_message(
-                    self._settings.telegram_default_chat_id or "", summary_text
+            if hasattr(self._chat_manager, "broadcast_approval_request"):
+                await self._chat_manager.broadcast_approval_request(req)
+            elif hasattr(self._chat_manager, "broadcast_message"):
+                await self._chat_manager.broadcast_message(
+                    chat_id=req.chat_id, text=f"{req.title}\n\n{req.details}"
                 )
         except Exception:
-            logger.exception("Failed to send storm notification to chat manager")
+            logger.exception("Failed to send storm notification")
+
+    async def _notify_suppressed(self, incident: Incident, key: str) -> None:
+        if not self._chat_manager:
+            return
+        req = build_suppressed_approval_request(
+            key=key,
+            incident=incident,
+            default_chat_id=self._settings.telegram_default_chat_id or "",
+        )
+        try:
+            if hasattr(self._chat_manager, "broadcast_approval_request"):
+                await self._chat_manager.broadcast_approval_request(req)
+        except Exception:
+            logger.exception("Failed to send suppressed notification")
