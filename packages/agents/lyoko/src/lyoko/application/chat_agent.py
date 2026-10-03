@@ -47,7 +47,11 @@ class InteractiveChatAgent:
         self.tracer = tracer
         self.session_tracker = session_tracker or ChatSessionTracker(session_idle_timeout_seconds)
 
-    async def handle_message(self, message: IncomingMessage) -> str:
+    async def handle_message(
+        self,
+        message: IncomingMessage,
+        on_token: Any = None,
+    ) -> str:
         """Process an incoming chat message and return the reply for the operator."""
         logger.info("Processing chat message from user %s: %s", message.user.user_id, message.text)
         if is_new_session_command(message.text):
@@ -69,9 +73,12 @@ class InteractiveChatAgent:
             "text": message.text,
             "labels": {},
             "annotations": {},
+            "on_token": on_token,
         }
         config = self._trace_config(message, session_id)
         config.setdefault("configurable", {})["thread_id"] = event_id
+        if on_token is not None:
+            config["configurable"]["on_token"] = on_token
 
         try:
             result = await self._graph_provider().ainvoke(state, config=config)

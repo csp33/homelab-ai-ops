@@ -73,6 +73,7 @@ class OpenAILLMAdapter(LLMClientInterface):
         metadata: dict[str, Any] | None = None,
         max_steps: int | None = None,
         parent_config: dict[str, Any] | None = None,
+        on_token: Any = None,
     ) -> str:
         """Process conversational prompt with optional tools, Langfuse session, user, and tracing.
 
@@ -81,6 +82,8 @@ class OpenAILLMAdapter(LLMClientInterface):
 
         With ``parent_config`` the call joins the trace of the enclosing graph run as a child
         span named ``trace_name``. Without it, a new trace is started.
+
+        ``on_token`` is an optional async callback invoked as text tokens are streamed.
         """
         if parent_config is not None:
             config = _child_config(parent_config, trace_name, tags, metadata)
@@ -106,7 +109,26 @@ class OpenAILLMAdapter(LLMClientInterface):
                     messages.append(HumanMessage(content=prompt_text))
 
                     for step in range(max_iterations):
-                        response = await model_with_tools.ainvoke(messages)
+                        if on_token is not None:
+                            accumulated_response = None
+                            accumulated_text: list[str] = []
+                            async for chunk in model_with_tools.astream(messages):
+                                accumulated_response = (
+                                    chunk
+                                    if accumulated_response is None
+                                    else accumulated_response + chunk
+                                )
+                                if chunk.content:
+                                    text_piece = str(chunk.content)
+                                    accumulated_text.append(text_piece)
+                                    await on_token(text_piece)
+                            response = accumulated_response
+                        else:
+                            response = await model_with_tools.ainvoke(messages)
+
+                        if response is None:
+                            response = await model_with_tools.ainvoke(messages)
+
                         messages.append(response)
 
                         if not response.tool_calls:
@@ -151,6 +173,15 @@ class OpenAILLMAdapter(LLMClientInterface):
                             content="You have reached the maximum allowed steps. Please summarize your findings, actions taken, and current status based on the information gathered so far without making further tool calls."
                         )
                     )
+                    if on_token is not None:
+                        accumulated_content: list[str] = []
+                        async for chunk in self.client.astream(messages):
+                            if chunk.content:
+                                text_piece = str(chunk.content)
+                                accumulated_content.append(text_piece)
+                                await on_token(text_piece)
+                        return "".join(accumulated_content)
+
                     final_response = await self.client.ainvoke(messages)
                     return str(final_response.content)
 
@@ -166,6 +197,15 @@ class OpenAILLMAdapter(LLMClientInterface):
         if system_prompt:
             messages.append(SystemMessage(content=system_prompt))
         messages.append(HumanMessage(content=prompt))
+
+        if on_token is not None:
+            accumulated_content = []
+            async for chunk in self.client.astream(messages, config=config if config else None):
+                if chunk.content:
+                    text_piece = str(chunk.content)
+                    accumulated_content.append(text_piece)
+                    await on_token(text_piece)
+            return "".join(accumulated_content)
 
         response = await self.client.ainvoke(messages, config=config if config else None)
         return str(response.content)

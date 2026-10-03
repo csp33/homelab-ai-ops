@@ -1,5 +1,6 @@
 """Telegram chat connector adapter implementation using python-telegram-bot."""
 
+import asyncio
 import contextlib
 import html
 import inspect
@@ -29,6 +30,78 @@ from telegram.ext import (
 )
 
 logger = logging.getLogger("lyoko.chat.telegram")
+
+
+class TelegramDraftStreamer:
+    """Streams draft messages to Telegram using the native sendMessageDraft API with rate-limiting."""
+
+    def __init__(
+        self,
+        bot: Any,
+        chat_id: int | str,
+        draft_id: int | None = None,
+        min_interval_seconds: float = 0.4,
+    ) -> None:
+        self.bot = bot
+        self.chat_id = chat_id
+        self.draft_id = (
+            draft_id
+            if draft_id is not None
+            else (abs(hash(f"{chat_id}_{id(self)}")) % 2147483640 + 1)
+        )
+        self.min_interval_seconds = min_interval_seconds
+        self._accumulated_text = ""
+        self._last_sent_time = 0.0
+        self._last_sent_text = ""
+        self._lock = asyncio.Lock()
+        self._disabled = False
+
+    async def start_thinking(self) -> None:
+        """Send initial empty draft to show native 'Thinking...' placeholder."""
+        if not self.bot or not hasattr(self.bot, "send_message_draft"):
+            return
+        try:
+            target_chat_id = int(self.chat_id)
+            await self.bot.send_message_draft(
+                chat_id=target_chat_id,
+                draft_id=self.draft_id,
+                text="",
+            )
+        except Exception as exc:
+            logger.debug(
+                "send_message_draft start_thinking not supported or failed for chat %s: %s",
+                self.chat_id,
+                exc,
+            )
+            self._disabled = True
+
+    async def on_token(self, token: str) -> None:
+        """Receive a token, append to buffer, and update draft if throttle interval elapsed."""
+        if self._disabled or not self.bot or not hasattr(self.bot, "send_message_draft"):
+            return
+        self._accumulated_text += token
+        now = asyncio.get_event_loop().time()
+        if (now - self._last_sent_time) >= self.min_interval_seconds:
+            await self._flush_locked(now)
+
+    async def _flush_locked(self, now: float) -> None:
+        if self._accumulated_text == self._last_sent_text:
+            return
+        async with self._lock:
+            if self._disabled:
+                return
+            try:
+                target_chat_id = int(self.chat_id)
+                self._last_sent_time = now
+                self._last_sent_text = self._accumulated_text
+                await self.bot.send_message_draft(
+                    chat_id=target_chat_id,
+                    draft_id=self.draft_id,
+                    text=self._accumulated_text,
+                )
+            except Exception as exc:
+                logger.debug("send_message_draft error: %s", exc)
+                self._disabled = True
 
 
 def _to_sent_message(result: object, fallback_chat_id: str) -> SentMessage | None:
@@ -344,9 +417,19 @@ class TelegramConnector(ChatConnector):
                     action="typing",
                 )
 
+        # 3. Create streamer for real-time draft updates
+        bot_instance = (
+            getattr(context, "bot", None)
+            if context and getattr(context, "bot", None)
+            else (self._app.bot if self._app else None)
+        )
+        streamer = TelegramDraftStreamer(bot=bot_instance, chat_id=chat_id)
+        with contextlib.suppress(Exception):
+            await streamer.start_thinking()
+
         text = str(msg.text).strip()
 
-        # 3. Handle /feedback or /teach command
+        # 4. Handle /feedback or /teach command
         if text.startswith("/feedback") or text.startswith("/teach"):
             await self._handle_feedback_command(msg, text)
             return
@@ -387,7 +470,19 @@ class TelegramConnector(ChatConnector):
 
         for handler in self._message_handlers:
             try:
-                reply = await handler(incoming)
+                accepts_on_token = False
+                try:
+                    sig = inspect.signature(handler)
+                    accepts_on_token = "on_token" in sig.parameters or any(
+                        p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+                    )
+                except (ValueError, TypeError):
+                    pass
+
+                if accepts_on_token:
+                    reply = await handler(incoming, on_token=streamer.on_token)
+                else:
+                    reply = await handler(incoming)
                 if reply:
                     formatted_reply = markdown_to_telegram_html(reply)
                     try:

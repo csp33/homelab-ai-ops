@@ -678,3 +678,96 @@ async def test_telegram_connector_feedback_command():
     reply_msg = mock_update.message.reply_text.call_args[0][0]
     assert "Rule learned" in reply_msg
     assert "77" in reply_msg
+
+
+@pytest.mark.asyncio
+async def test_telegram_draft_streamer_thinking_and_tokens():
+    """Verify TelegramDraftStreamer sends thinking draft and throttled token updates."""
+    from lyoko.infrastructure.chat.telegram import TelegramDraftStreamer
+
+    mock_bot = MagicMock()
+    mock_bot.send_message_draft = AsyncMock()
+
+    streamer = TelegramDraftStreamer(
+        bot=mock_bot,
+        chat_id="12345",
+        draft_id=999,
+        min_interval_seconds=0.0,  # no delay in test
+    )
+
+    await streamer.start_thinking()
+    mock_bot.send_message_draft.assert_called_once_with(
+        chat_id=12345,
+        draft_id=999,
+        text="",
+    )
+
+    mock_bot.send_message_draft.reset_mock()
+    await streamer.on_token("Hello ")
+    await streamer.on_token("world!")
+
+    assert mock_bot.send_message_draft.call_count >= 1
+    last_call = mock_bot.send_message_draft.call_args[1]
+    assert last_call["text"] == "Hello world!"
+    assert last_call["draft_id"] == 999
+
+
+@pytest.mark.asyncio
+async def test_telegram_draft_streamer_graceful_failure():
+    """Verify exceptions in send_message_draft disable streaming silently."""
+    from lyoko.infrastructure.chat.telegram import TelegramDraftStreamer
+
+    mock_bot = MagicMock()
+    mock_bot.send_message_draft = AsyncMock(side_effect=RuntimeError("DRAFTS_NOT_SUPPORTED"))
+
+    streamer = TelegramDraftStreamer(bot=mock_bot, chat_id="12345")
+    await streamer.start_thinking()
+    assert streamer._disabled is True
+
+    # Subsequent tokens should not call send_message_draft
+    mock_bot.send_message_draft.reset_mock()
+    await streamer.on_token("text")
+    mock_bot.send_message_draft.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_telegram_connector_handles_streaming_message_handler():
+    """Verify _handle_telegram_message passes on_token callback to streaming handlers."""
+    connector = TelegramConnector(
+        bot_token="fake:token", allowed_user_ids={"12345"}, default_chat_id="12345"
+    )
+
+    streamed_tokens: list[str] = []
+
+    async def streaming_handler(msg: IncomingMessage, on_token=None) -> str:
+        if on_token:
+            await on_token("Chunk 1 ")
+            await on_token("Chunk 2")
+            streamed_tokens.append("streamed")
+        return "Final reply"
+
+    connector.register_message_handler(streaming_handler)
+
+    mock_bot = MagicMock()
+    mock_bot.send_message_draft = AsyncMock()
+    mock_context = MagicMock()
+    mock_context.bot = mock_bot
+
+    mock_update = MagicMock()
+    mock_update.effective_user.id = 12345
+    mock_update.effective_chat.id = 12345
+    mock_update.message.message_id = 42
+    mock_update.message.text = "Hello stream"
+    mock_update.message.set_reaction = AsyncMock()
+    mock_update.message.reply_text = AsyncMock()
+
+    await connector._handle_telegram_message(mock_update, mock_context)
+
+    assert "streamed" in streamed_tokens
+    mock_update.message.reply_text.assert_called_once_with(
+        "Final reply",
+        parse_mode="HTML",
+        reply_to_message_id=42,
+        allow_sending_without_reply=True,
+    )
+    assert mock_bot.send_message_draft.call_count >= 1

@@ -130,6 +130,7 @@ class SupervisorAgent:
         authorizer: Any = None,
         parent_config: Any = None,
         max_steps: int | None = None,
+        on_token: Any = None,
     ) -> str:
         """Coordinate multi-agent task execution by delegating to domain specialists."""
         logger.info("Supervisor coordinating request: %s", prompt)
@@ -161,4 +162,5 @@ class SupervisorAgent:
             metadata=metadata or {},
             max_steps=max_steps or settings.max_supervisor_steps,
             parent_config=parent_config,
+            on_token=on_token,
         )

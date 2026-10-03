@@ -4,11 +4,11 @@ from collections.abc import Awaitable, Callable
 from lyoko.domain.models.chat import (
     ApprovalRequest,
     ApprovalResponse,
-    IncomingMessage,
     SentMessage,
 )
 
-MessageHandler = Callable[[IncomingMessage], Awaitable[str | None]]
+TokenCallback = Callable[[str], Awaitable[None]]
+MessageHandler = Callable[..., Awaitable[str | None]]
 ApprovalHandler = Callable[[ApprovalResponse], Awaitable[None]]
 
 
