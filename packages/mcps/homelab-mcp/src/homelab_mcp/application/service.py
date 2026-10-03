@@ -1,3 +1,5 @@
+"""MCP Gateway Application Service coordinating upstream MCP routing, discovery, and guardrails."""
+
 import asyncio
 import logging
 import re
@@ -130,45 +132,15 @@ class MCPGatewayService:
         )
 
         for upstream_name, upstream_port, tools in results:
+            allowed_count = 0
             for t in tools:
                 if self.guardrail.is_tool_allowed(t.name):
-                    routing[t.name] = (upstream_name, upstream_port)
+                    routing[t.name] = (str(upstream_name), upstream_port)
                     aggregated_tools.append(t)
-
-            # If upstream provides unifi_tool_index, expand domain tools for transparent discovery
-            if any(t.name == "unifi_tool_index" for t in tools):
-                try:
-                    import json
-
-                    index_res = await upstream_port.call_tool("unifi_tool_index", {})
-                    if index_res and not index_res.is_error:
-                        content = index_res.content
-                        if isinstance(content, str):
-                            content = json.loads(content)
-                        if isinstance(content, dict):
-                            for sub_tool in content.get("tools", []):
-                                st_name = sub_tool.get("name")
-                                if (
-                                    st_name
-                                    and st_name not in routing
-                                    and self.guardrail.is_tool_allowed(st_name)
-                                ):
-                                    routing[st_name] = (upstream_name, upstream_port)
-                                    aggregated_tools.append(
-                                        ToolDefinition(
-                                            name=st_name,
-                                            description=sub_tool.get("description", ""),
-                                            parameters={},
-                                            upstream_type=tools[0].upstream_type
-                                            if tools
-                                            else "unifi",
-                                        )
-                                    )
-                except Exception as exc:
-                    logger.warning(f"Failed to expand UniFi domain tools from tool_index: {exc}")
+                    allowed_count += 1
 
             logger.info(
-                f"Discovered {len(tools)} tools from upstream '{upstream_name}' (allowed: {sum(1 for t in tools if t.name in routing)})."
+                f"Discovered {len(tools)} tools from upstream '{upstream_name}' (allowed: {allowed_count})."
             )
 
         self._tool_routing = routing
@@ -298,63 +270,33 @@ class MCPGatewayService:
             or canonical_target in t.name.lower()
         ]
 
-    def _normalize_tool_name(self, name: str) -> str:
-        """Strip optional category prefix if caller passed e.g. 'kubernetes.pods_list'."""
+    def _resolve_tool_routing(self, name: str) -> tuple[str, UpstreamMCPInterface] | None:
+        """Resolve tool name to its registered upstream handler."""
         if name in self._tool_routing:
-            return name
+            return self._tool_routing[name]
         if "." in name:
             _, base_name = name.split(".", 1)
             if base_name in self._tool_routing:
-                return base_name
-        return name
+                return self._tool_routing[base_name]
+        return None
 
     async def execute_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         """Validate safety guardrails and route tool execution to the upstream MCP server."""
-        name = self._normalize_tool_name(name)
-        if name not in self._tool_routing:
-            # Re-attempt quick discovery in case tools were registered dynamically
+        route = self._resolve_tool_routing(name)
+        if route is None:
+            # Re-attempt discovery in case tools were registered dynamically
             await self.discover_tools()
-            name = self._normalize_tool_name(name)
+            route = self._resolve_tool_routing(name)
 
-        if (
-            name not in self._tool_routing
-            and name.startswith("unifi_")
-            and "unifi_execute" in self._tool_routing
-        ):
-            upstream_name, upstream_client = self._tool_routing["unifi_execute"]
-            self.guardrail.validate_tool_call(name, arguments, upstream_name=upstream_name)
-            logger.info(f"Routing '{name}' via 'unifi_execute'...")
-            return await upstream_client.call_tool(
-                "unifi_execute", {"tool": name, "arguments": arguments}
-            )
-
-        if name not in self._tool_routing:
+        if route is None:
             raise ToolNotFoundError(
                 f"Tool '{name}' not found on any upstream MCP server or blocked by policy."
             )
 
-        upstream_name, upstream_client = self._tool_routing[name]
+        upstream_name, upstream_client = route
 
         # Enforce all active security guardrails (namespace, command exec whitelist/blacklist, tool rules)
         self.guardrail.validate_tool_call(name, arguments, upstream_name=upstream_name)
-
-        if (
-            name.startswith("unifi_")
-            and name
-            not in [
-                "unifi_tool_index",
-                "unifi_execute",
-                "unifi_batch",
-                "unifi_batch_status",
-                "unifi_load_tools",
-                "unifi_get_support_bundle",
-            ]
-            and "unifi_execute" in self._tool_routing
-        ):
-            logger.info(f"Routing UniFi sub-tool '{name}' via 'unifi_execute'...")
-            return await upstream_client.call_tool(
-                "unifi_execute", {"tool": name, "arguments": arguments}
-            )
 
         logger.info(f"Routing tool '{name}' to upstream '{upstream_name}'...")
         return await upstream_client.call_tool(name, arguments)

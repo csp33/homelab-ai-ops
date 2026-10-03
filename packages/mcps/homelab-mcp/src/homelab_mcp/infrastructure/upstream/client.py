@@ -24,11 +24,13 @@ class ProcessUpstreamClient(UpstreamMCPInterface):
         args: list[str] | None = None,
         env: dict[str, str] | None = None,
         upstream_type: UpstreamType | str = "unknown",
+        prefix: str | None = None,
     ):
         self.command = command
         self.args = args or []
         self.env = {**os.environ, **(env or {})}
         self.upstream_type = upstream_type
+        self.prefix = prefix
         self._lock = asyncio.Lock()
         self._session: ClientSession | None = None
         self._exit_stack: AsyncExitStack | None = None
@@ -94,9 +96,12 @@ class ProcessUpstreamClient(UpstreamMCPInterface):
 
             tool_definitions = []
             for tool in result.tools:
+                tool_name = tool.name
+                if self.prefix and not tool_name.startswith(self.prefix):
+                    tool_name = f"{self.prefix}{tool_name}"
                 tool_definitions.append(
                     ToolDefinition(
-                        name=tool.name,
+                        name=tool_name,
                         description=tool.description or "",
                         parameters=getattr(tool, "input_schema", {}),
                         upstream_type=self.upstream_type,
@@ -106,17 +111,21 @@ class ProcessUpstreamClient(UpstreamMCPInterface):
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         """Execute a tool using the persistent upstream session with automatic recovery."""
+        raw_name = name
+        if self.prefix and raw_name.startswith(self.prefix):
+            raw_name = raw_name[len(self.prefix) :]
+
         async with self._lock:
             try:
                 session = await self._ensure_connected()
-                result = await session.call_tool(name, arguments)
+                result = await session.call_tool(raw_name, arguments)
             except Exception as exc:
                 logger.warning(
-                    f"Tool call '{name}' failed on upstream '{self.upstream_type}', retrying with fresh connection: {exc}"
+                    f"Tool call '{raw_name}' failed on upstream '{self.upstream_type}', retrying with fresh connection: {exc}"
                 )
                 await self._close_session()
                 session = await self._ensure_connected()
-                result = await session.call_tool(name, arguments)
+                result = await session.call_tool(raw_name, arguments)
 
             # Format content
             contents = []
