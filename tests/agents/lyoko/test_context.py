@@ -26,7 +26,7 @@ def test_load_context_success():
     assert "tresberto" in overview
     assert "humberto" in overview
     assert "dosberto" in overview
-    assert "28 vCPUs" in overview
+    assert "Zigbee" in overview
 
 
 def test_load_context_missing_file():
