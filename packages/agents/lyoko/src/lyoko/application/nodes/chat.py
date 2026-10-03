@@ -78,8 +78,8 @@ def create_chat_node(
             approval_manager=approval_manager,
             chat_manager=chat_manager,
         )
-        on_token = state.get("on_token")
-        if on_token is None and isinstance(config, dict):
+        on_token = None
+        if isinstance(config, dict):
             on_token = config.get("configurable", {}).get("on_token")
         try:
             answer = await run_supervised(
