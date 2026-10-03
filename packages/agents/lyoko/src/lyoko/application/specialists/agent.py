@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from lyoko.config import settings
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.mcp import MCPClientInterface
 
@@ -32,8 +33,11 @@ class DomainSpecialistAgent:
         """Resolve tools scoped to this specialist's domain."""
         if self.tools:
             return self.tools
-        if self.mcp_client is not None and hasattr(self.mcp_client, "get_langchain_tools"):
-            return self.mcp_client.get_langchain_tools(authorizer=authorizer)
+        if self.mcp_client is not None and hasattr(self.mcp_client, "get_domain_langchain_tools"):
+            return await self.mcp_client.get_domain_langchain_tools(
+                self.domain,
+                authorizer=authorizer,
+            )
         return []
 
     async def run(
@@ -65,5 +69,6 @@ class DomainSpecialistAgent:
             trace_name=f"specialist-{self.domain}",
             tags=specialist_tags,
             metadata=metadata or {},
+            max_steps=settings.max_agent_steps,
             parent_config=parent_config,
         )

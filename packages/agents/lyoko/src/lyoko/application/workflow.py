@@ -10,8 +10,9 @@ Every event enters at ``route`` and takes one of two branches::
   take it. A Telegram message takes it when the router decides the operator is reporting
   something broken, and takes ``chat`` otherwise.
 
-The agent runs use the homelab-mcp gateway, so nothing here is specific to Kubernetes: the agent
-discovers whatever tools the gateway exposes.
+The agent runs use the homelab-mcp gateway through domain specialists. The supervisor
+delegates to Kubernetes, UniFi, Home Assistant, and Grafana specialists so each phase
+operates with a scoped toolset instead of searching the whole catalog.
 
 Safety does not rely on the agent's judgement. Every run gets a ``ToolGate`` built from one
 policy for both branches: read-only tools run, auto-approved tools run, and everything else waits
@@ -169,6 +170,37 @@ def create_lyoko_graph(
             parent_config=config,
         )
 
+    async def run_supervised(
+        state: LyokoState,
+        gate: ToolGate,
+        config: RunnableConfig,
+        *,
+        phase: str,
+        prompt: str,
+        system_prompt: str | None = None,
+    ) -> str:
+        """Run through the supervisor + specialists when available; otherwise fall back."""
+        if supervisor is None:
+            if system_prompt is None:
+                raise ValueError("system_prompt is required when no supervisor is configured")
+            return await run_agent(
+                state,
+                gate,
+                config,
+                phase=phase,
+                system_prompt=system_prompt,
+                prompt=prompt,
+            )
+        return await supervisor.coordinate(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            session_id=state.get("session_id"),
+            tags=[f"phase:{phase}"],
+            authorizer=gate.authorize,
+            parent_config=config,
+            max_steps=settings.max_agent_steps,
+        )
+
     # ------------------------------------------------------------------
     # Routing
     # ------------------------------------------------------------------
@@ -246,24 +278,15 @@ def create_lyoko_graph(
 
         prompt_with_memory = f"{text}{lessons_context}"
         gate = make_gate(state, GateMode.APPROVAL)
-        tools = mcp_client.get_langchain_tools(authorizer=gate.authorize)
         try:
-            if supervisor is not None:
-                answer = await supervisor.coordinate(
-                    prompt=prompt_with_memory,
-                    session_id=state.get("session_id"),
-                    tools=tools,
-                    parent_config=config,
-                )
-            else:
-                answer = await run_agent(
-                    state,
-                    gate,
-                    config,
-                    phase="chat",
-                    system_prompt=CHAT_SYSTEM_PROMPT,
-                    prompt=prompt_with_memory,
-                )
+            answer = await run_supervised(
+                state,
+                gate,
+                config,
+                phase="chat",
+                prompt=prompt_with_memory,
+                system_prompt=None if supervisor is not None else CHAT_SYSTEM_PROMPT,
+            )
         except Exception as exc:
             logger.error("Failed to generate LLM response: %s", exc)
             return {"reply": f"⚠️ Error processing your question: {exc}"}
@@ -333,7 +356,7 @@ def create_lyoko_graph(
         gate = make_gate(state, GateMode.READ_ONLY)
         try:
             prompt_content = f"Investigate this.\n\n{_incident_context(state)}{lessons_context}"
-            answer = await run_agent(
+            answer = await run_supervised(
                 state,
                 gate,
                 config,
@@ -363,7 +386,7 @@ def create_lyoko_graph(
         error: str | None = None
         summary = ""
         try:
-            answer = await run_agent(
+            answer = await run_supervised(
                 state,
                 gate,
                 config,
@@ -394,7 +417,7 @@ def create_lyoko_graph(
         gate = make_gate(state, GateMode.READ_ONLY)
         changes = "\n".join(f"- {_describe_call(a)} {a['arguments']}" for a in executed)
         try:
-            answer = await run_agent(
+            answer = await run_supervised(
                 state,
                 gate,
                 config,

@@ -2,6 +2,7 @@
 
 import contextlib
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -16,6 +17,7 @@ from lyoko.domain.exceptions.mcp import (
     MCPGatewayUnreachableError,
 )
 from lyoko.domain.interfaces.mcp import MCPClientInterface, ToolAuthorizer
+from pydantic import create_model
 
 logger = logging.getLogger("lyoko.infrastructure.mcp.client")
 
@@ -33,6 +35,16 @@ _INITIALIZE_REQUEST = {
         "capabilities": {},
         "clientInfo": {"name": "lyoko-connectivity-check", "version": "0"},
     },
+}
+# Domains larger than this keep domain-scoped discovery instead of binding every tool.
+_MAX_BOUND_DOMAIN_TOOLS = 40
+_JSON_TYPE_MAP = {
+    "string": str,
+    "integer": int,
+    "number": float,
+    "boolean": bool,
+    "object": dict,
+    "array": list,
 }
 
 
@@ -145,6 +157,8 @@ class FastMCPClient(MCPClientInterface):
                 if name in [
                     "gateway_list_tools",
                     "gateway_list_categories",
+                    "gateway_get_domain_tools",
+                    "gateway_get_tool_schema",
                     "gateway_call_tool",
                     "telegram_send_message",
                     "telegram_send_alert",
@@ -213,6 +227,149 @@ class FastMCPClient(MCPClientInterface):
                 return res.data
         except Exception as exc:
             raise await self._to_gateway_error(f"get schema of '{tool_name}'", exc) from exc
+
+    async def get_domain_tool_definitions(self, domain: str) -> list[dict[str, Any]]:
+        """Fetch the full tool catalog for one upstream domain from the gateway."""
+        auth_token = self.token if self.token else None
+        try:
+            async with Client(self.server_url, auth=auth_token) as client:
+                res = await client.call_tool("gateway_get_domain_tools", {"domain": domain})
+                data = res.data
+        except Exception as exc:
+            raise await self._to_gateway_error(f"list domain tools for '{domain}'", exc) from exc
+
+        if isinstance(data, dict) and data.get("error"):
+            raise MCPGatewayError(str(data["error"]))
+        if not isinstance(data, list):
+            return []
+        if data and isinstance(data[0], dict) and data[0].get("error"):
+            raise MCPGatewayError(str(data[0]["error"]))
+        return [t for t in data if isinstance(t, dict) and t.get("name")]
+
+    def _authorized_call(
+        self,
+        tool_name: str,
+        authorizer: ToolAuthorizer | None,
+    ):
+        async def _run(arguments: dict[str, Any]) -> str:
+            if authorizer is not None:
+                refusal = await authorizer(tool_name, arguments)
+                if refusal:
+                    raise ToolException(refusal)
+            result = await self.call_tool(tool_name, arguments)
+            if isinstance(result, dict) and result.get("status") == "failed":
+                raise ToolException(str(result.get("error", "unknown MCP gateway error")))
+            return str(result)
+
+        return _run
+
+    def _bind_domain_tool(
+        self,
+        definition: dict[str, Any],
+        authorizer: ToolAuthorizer | None,
+    ) -> Any:
+        """Bind one upstream tool as a direct LangChain StructuredTool."""
+        tool_name = str(definition["name"])
+        description = (definition.get("description") or tool_name).strip()
+        parameters = definition.get("parameters") or {}
+        args_schema = _args_schema_for_tool(tool_name, parameters)
+        run = self._authorized_call(tool_name, authorizer)
+
+        async def _invoke(**kwargs: Any) -> str:
+            arguments = {key: value for key, value in kwargs.items() if value is not None}
+            if "arguments" in arguments and len(arguments) == 1:
+                nested = arguments["arguments"]
+                if isinstance(nested, dict):
+                    arguments = nested
+            return await RunnableLambda(run, name=f"mcp:{tool_name}").ainvoke(arguments)
+
+        return StructuredTool.from_function(
+            coroutine=_invoke,
+            name=tool_name,
+            description=description,
+            args_schema=args_schema,
+            handle_tool_error=True,
+        )
+
+    def _domain_discovery_tools(
+        self,
+        domain: str,
+        authorizer: ToolAuthorizer | None,
+    ) -> list[Any]:
+        """Fallback toolset for large domains: search and call stay locked to ``domain``."""
+
+        async def _list_tools(query: str | None = None, limit: int = 25) -> str:
+            try:
+                tools = await self.list_tools(upstream=domain, query=query, limit=limit)
+            except MCPGatewayError as exc:
+                raise ToolException(str(exc)) from exc
+            return str(
+                [
+                    {
+                        "name": t.get("name"),
+                        "description": t.get("description"),
+                        "upstream": t.get("upstream"),
+                    }
+                    for t in tools
+                ]
+            )
+
+        async def _get_schema(tool_name: str) -> str:
+            try:
+                return str(await self.get_tool_schema(tool_name))
+            except MCPGatewayError as exc:
+                raise ToolException(str(exc)) from exc
+
+        async def _call_tool(tool_name: str, arguments: dict[str, Any]) -> str:
+            return await RunnableLambda(
+                self._authorized_call(tool_name, authorizer),
+                name=f"mcp:{tool_name}",
+            ).ainvoke(arguments)
+
+        return [
+            StructuredTool.from_function(
+                coroutine=_list_tools,
+                name="gateway_list_tools",
+                description=(
+                    f"List tools in the '{domain}' domain only. Pass a keyword query to narrow "
+                    "results. Do not invent tools outside this list."
+                ),
+                handle_tool_error=True,
+            ),
+            StructuredTool.from_function(
+                coroutine=_get_schema,
+                name="gateway_get_tool_schema",
+                description="Get the parameter schema of one tool from this domain before calling it.",
+                handle_tool_error=True,
+            ),
+            StructuredTool.from_function(
+                coroutine=_call_tool,
+                name="gateway_call_tool",
+                description=f"Execute a '{domain}' domain tool by exact name with arguments.",
+                handle_tool_error=True,
+            ),
+        ]
+
+    async def get_domain_langchain_tools(
+        self,
+        domain: str,
+        authorizer: ToolAuthorizer | None = None,
+    ) -> list[Any]:
+        """Return LangChain tools scoped to one upstream domain for a specialist agent."""
+        try:
+            definitions = await self.get_domain_tool_definitions(domain)
+        except MCPGatewayError as exc:
+            raise ToolException(str(exc)) from exc
+
+        if len(definitions) > _MAX_BOUND_DOMAIN_TOOLS:
+            logger.info(
+                "Domain '%s' has %s tools; using scoped discovery instead of full binding.",
+                domain,
+                len(definitions),
+            )
+            return self._domain_discovery_tools(domain, authorizer)
+
+        return [self._bind_domain_tool(defn, authorizer) for defn in definitions]
 
     def get_langchain_tools(self, authorizer: ToolAuthorizer | None = None) -> list[Any]:
         """Return LangChain StructuredTool instances to dynamically discover and execute homelab tools.
@@ -330,3 +487,31 @@ class FastMCPClient(MCPClientInterface):
         )
 
         return [categories_tool, list_tool, schema_tool, call_tool]
+
+
+def _safe_model_name(tool_name: str) -> str:
+    cleaned = re.sub(r"[^0-9a-zA-Z_]", "_", tool_name)
+    if cleaned and cleaned[0].isdigit():
+        cleaned = f"T_{cleaned}"
+    return cleaned or "Tool"
+
+
+def _args_schema_for_tool(tool_name: str, parameters: dict[str, Any]) -> type:
+    """Build a Pydantic args model from an MCP JSON Schema ``parameters`` object."""
+    properties = parameters.get("properties") if isinstance(parameters, dict) else None
+    if not isinstance(properties, dict) or not properties:
+        return create_model(
+            f"{_safe_model_name(tool_name)}Args",
+            arguments=(dict[str, Any], {}),
+        )
+
+    required = set(parameters.get("required") or [])
+    fields: dict[str, Any] = {}
+    for key, prop in properties.items():
+        json_type = prop.get("type") if isinstance(prop, dict) else None
+        annotation: Any = _JSON_TYPE_MAP.get(json_type, Any) if isinstance(json_type, str) else Any
+        if key in required:
+            fields[key] = (annotation, ...)
+        else:
+            fields[key] = (annotation | None, None)
+    return create_model(f"{_safe_model_name(tool_name)}Args", **fields)

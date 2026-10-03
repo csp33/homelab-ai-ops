@@ -123,6 +123,17 @@ def create_gateway_mcp_server(
             limit: Maximum number of tools to return (default: 25, max: 50).
         """
         tools = await service.search_tools(query=query, upstream=upstream, limit=limit)
+        if upstream and not tools:
+            categories = await service.discover_tools()
+            connected = sorted({str(t.upstream_type) for t in categories})
+            return [
+                {
+                    "error": (
+                        f"Unknown or empty upstream '{upstream}'. "
+                        f"Connected upstreams: {', '.join(connected) or '(none)'}."
+                    )
+                }
+            ]
         results = []
         for t in tools:
             desc = (t.description or "").strip()
@@ -133,6 +144,40 @@ def create_gateway_mcp_server(
                     "name": t.name,
                     "description": short_desc,
                     "upstream": str(t.upstream_type),
+                }
+            )
+        return results
+
+    @mcp.tool()
+    async def gateway_get_domain_tools(domain: str) -> list[dict[str, Any]]:
+        """Return every allowed tool for one upstream domain, including parameter schemas.
+
+        Used by LYOKO domain specialists to bind their scoped toolset. Prefer this over
+        paginated ``gateway_list_tools`` when a specialist must see the full domain catalog.
+
+        Args:
+            domain: Upstream name or alias (e.g. 'kubernetes', 'k8s', 'unifi', 'network').
+        """
+        tools = await service.get_domain_tools(domain)
+        if not tools:
+            categories = await service.discover_tools()
+            connected = sorted({str(t.upstream_type) for t in categories})
+            return [
+                {
+                    "error": (
+                        f"No tools for domain '{domain}'. "
+                        f"Connected upstreams: {', '.join(connected) or '(none)'}."
+                    )
+                }
+            ]
+        results = []
+        for t in tools:
+            results.append(
+                {
+                    "name": t.name,
+                    "description": t.description,
+                    "upstream": str(t.upstream_type),
+                    "parameters": t.parameters or {},
                 }
             )
         return results

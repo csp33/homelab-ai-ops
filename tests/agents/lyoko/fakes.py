@@ -35,6 +35,13 @@ class FakeMCPClient:
     def get_langchain_tools(self, authorizer: ToolAuthorizer | None = None) -> list[Any]:
         return [GateHandle(authorizer)]
 
+    async def get_domain_langchain_tools(
+        self,
+        domain: str,
+        authorizer: ToolAuthorizer | None = None,
+    ) -> list[Any]:
+        return [GateHandle(authorizer)]
+
 
 Behavior = Callable[[ToolAuthorizer], Awaitable[str]]
 
