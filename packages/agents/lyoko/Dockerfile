@@ -19,8 +19,11 @@ COPY packages/agents/lyoko/pyproject.toml packages/agents/lyoko/README.md packag
 # Install dependencies into virtual environment
 RUN uv sync --package lyoko --no-dev --no-install-workspace --frozen
 
-# Copy source code
+# Copy source code, migrations, and alembic configuration
+COPY packages/agents/lyoko/alembic.ini packages/agents/lyoko/alembic.ini
+COPY packages/agents/lyoko/migrations/ packages/agents/lyoko/migrations/
 COPY packages/agents/lyoko/src/ packages/agents/lyoko/src/
+RUN ln -sf /app/packages/agents/lyoko/alembic.ini /app/alembic.ini
 
 # Install package into venv
 RUN uv sync --package lyoko --no-dev --frozen
