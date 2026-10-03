@@ -9,44 +9,53 @@
 ## Architecture
 
 ```mermaid
-flowchart LR
-    subgraph IN["Clients"]
-        direction TB
-        C1[LYOKO agent]
-        C2[IDEs and MCP clients]
-    end
-
-    subgraph GW["homelab-mcp"]
+flowchart TD
+    %% Inbound Clients
+    subgraph Inbound ["Clients"]
         direction LR
-        T[Streamable HTTP /mcp and stdio] --> AUTH[Auth verifier]
-        AUTH --> CACHE[Response cache]
-        CACHE --> SVC[MCPGatewayService]
-        SVC --> GUARD[GuardrailEngine]
+        C1["🤖 LYOKO Domain Specialists"]
+        C2["💻 IDEs & External MCP Clients"]
     end
 
-    subgraph UP["Upstream MCP servers (subprocesses)"]
+    %% Gateway Core
+    subgraph GW ["homelab-mcp Gateway Core"]
         direction TB
-        K8S[kubernetes-mcp-server]
-        HA[ha-mcp]
-        UNIFI[unifi-mcp]
-        GRAF[Grafana]
-        GH[GitHub]
+        T["Transport: Streamable HTTP (/mcp) & stdio"]
+        AUTH["Auth Verifier (OIDC & Bearer)"]
+        SEARCH["Scoped Tool Search Engine<br/>(Relevance Scoring, Token Weighting & Aliases)"]
+        GUARD["Guardrail Engine (Namespace & Exec Safety)"]
+        
+        T --> AUTH --> SEARCH --> GUARD
+    end
+
+    %% Upstreams
+    subgraph UP ["Upstream MCP Servers"]
+        direction LR
+        K8S["☸️ Kubernetes MCP"]
+        HA["🏠 Home Assistant MCP"]
+        UNIFI["🌐 UniFi Network MCP"]
+        GRAF["📊 Grafana / Prometheus"]
+        GH["🐙 GitHub MCP"]
     end
 
     C1 --> T
     C2 --> T
-    GUARD -->|allowed calls| K8S & HA & UNIFI & GRAF & GH
+    GUARD -->|authorized tool calls| K8S & HA & UNIFI & GRAF & GH
 
-    classDef client fill:#64748b,stroke:#334155,color:#fff;
-    classDef gateway fill:#0f766e,stroke:#134e4a,color:#fff;
-    classDef upstream fill:#b45309,stroke:#78350f,color:#fff;
+    classDef client fill:#475569,stroke:#334155,color:#fff;
+    classDef gateway fill:#0f766e,stroke:#115e59,color:#fff;
+    classDef upstream fill:#b45309,stroke:#92400e,color:#fff;
 
     class C1,C2 client;
-    class T,AUTH,CACHE,SVC,GUARD gateway;
+    class T,AUTH,SEARCH,GUARD gateway;
     class K8S,HA,UNIFI,GRAF,GH upstream;
 ```
 
-The response cache applies to `list_tools` (300s TTL). Each upstream can be switched off with its `*_ENABLED` variable.
+`homelab-mcp` provides **Scoped Tool Search** with **Multi-Token Relevance Scoring**:
+- **Domain Scoping**: Clients can search within specific domains (e.g. `upstream="unifi"`, `upstream="kubernetes"`) with automatic category alias resolution (`network` ➔ `unifi`, `k8s` ➔ `kubernetes`, `iot` ➔ `homeassistant`, `metrics` ➔ `grafana`).
+- **Relevance Weighting**: Matches on tool `name` and `description` are scored with multi-token full-match bonuses, ensuring high-intent tools (e.g. `unifi_get_top_clients` for "top client traffic") reliably rank at position #1.
+- **Read vs Mutation Intent Bias**: Read-only tools (`get_*`, `list_*`, `top_*`) are prioritized unless explicit mutation keywords (`create`, `delete`, `restart`, `block`) are searched.
+
 
 ## Guardrails
 

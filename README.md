@@ -13,56 +13,78 @@ An AI operator for the whole homelab: Kubernetes, the network, the smart home, a
 
 ## Architecture
 
-Two packages, one trust boundary. Every tool call, whether it comes from the LYOKO agent or from an IDE, goes through the `homelab-mcp` gateway, where authentication and guardrails are enforced before anything reaches an upstream system.
+Two packages, one unified homelab operations platform. Every tool call, whether from an external IDE (Claude Desktop, Cursor) or from LYOKO's multi-agent supervisor, goes through the `homelab-mcp` gateway with relevance-scored scoped tool search, authentication, and safety guardrails.
 
 ```mermaid
-flowchart LR
-    AM([Alertmanager])
-    IDE([IDEs and MCP clients])
-    TG([Telegram operator])
-
-    subgraph LYOKO["LYOKO agent"]
-        direction TB
-        WH[Webhook controller]
-        CH[Chat handler]
-        LG["LangGraph: route, then chat or incident"]
-        WH --> LG
-        CH --> LG
+flowchart TD
+    %% External clients
+    subgraph Ingress ["Ingress & Triggers"]
+        direction LR
+        AM([Alertmanager])
+        TG([Telegram Operator])
+        IDE([Claude Desktop / IDEs])
     end
 
-    subgraph GW["homelab-mcp gateway"]
+    %% LYOKO Multi-Agent Engine
+    subgraph LYOKO ["LYOKO (Multi-Agent LangGraph Engine)"]
         direction TB
-        AUTH[Auth verifier]
-        GR[Guardrail engine]
-        MUX[Upstream router]
-        AUTH --> GR --> MUX
+        WH[Webhook Controller]
+        CH[Chat Handler]
+        SUP["Supervisor & Planner"]
+        
+        subgraph Specialists ["Domain Specialists"]
+            direction LR
+            K8S_S["☸️ K8s SRE"]
+            NET_S["🌐 Network Spec"]
+            HA_S["🏠 SmartHome Spec"]
+            OBS_S["📊 Metrics Spec"]
+        end
+
+        WH --> SUP
+        CH --> SUP
+        SUP --> K8S_S & NET_S & HA_S & OBS_S
     end
 
-    subgraph UP["Upstream MCP servers"]
+    %% homelab-mcp Tool Hub
+    subgraph GW ["homelab-mcp (Tool Hub & Safety Harness)"]
         direction TB
-        K8S[Kubernetes]
-        HA[Home Assistant]
-        UNIFI[UniFi]
-        GRAF[Grafana]
-        GH[GitHub]
+        AUTH[Auth Verifier]
+        SEARCH["Scoped Tool Search Engine<br/>(Relevance Scoring & Token Matching)"]
+        GUARD[Guardrail Engine]
+        AUTH --> SEARCH --> GUARD
     end
 
-    AM -->|webhook| WH
-    IDE -->|HTTP or stdio| AUTH
-    LG -->|MCP client| AUTH
-    TG <-->|messages and approvals| CH
-    LG <-->|approvals and reports| TG
-    MUX --> K8S & HA & UNIFI & GRAF & GH
+    %% Upstreams
+    subgraph UP ["Upstream Infrastructure"]
+        direction LR
+        U_K8S[(Kubernetes)]
+        U_HA[(Home Assistant)]
+        U_NET[(UniFi Network)]
+        U_GRAF[(Grafana / Prometheus)]
+        U_GH[(GitHub)]
+    end
 
-    classDef external fill:#64748b,stroke:#334155,color:#fff;
-    classDef agent fill:#7c3aed,stroke:#4c1d95,color:#fff;
-    classDef gateway fill:#0f766e,stroke:#134e4a,color:#fff;
-    classDef upstream fill:#b45309,stroke:#78350f,color:#fff;
+    %% Ingress Connections
+    AM -->|webhooks| WH
+    TG <-->|chat & approvals| CH
+    IDE -->|HTTP / stdio (0€ API cost)| AUTH
 
-    class AM,IDE,TG external;
-    class WH,CH,LG agent;
-    class AUTH,GR,MUX gateway;
-    class K8S,HA,UNIFI,GRAF,GH upstream;
+    %% LYOKO & MCP Connections
+    K8S_S & NET_S & HA_S & OBS_S -->|scoped tool calls| AUTH
+    GUARD --> U_K8S & U_HA & U_NET & U_GRAF & U_GH
+
+    %% Styling
+    classDef ingress fill:#475569,stroke:#334155,color:#fff;
+    classDef agent fill:#7c3aed,stroke:#5b21b6,color:#fff;
+    classDef spec fill:#9333ea,stroke:#6b21a8,color:#fff;
+    classDef gateway fill:#0f766e,stroke:#115e59,color:#fff;
+    classDef upstream fill:#b45309,stroke:#92400e,color:#fff;
+
+    class AM,TG,IDE ingress;
+    class WH,CH,SUP agent;
+    class K8S_S,NET_S,HA_S,OBS_S spec;
+    class AUTH,SEARCH,GUARD gateway;
+    class U_K8S,U_HA,U_NET,U_GRAF,U_GH upstream;
 ```
 
 ### Example: an OOMKilled pod
