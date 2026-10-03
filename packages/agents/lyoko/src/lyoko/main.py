@@ -233,15 +233,13 @@ async def lifespan(app: FastAPI):
         if pool:
             await pool.close()
         raise
-    chat_manager = getattr(app.state, "chat_manager", None)
-    if chat_manager is None:
-        chat_manager = build_chat_manager(
-            approval_manager,
-            memory_repo=memory_repo,
-            embeddings_service=embeddings_service,
-        )
-        app.state.chat_manager = chat_manager
-        wire_chat_agent(app, chat_manager)
+    chat_manager = build_chat_manager(
+        approval_manager,
+        memory_repo=memory_repo,
+        embeddings_service=embeddings_service,
+    )
+    app.state.chat_manager = chat_manager
+    wire_chat_agent(app, chat_manager)
 
     specialists = getattr(app.state, "specialists", None) or build_domain_specialists(
         mcp_client, llm
