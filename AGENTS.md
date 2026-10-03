@@ -115,6 +115,10 @@ Every package in `homelab-aiops` strictly adheres to **Clean Architecture** (Por
 
 Automated AST architectural tests (`tests/test_clean_architecture.py`) run in CI to permanently prevent layer leakage and enforce empty `__init__.py` files.
 
+### Prompt Engineering & System Prompt Standards
+- **Declarative, Concise & Modular**: System prompts (stored under `packages/agents/lyoko/src/lyoko/application/prompts/*.md`) must define high-level roles, operational constraints, safety policies, and output formatting cleanly.
+- **No Overfitted Examples or Ad-hoc Hacks**: Strictly avoid hardcoding hyper-specific micro-examples or capitalized shouting (`ALWAYS`) in system prompts. Dynamic runtime context, taught operator rules, and semantic memories must be injected via runtime context interpolation rather than polluting static system prompts.
+
 ---
 
 ## 3. Tooling & Quality Standards
