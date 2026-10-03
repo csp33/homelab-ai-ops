@@ -2,12 +2,13 @@
 
 The homelab runs a 3-node bare-metal Kubernetes cluster managed via GitOps with Argo CD.
 
-## Physical Nodes & Attached Hardware Roles
+## Physical Nodes & Attached Roles
 - **`tresberto`**:
-  - **Pinned Storage**: Hosts the local ZFS RAID-1 mirror storage pool.
-  - **Pinned Physical Hardware**: Sonoff Zigbee 3.0 USB Plus coordinator dongle attached locally via USB serial passthrough. Workloads requiring Zigbee (e.g. Zigbee2MQTT / Home Assistant) are node-pinned here.
-- **`humberto` & `dosberto`**:
-  - General compute and etcd quorum nodes running distributed stateless and Longhorn-backed workloads.
+  - **Pinned Storage**: Hosts the local ZFS RAID-1 mirror storage pool (Tier 3 storage).
+- **`dosberto`**:
+  - **Pinned Physical Hardware**: Hosts the USB Sonoff MG24 Zigbee coordinator (`/dev` hostPath) and local-path volume pinned for `zigbee2mqtt`.
+- **`humberto`**:
+  - Worker compute and etcd quorum node running distributed stateless and Longhorn-backed workloads.
 
 ## Network Subnets
 - **Homelab LAN**: `192.168.33.0/24` (Gateway: UniFi UDM Pro `192.168.33.1`).
