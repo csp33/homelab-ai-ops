@@ -9,6 +9,7 @@ from homelab_mcp.infrastructure.auth.google import GoogleAuthVerifier
 from homelab_mcp.infrastructure.mcp.server import create_gateway_mcp_server
 from homelab_mcp.infrastructure.telegram.client import TelegramClient
 from homelab_mcp.infrastructure.upstream.client import ProcessUpstreamClient
+from homelab_mcp.infrastructure.upstream.kubernetes import KubernetesUpstreamClient
 from homelab_mcp.infrastructure.upstream.unifi import UnifiUpstreamClient
 
 
@@ -86,7 +87,7 @@ def build_gateway_application() -> tuple[MCPGatewayService, any]:
         if settings.kubeconfig_path:
             k8s_env["KUBECONFIG"] = settings.kubeconfig_path
 
-        upstreams[UpstreamType.KUBERNETES] = ProcessUpstreamClient(
+        upstreams[UpstreamType.KUBERNETES] = KubernetesUpstreamClient(
             command=settings.k8s_command,
             env=k8s_env,
             upstream_type=UpstreamType.KUBERNETES,
