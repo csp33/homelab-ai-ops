@@ -22,14 +22,15 @@ The platform consists of two primary systems within a Python `uv` monorepo:
 2. **`LYOKO` (Autonomous Remediation Agent)**:
    - **L**ive **Y**aml **O**ptimization & **K**8s **O**rchestration.
    - Built with **LangGraph** (StateGraph / Finite State Machine) and **FastAPI**.
-   - Event-driven: awakened by Prometheus Alertmanager webhooks for any alert (Kubernetes, network, smart home, observability), and by Telegram messages from the operator. Nothing in the graph is specific to Kubernetes: the agent discovers tools at run time through the `homelab-mcp` gateway.
+   - Event-driven: awakened by Prometheus Alertmanager webhooks for any alert (Kubernetes, network, smart home, observability), and by Telegram messages from the operator.
    - One LangGraph graph, two branches. Every event enters at **Route**: alerts always take the incident branch, and for a Telegram message an LLM decides between the two (unclear or failed ⇒ chat).
-     - **Chat**: answers the operator and carries out their requests in one tool-using run.
-     - **Incident**, a sequence of four nodes where the first three are tool-using agent runs:
-       1. **Diagnose**: Investigates with read-only tools and returns a root cause, whether it is fixable with the available tools, and a plan.
-       2. **Remediate**: Executes the plan.
-       3. **Verify**: Re-checks with read-only tools after a stabilization delay.
+     - **Chat**: a **Supervisor** answers the operator and carries out requests by delegating to domain specialists (`ask_kubernetes_specialist`, `ask_unifi_specialist`, `ask_homeassistant_specialist`, `ask_grafana_specialist`).
+     - **Incident**, a sequence of four nodes. Diagnose, remediate, and verify are each a supervisor run that delegates to the same specialists:
+       1. **Diagnose**: Read-only investigation via specialists; returns a root cause, whether it is fixable with the available tools, and a plan.
+       2. **Remediate**: Executes the plan via specialists.
+       3. **Verify**: Re-checks via specialists after a stabilization delay.
        4. **Notify**: Builds a structured report from the tool calls the gate actually allowed. Alerts post it to Telegram. For a message, it is the reply.
+   - **Domain specialists** receive a scoped upstream toolset from `homelab-mcp` (`gateway_get_domain_tools`). Small domains bind every tool directly. Large domains keep discovery locked to that upstream. They do not search the whole gateway catalog.
    - Both branches share one `ToolGate` policy: read-only tools run, `AUTO_APPROVED_TOOLS` run unattended, and everything else waits for approval via Telegram inline buttons. Diagnose and Verify are strictly read-only. Without an approval channel, changes are refused.
    - One event is one Langfuse trace. Agent runs must receive the run config of the graph node that starts them (`parent_config`), so they nest as named child spans instead of starting traces of their own.
 
@@ -78,7 +79,7 @@ homelab-aiops/
 │                   │   ├── models/     # incident.py
 │                   │   ├── exceptions/ # base.py, incident.py
 │                   │   └── interfaces/ # mcp.py, llm.py
-│                   ├── application/    # StateGraph workflow
+│                   ├── application/    # StateGraph workflow, supervisor, specialists, prompts
 │                   ├── infrastructure/ # FastAPI webhook controller & MCP client
 │                   ├── config.py
 │                   └── main.py         # Composition root
@@ -98,7 +99,7 @@ Every package in `homelab-aiops` strictly adheres to **Clean Architecture** (Por
    - Domain layers must only depend on standard Python libraries or shared domain primitives.
 
 2. **`application/` (Use Cases & Workflow Orchestration)**:
-   - Contains use-case services (`MCPGatewayService`, `GuardrailEngine`, `ApprovalManager`, `ChatManager`, `InteractiveChatAgent`) and workflow definitions (`workflow.py`).
+   - Contains use-case services (`MCPGatewayService`, `GuardrailEngine`, `ApprovalManager`, `ChatManager`, `SupervisorAgent`, `DomainSpecialistAgent`) and workflow definitions (`workflow.py`).
    - Coordinates domain models and interacts with external capabilities **exclusively through domain interfaces / ports** (`LLMClientInterface`, `MCPClientInterface`, `ChatConnector`, `AuthVerifierInterface`).
    - **ZERO infrastructure imports allowed**: Strictly forbidden to import concrete infrastructure classes or vendor SDKs (e.g., `ChatOpenAI`, `OpenAILLMAdapter`, `FastMCPClient`, `TelegramConnector`, `AsyncConnectionPool`, `LangfuseTracer`). All external services must be injected into application constructors.
 
