@@ -42,7 +42,10 @@ flowchart TD
 
         WH --> SUP
         CH --> SUP
-        SUP --> K8S_S & NET_S & HA_S & OBS_S
+        SUP --> K8S_S
+        SUP --> NET_S
+        SUP --> HA_S
+        SUP --> OBS_S
     end
 
     %% homelab-mcp Tool Hub
@@ -65,13 +68,20 @@ flowchart TD
     end
 
     %% Ingress Connections
-    AM -->|webhooks| WH
-    TG <-->|chat & approvals| CH
-    IDE -->|HTTP / stdio (0€ API cost)| AUTH
+    AM -->|"webhooks"| WH
+    TG <-->|"chat & approvals"| CH
+    IDE -->|"HTTP / stdio (Direct MCP)"| AUTH
 
     %% LYOKO & MCP Connections
-    K8S_S & NET_S & HA_S & OBS_S -->|scoped tool calls| AUTH
-    GUARD --> U_K8S & U_HA & U_NET & U_GRAF & U_GH
+    K8S_S -->|"scoped tools"| AUTH
+    NET_S -->|"scoped tools"| AUTH
+    HA_S -->|"scoped tools"| AUTH
+    OBS_S -->|"scoped tools"| AUTH
+    GUARD --> U_K8S
+    GUARD --> U_HA
+    GUARD --> U_NET
+    GUARD --> U_GRAF
+    GUARD --> U_GH
 
     %% Styling
     classDef ingress fill:#475569,stroke:#334155,color:#fff;

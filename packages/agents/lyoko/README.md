@@ -41,25 +41,36 @@ flowchart TD
         OBS["📊 Metrics Specialist"]
     end
 
-    SUP --> K8S & NET & HA & OBS
+        SUP --> K8S
+        SUP --> NET
+        SUP --> HA
+        SUP --> OBS
+    end
 
     %% Incident Branch
     subgraph INC ["Autonomous Incident Branch"]
         direction LR
-        D --> R["2. remediate"] --> V["3. verify"] --> N["4. notify"]
+        D --> R["2. remediate"]
+        R --> V["3. verify"]
+        V --> N["4. notify"]
     end
 
     %% ToolGate & MCP Gateway
     GATE{"🛡️ ToolGate<br/>(Read-only vs HITL Approval)"}
     MCP["🚪 homelab-mcp Gateway"]
 
-    K8S & NET & HA & OBS --> GATE
-    D & R & V --> GATE
-    GATE -->|authorized calls| MCP
+    K8S --> GATE
+    NET --> GATE
+    HA --> GATE
+    OBS --> GATE
+    D --> GATE
+    R --> GATE
+    V --> GATE
+    GATE -->|"authorized calls"| MCP
 
     %% Operator HITL
-    GATE <-->|inline approval buttons| TG([📱 Telegram Operator])
-    N -->|incident report| TG
+    GATE <-->|"inline approvals"| TG([📱 Telegram Operator])
+    N -->|"incident report"| TG
 
     %% Styling
     classDef ingress fill:#475569,stroke:#334155,color:#fff;

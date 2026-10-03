@@ -40,7 +40,11 @@ flowchart TD
 
     C1 --> T
     C2 --> T
-    GUARD -->|authorized tool calls| K8S & HA & UNIFI & GRAF & GH
+    GUARD -->|"authorized calls"| K8S
+    GUARD -->|"authorized calls"| HA
+    GUARD -->|"authorized calls"| UNIFI
+    GUARD -->|"authorized calls"| GRAF
+    GUARD -->|"authorized calls"| GH
 
     classDef client fill:#475569,stroke:#334155,color:#fff;
     classDef gateway fill:#0f766e,stroke:#115e59,color:#fff;
