@@ -211,8 +211,13 @@ def create_gateway_mcp_server(
         """
         result = await service.execute_tool(tool_name, arguments)
         content = result.content
+        # Provide clear message on empty results so LLMs do not loop retrying empty queries
+        if (
+            content is None or content == "" or content == [] or content == {}
+        ) and not result.is_error:
+            content = "No resources found or empty result."
         # Truncate excessively large strings or collections to avoid blowing LLM context windows
-        if isinstance(content, str) and len(content) > 12000:
+        elif isinstance(content, str) and len(content) > 12000:
             content = (
                 content[:12000]
                 + f"\n... [Output truncated. Total characters: {len(result.content)}]"

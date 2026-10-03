@@ -185,6 +185,20 @@ async def test_gateway_fastmcp_tools_and_truncation(mock_auth):
     assert "Output truncated" in call_data["content"]
     assert len(call_data["content"]) < 13000
 
+    # 5. gateway_call_tool with empty output
+    mock_ha.call_tool = AsyncMock(
+        return_value=ToolResult(
+            status="success",
+            content="",
+        )
+    )
+    call_empty = await mcp.call_tool(
+        "gateway_call_tool", {"tool_name": "ha_get_climate", "arguments": {}}
+    )
+    assert not call_empty.is_error
+    empty_data = call_empty.structured_content.get("result", call_empty.structured_content)
+    assert empty_data["content"] == "No resources found or empty result."
+
 
 @pytest.mark.asyncio
 async def test_gateway_search_tools_ranking_and_aliases(mock_auth):

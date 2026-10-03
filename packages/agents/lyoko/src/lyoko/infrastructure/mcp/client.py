@@ -257,8 +257,16 @@ class FastMCPClient(MCPClientInterface):
                 if refusal:
                     raise ToolException(refusal)
             result = await self.call_tool(tool_name, arguments)
-            if isinstance(result, dict) and result.get("status") == "failed":
-                raise ToolException(str(result.get("error", "unknown MCP gateway error")))
+            if isinstance(result, dict):
+                if result.get("status") == "failed":
+                    raise ToolException(str(result.get("error", "unknown MCP gateway error")))
+                if result.get("status") == "success":
+                    content = result.get("content")
+                    if content is None or content == "" or content == [] or content == {}:
+                        result = dict(result)
+                        result["content"] = "No resources found or empty result."
+            elif result is None or result == "":
+                result = "No resources found or empty result."
             return str(result)
 
         return _run
@@ -443,20 +451,12 @@ class FastMCPClient(MCPClientInterface):
                 tool_name: Exact name of the tool to invoke.
                 arguments: Dictionary of parameters matching the tool schema.
             """
-
-            async def _run(call_arguments: dict[str, Any]) -> str:
-                if authorizer is not None:
-                    refusal = await authorizer(tool_name, call_arguments)
-                    if refusal:
-                        raise ToolException(refusal)
-                result = await self.call_tool(tool_name, call_arguments)
-                if isinstance(result, dict) and result.get("status") == "failed":
-                    raise ToolException(str(result.get("error", "unknown MCP gateway error")))
-                return str(result)
-
             # Every call goes through one generic tool, so name the nested run after the real
             # gateway tool. Traces then show ``mcp:pods_log`` instead of an anonymous call.
-            return await RunnableLambda(_run, name=f"mcp:{tool_name}").ainvoke(arguments)
+            return await RunnableLambda(
+                self._authorized_call(tool_name, authorizer),
+                name=f"mcp:{tool_name}",
+            ).ainvoke(arguments)
 
         categories_tool = StructuredTool.from_function(
             coroutine=_gateway_list_categories,

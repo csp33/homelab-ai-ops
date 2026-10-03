@@ -106,7 +106,7 @@ class AgentSettings(BaseSettings):
         ),
     )
     max_agent_steps: int = Field(
-        default=25,
+        default=15,
         ge=1,
         description="Maximum tool-use iterations of each incident investigation or remediation",
     )

@@ -1,5 +1,6 @@
 """OpenAI / LangChain LLM infrastructure adapter for LYOKO."""
 
+import json
 import logging
 from typing import Any
 
@@ -108,6 +109,9 @@ class OpenAILLMAdapter(LLMClientInterface):
                         messages.append(SystemMessage(content=system_prompt))
                     messages.append(HumanMessage(content=prompt_text))
 
+                    previous_tool_calls_sig: tuple[tuple[str, str], ...] | None = None
+                    consecutive_repeat_count = 0
+
                     for step in range(max_iterations):
                         if on_token is not None:
                             accumulated_response = None
@@ -134,6 +138,28 @@ class OpenAILLMAdapter(LLMClientInterface):
                         if not response.tool_calls:
                             return str(response.content)
 
+                        current_tool_calls_sig = tuple(
+                            (
+                                tc.get("name", ""),
+                                json.dumps(tc.get("args") or {}, sort_keys=True),
+                            )
+                            for tc in response.tool_calls
+                        )
+
+                        if current_tool_calls_sig == previous_tool_calls_sig:
+                            consecutive_repeat_count += 1
+                        else:
+                            consecutive_repeat_count = 0
+                        previous_tool_calls_sig = current_tool_calls_sig
+
+                        if consecutive_repeat_count >= 2:
+                            logger.warning(
+                                "ReAct agent repeated identical tool calls %d times consecutively. "
+                                "Breaking loop to prevent runaway token cost.",
+                                consecutive_repeat_count + 1,
+                            )
+                            break
+
                         for tool_call in response.tool_calls:
                             tool_name = tool_call["name"]
                             tool_args = tool_call["args"]
@@ -156,16 +182,24 @@ class OpenAILLMAdapter(LLMClientInterface):
                                 except Exception as exc:
                                     tool_output = f"Error executing tool '{tool_name}': {exc}"
 
+                            output_str = str(tool_output)
+                            if consecutive_repeat_count == 1:
+                                output_str += (
+                                    "\n\n[System Note: This tool was called with the exact same "
+                                    "arguments in the previous step. If no resources were returned, "
+                                    "conclude that they do not exist instead of repeating identical queries.]"
+                                )
+
                             messages.append(
                                 ToolMessage(
-                                    content=str(tool_output),
+                                    content=output_str,
                                     tool_call_id=tool_call["id"],
                                     name=tool_name,
                                 )
                             )
 
                     logger.warning(
-                        "ReAct agent reached maximum allowed steps (%d). Requesting final summary.",
+                        "ReAct agent reached maximum allowed steps (%d) or stopped loop. Requesting final summary.",
                         max_iterations,
                     )
                     messages.append(
