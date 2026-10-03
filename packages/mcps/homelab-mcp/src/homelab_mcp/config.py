@@ -80,6 +80,12 @@ class GatewaySettings(BaseSettings):
     kubeconfig_path: str | None = Field(
         default=None, description="Path to kubeconfig file if not default"
     )
+    argocd_enabled: bool = Field(
+        default=True, description="Enable Argo CD Application CRD management upstream"
+    )
+    argocd_namespace: str = Field(
+        default="argocd", description="Default namespace where Argo CD Application CRDs reside"
+    )
 
     # Upstream: Grafana MCP (github.com/grafana/mcp-grafana)
     grafana_enabled: bool = Field(default=True, description="Enable Grafana MCP upstream")

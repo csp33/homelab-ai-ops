@@ -15,6 +15,7 @@ from lyoko.application.chat_sessions import ChatSessionTracker
 from lyoko.application.hitl import ApprovalManager
 from lyoko.application.specialists.agent import DomainSpecialistAgent
 from lyoko.application.specialists.prompts import (
+    GITHUB_SPECIALIST_PROMPT,
     K8S_SPECIALIST_PROMPT,
     NETWORK_SPECIALIST_PROMPT,
     OBSERVABILITY_SPECIALIST_PROMPT,
@@ -85,6 +86,13 @@ def build_domain_specialists(
             name="observability_specialist",
             domain="grafana",
             system_prompt=OBSERVABILITY_SPECIALIST_PROMPT,
+            llm=llm,
+            mcp_client=mcp_client,
+        ),
+        "github": DomainSpecialistAgent(
+            name="github_specialist",
+            domain="github",
+            system_prompt=GITHUB_SPECIALIST_PROMPT,
             llm=llm,
             mcp_client=mcp_client,
         ),

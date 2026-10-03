@@ -8,6 +8,7 @@ from homelab_mcp.domain.models.upstream import UpstreamType
 from homelab_mcp.infrastructure.auth.google import GoogleAuthVerifier
 from homelab_mcp.infrastructure.mcp.server import create_gateway_mcp_server
 from homelab_mcp.infrastructure.telegram.client import TelegramClient
+from homelab_mcp.infrastructure.upstream.argocd import ArgoCDUpstreamClient
 from homelab_mcp.infrastructure.upstream.client import ProcessUpstreamClient
 from homelab_mcp.infrastructure.upstream.unifi import UnifiUpstreamClient
 
@@ -70,6 +71,13 @@ def build_gateway_application() -> tuple[MCPGatewayService, any]:
             env=k8s_env,
             upstream_type=UpstreamType.KUBERNETES,
             prefix="k8s_",
+        )
+
+    # 4. Argo CD Custom Resource Management
+    if settings.k8s_enabled and settings.argocd_enabled:
+        upstreams["argocd"] = ArgoCDUpstreamClient(
+            kubeconfig_path=settings.kubeconfig_path,
+            default_namespace=settings.argocd_namespace,
         )
 
     # 4. Grafana MCP (github.com/grafana/mcp-grafana)

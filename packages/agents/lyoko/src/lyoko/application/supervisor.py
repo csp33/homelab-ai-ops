@@ -27,6 +27,9 @@ _DOMAIN_DESCRIPTIONS = {
     "grafana": (
         "Observability: Grafana dashboards, Prometheus metrics, alert history, and datasources."
     ),
+    "github": (
+        "GitHub & GitOps: inspect repository manifests, Helm values, create fix branches, and open Pull Requests."
+    ),
 }
 
 

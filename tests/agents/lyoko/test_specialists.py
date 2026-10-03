@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from lyoko.application.specialists.agent import DomainSpecialistAgent
 from lyoko.application.specialists.prompts import (
+    GITHUB_SPECIALIST_PROMPT,
     K8S_SPECIALIST_PROMPT,
     NETWORK_SPECIALIST_PROMPT,
     OBSERVABILITY_SPECIALIST_PROMPT,
@@ -19,6 +20,7 @@ async def test_domain_specialist_initialization_and_prompts():
     assert "Kubernetes" in K8S_SPECIALIST_PROMPT
     assert "UniFi" in NETWORK_SPECIALIST_PROMPT
     assert "Home Assistant" in SMARTHOME_SPECIALIST_PROMPT
+    assert "GitHub" in GITHUB_SPECIALIST_PROMPT
     assert (
         "Grafana" in OBSERVABILITY_SPECIALIST_PROMPT
         or "Prometheus" in OBSERVABILITY_SPECIALIST_PROMPT

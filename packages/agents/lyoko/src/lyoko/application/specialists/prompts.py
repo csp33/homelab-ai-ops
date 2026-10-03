@@ -13,3 +13,6 @@ SMARTHOME_SPECIALIST_PROMPT = (
 OBSERVABILITY_SPECIALIST_PROMPT = (
     f"{load_prompt('specialists/observability.md')}\n\n{build_agent_context('observability')}"
 )
+GITHUB_SPECIALIST_PROMPT = (
+    f"{load_prompt('specialists/github.md')}\n\n{build_agent_context('storage_and_gitops')}"
+)
