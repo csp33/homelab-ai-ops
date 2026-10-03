@@ -7,11 +7,7 @@
 ## Defense in Depth Architecture
 
 <p align="center">
-  <a href="../docs/diagrams/guardrail-pipeline.html">
-    <img src="../docs/assets/guardrail-pipeline.png" alt="Homelab MCP Guardrail Pipeline" width="100%" />
-  </a>
-  <br>
-  <em>Click diagram to launch interactive viewer with tracing, filters, and theme switching.</em>
+  <img src="assets/guardrail-pipeline.png" alt="Homelab MCP Guardrail Pipeline" width="100%" />
 </p>
 
 ---

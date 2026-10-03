@@ -42,11 +42,7 @@ When incidents occur, the system diagnoses root causes using read-only specialis
 ## Architecture
 
 <p align="center">
-  <a href="docs/diagrams/system-architecture.html">
-    <img src="docs/assets/system-architecture.png" alt="Homelab AIOps Platform Architecture" width="100%" />
-  </a>
-  <br>
-  <em>Click diagram to launch interactive viewer with tracing, filters, and theme switching.</em>
+  <img src="docs/assets/system-architecture.png" alt="Homelab AIOps Platform Architecture" width="100%" />
 </p>
 
 ---

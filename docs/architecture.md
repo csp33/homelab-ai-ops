@@ -12,11 +12,7 @@ This document describes the end-to-end architecture, multi-agent orchestration, 
 2. **`homelab-mcp` (Tool Gateway & Safety Harness)**: Built on **FastMCP**, aggregating upstream domain APIs (Kubernetes, UniFi, Home Assistant, Grafana, GitHub) behind strict guardrails and authentication.
 
 <p align="center">
-  <a href="../docs/diagrams/system-architecture.html">
-    <img src="../docs/assets/system-architecture.png" alt="Homelab AIOps Platform Architecture" width="100%" />
-  </a>
-  <br>
-  <em>Click diagram to launch interactive viewer with tracing, filters, and theme switching.</em>
+  <img src="assets/system-architecture.png" alt="Homelab AIOps Platform Architecture" width="100%" />
 </p>
 
 ---
@@ -46,11 +42,7 @@ Every incident progresses through an autonomous 4-stage StateGraph:
 ### Incident Remediation & Episodic Memory Sequence
 
 <p align="center">
-  <a href="../docs/diagrams/incident-remediation-sequence.html">
-    <img src="../docs/assets/incident-remediation-sequence.png" alt="Autonomous Incident Remediation & Episodic Memory Sequence" width="100%" />
-  </a>
-  <br>
-  <em>Click diagram to launch interactive sequence timeline viewer.</em>
+  <img src="assets/incident-remediation-sequence.png" alt="Autonomous Incident Remediation & Episodic Memory Sequence" width="100%" />
 </p>
 
 ---
