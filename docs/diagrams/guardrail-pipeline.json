@@ -1,0 +1,244 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "homelab-mcp Guardrail Engine Pipeline",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "full-pipeline",
+        "label": "Full Guardrail Pipeline",
+        "focus": [
+          "tool_req",
+          "allowlist_chk",
+          "namespace_chk",
+          "repo_chk",
+          "exec_chk",
+          "dispatch_ok",
+          "reject_blocked"
+        ],
+        "note": "Evaluates incoming requests sequentially; the first failing rule immediately rejects the call."
+      },
+      {
+        "id": "allowed-path",
+        "label": "Authorized Execution Path",
+        "focus": [
+          "tool_req",
+          "allowlist_chk",
+          "namespace_chk",
+          "repo_chk",
+          "exec_chk",
+          "dispatch_ok"
+        ],
+        "note": "Requests passing all 4 safety stages are safely dispatched to upstream providers."
+      },
+      {
+        "id": "rejection-points",
+        "label": "Safety Interception",
+        "focus": [
+          "namespace_chk",
+          "exec_chk",
+          "reject_blocked"
+        ],
+        "note": "Dangerous mutations or namespace violations raise explicit GuardrailViolation errors."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "pipeline_lane",
+      "label": "GuardrailEngine: checked in order, first failure rejects"
+    },
+    {
+      "id": "outcome_lane",
+      "label": "Fail-closed outcome",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "phase_in",
+      "label": "Request",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "phase_checks",
+      "label": "Safety checks",
+      "fromCol": 2,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "phase_out",
+      "label": "Outcome",
+      "fromCol": 5,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "checks_group",
+      "label": "Zero-trust checks",
+      "lane": "pipeline_lane",
+      "fromCol": 1,
+      "toCol": 4,
+      "variant": "security"
+    }
+  ],
+  "mainPath": [
+    "tool_req",
+    "allowlist_chk",
+    "namespace_chk",
+    "repo_chk",
+    "exec_chk",
+    "dispatch_ok"
+  ],
+  "nodes": [
+    {
+      "id": "tool_req",
+      "lane": "pipeline_lane",
+      "col": 0,
+      "type": "backend",
+      "label": "Tool Request",
+      "sublabel": "Tool name & arguments",
+      "width": 155
+    },
+    {
+      "id": "allowlist_chk",
+      "lane": "pipeline_lane",
+      "col": 1,
+      "type": "security",
+      "label": "1. Tool Allowlist",
+      "sublabel": "Allowed pattern check",
+      "width": 155
+    },
+    {
+      "id": "namespace_chk",
+      "lane": "pipeline_lane",
+      "col": 2,
+      "type": "security",
+      "label": "2. Namespaces",
+      "sublabel": "kube-system read-only",
+      "width": 155
+    },
+    {
+      "id": "repo_chk",
+      "lane": "pipeline_lane",
+      "col": 3,
+      "type": "security",
+      "label": "3. GitHub Repos",
+      "sublabel": "Target repo allowlist",
+      "width": 155
+    },
+    {
+      "id": "exec_chk",
+      "lane": "pipeline_lane",
+      "col": 4,
+      "type": "security",
+      "label": "4. Command Exec",
+      "sublabel": "shlex & dangerous regex",
+      "width": 155
+    },
+    {
+      "id": "dispatch_ok",
+      "lane": "pipeline_lane",
+      "col": 5,
+      "type": "cloud",
+      "label": "Dispatch Upstream",
+      "sublabel": "Execute on upstream MCP",
+      "width": 155
+    },
+    {
+      "id": "reject_blocked",
+      "lane": "outcome_lane",
+      "col": 3,
+      "type": "security",
+      "label": "Rejected Call",
+      "sublabel": "GuardrailViolation raised",
+      "width": 155
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_in_allow",
+      "from": "tool_req",
+      "to": "allowlist_chk",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_allow_ns",
+      "from": "allowlist_chk",
+      "to": "namespace_chk",
+      "label": "passed",
+      "variant": "default"
+    },
+    {
+      "id": "e_ns_repo",
+      "from": "namespace_chk",
+      "to": "repo_chk",
+      "label": "passed",
+      "variant": "default"
+    },
+    {
+      "id": "e_repo_exec",
+      "from": "repo_chk",
+      "to": "exec_chk",
+      "label": "passed",
+      "variant": "default"
+    },
+    {
+      "id": "e_exec_ok",
+      "from": "exec_chk",
+      "to": "dispatch_ok",
+      "label": "authorized",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e_ns_fail",
+      "from": "namespace_chk",
+      "to": "reject_blocked",
+      "label": "mutation blocked",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "e_exec_fail",
+      "from": "exec_chk",
+      "to": "reject_blocked",
+      "label": "dangerous pattern",
+      "variant": "security",
+      "role": "error"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Fail-Closed Pipeline",
+      "items": [
+        "Evaluates security rules sequentially before calling any upstream",
+        "The first failing check immediately rejects the request with an explicit error",
+        "Prevents unauthenticated or dangerous payloads from executing"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Protected Namespaces",
+      "items": [
+        "Critical namespaces like kube-system are read-only by default",
+        "Mutating operations (scale, delete, restart) are permanently blocked",
+        "Target namespace extracted from args, manifests, and cluster context"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Command Exec Inspection",
+      "items": [
+        "Analyzes container exec and shell payloads using POSIX shlex parsing",
+        "Blocks destructive commands (rm -rf, dd, mkfs, fork bombs)",
+        "GitHub operations restricted to authorized repository allowlists"
+      ]
+    }
+  ]
+}

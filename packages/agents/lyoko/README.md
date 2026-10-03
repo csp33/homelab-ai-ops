@@ -21,72 +21,13 @@ Every event enters the graph at `route` and takes one of two branches:
 - **Incident Remediation**: Autonomous 4-stage SRE workflow (`diagnose` ➔ `remediate` ➔ `verify` ➔ `notify`). Each of the first three stages is a supervisor run that delegates to the same domain specialists.
 
 
-```mermaid
-flowchart TD
-    %% Ingress
-    AM([Alertmanager Webhook]) -->|alert| RT
-    MSG([Telegram Message]) -->|message| RT
-    RT{route}
-
-    %% Branches
-    RT -->|question or instruction| SUP["🧭 Supervisor & Coordinator"]
-    RT -->|alert or reported incident| D["1. diagnose"]
-
-    %% Domain Specialists shared by both branches
-    subgraph Specialists ["Domain Specialists"]
-        direction LR
-        K8S["☸️ K8s Specialist"]
-        NET["🌐 Network Specialist"]
-        HA["🏠 SmartHome Specialist"]
-        OBS["📊 Metrics Specialist"]
-    end
-
-    SUP --> K8S
-    SUP --> NET
-    SUP --> HA
-    SUP --> OBS
-
-    %% Incident Branch
-    subgraph INC ["Autonomous Incident Branch"]
-        direction LR
-        D --> R["2. remediate"]
-        R --> V["3. verify"]
-        V --> N["4. notify"]
-    end
-
-    D -.->|"supervisor delegates"| Specialists
-    R -.->|"supervisor delegates"| Specialists
-    V -.->|"supervisor delegates"| Specialists
-
-    %% ToolGate & MCP Gateway
-    GATE{"🛡️ ToolGate<br/>(Read-only vs HITL Approval)"}
-    MCP["🚪 homelab-mcp Gateway"]
-
-    K8S --> GATE
-    NET --> GATE
-    HA --> GATE
-    OBS --> GATE
-    GATE -->|"authorized calls"| MCP
-
-    %% Operator HITL
-    GATE <-->|"inline approvals"| TG([📱 Telegram Operator])
-    N -->|"incident report"| TG
-
-    %% Styling
-    classDef ingress fill:#475569,stroke:#334155,color:#fff;
-    classDef router fill:#b45309,stroke:#92400e,color:#fff;
-    classDef supervisor fill:#7c3aed,stroke:#5b21b6,color:#fff;
-    classDef specialist fill:#9333ea,stroke:#6b21a8,color:#fff;
-    classDef incident fill:#0369a1,stroke:#075985,color:#fff;
-    classDef gate fill:#0f766e,stroke:#115e59,color:#fff;
-
-    class AM,MSG,TG ingress;
-    class RT router;
-    class SUP supervisor;
-    class K8S,NET,HA,OBS specialist;
-    class D,R,V,N incident;
-    class GATE,MCP gate;
-```
+<p align="center">
+  <a href="../../../docs/diagrams/lyoko-workflow.html">
+    <img src="../../../docs/assets/lyoko-workflow.png" alt="LYOKO LangGraph StateGraph Architecture" width="100%" />
+  </a>
+  <br>
+  <em>Click diagram to launch interactive StateGraph workflow viewer.</em>
+</p>
 
 | Node / Component | What it does |
 | :--- | :--- |
@@ -149,24 +90,31 @@ Configure LYOKO using environment variables (in `.env` or Kubernetes ConfigMap/S
 | `ENVIRONMENT` | `local` | Operational environment tag (`local`, `homelab`, `production`). |
 | `LYOKO_HOST` | `0.0.0.0` | Webhook receiver bind host. |
 | `LYOKO_PORT` | `9000` | Webhook receiver bind port. |
-| `OPENAI_API_KEY` | `""` | OpenAI API key for LLM diagnosis and chat. |
+| `OPENAI_API_KEY` | `""` | OpenAI API key for LLM diagnosis, chat, and embeddings. |
 | `OPENAI_MODEL` | `gpt-4o-mini` | LLM model used for chat and remediation reasoning. |
 | `MCP_SERVER_URL` | `http://localhost:8000/mcp` | URL of the `homelab-mcp` gateway endpoint. |
 | `SERVICE_TOKEN` | `""` | Bearer token for authenticating against `homelab-mcp`. Required when the gateway runs with `AUTH_ENABLED=true`. |
-| `MCP_FAIL_FAST` | `true` | Abort startup if the gateway rejects the credentials (401/403) or the URL is not an MCP endpoint (404). An unreachable gateway only logs an error. |
-| `READ_ONLY_TOOLS` | inspection patterns (`get_*`, `*_list`, `*_log`, ...) | Glob patterns of tools the incident agent may call freely. Comma-separated or JSON list. Replaces the defaults when set. |
-| `AUTO_APPROVED_TOOLS` | `[]` | Glob patterns of state-changing tools that run during remediation without approval (e.g. `k8s_resources_scale`). Every other change requires approval. |
-| `MAX_AGENT_STEPS` | `25` | Maximum tool-use iterations of each investigation, remediation, or verification run. |
+| `MCP_FAIL_FAST` | `true` | Abort startup if the gateway rejects credentials (401/403) or the URL is not an MCP endpoint (404). |
+| `READ_ONLY_TOOLS` | inspection patterns (`get_*`, `*_list`, `*_log`, ...) | Glob patterns of tools the incident agent may call freely. Comma-separated or JSON list. |
+| `AUTO_APPROVED_TOOLS` | `[]` | Glob patterns of state-changing tools that run during remediation without approval (e.g. `k8s_resources_scale`). |
+| `MAX_AGENT_STEPS` | `25` | Maximum tool-use iterations of each specialist run. |
+| `MAX_SUPERVISOR_STEPS` | `5` | Maximum supervisor delegation iterations per phase. |
 | `TELEGRAM_ENABLED` | `false` | Enable Telegram assistant, channel posting, and HITL approvals. |
 | `TELEGRAM_BOT_TOKEN` | `""` | Telegram Bot Token from `@BotFather`. |
 | `TELEGRAM_ALLOWED_USER_IDS` | `[]` | List of authorized Telegram user IDs. |
 | `TELEGRAM_ALLOWED_CHAT_IDS` | `[]` | List of authorized Telegram channel/group IDs. |
 | `TELEGRAM_DEFAULT_CHAT_ID` | `""` | Default chat ID for broadcast notifications and alerts. |
-| `LANGFUSE_ENABLED` | `false` | Enable Langfuse tracing and observability. |
+| `LANGFUSE_ENABLED` | `true` | Enable Langfuse tracing and observability. |
 | `LANGFUSE_PUBLIC_KEY` | `""` | Langfuse Project Public API Key. |
 | `LANGFUSE_SECRET_KEY` | `""` | Langfuse Project Secret API Key. |
 | `LANGFUSE_HOST` | `https://cloud.langfuse.com` | Langfuse instance host URL. |
-| `POSTGRES_CHECKPOINTER_URL` | `""` | PostgreSQL connection string for LangGraph persistent state checkpointing. |
+| `CHAT_SESSION_IDLE_TIMEOUT_SECONDS` | `900` | Idle seconds before chat session resets to a new trace context. |
+| `POSTGRES_HOST` | `postgresql-rw...` | PostgreSQL hostname for persistent state and episodic vector memory (`pgvector`). |
+| `POSTGRES_PORT` | `5432` | PostgreSQL database port. |
+| `POSTGRES_DB` | `lyoko` | PostgreSQL database name. |
+| `POSTGRES_USER` | `lyoko` | PostgreSQL database username. |
+| `POSTGRES_PASSWORD` | `""` | PostgreSQL database password. |
+| `POSTGRES_URI` | `""` | Optional full PostgreSQL connection URI override. |
 
 ## Alertmanager integration
 
