@@ -1,0 +1,4 @@
+# GitHub Linguist overrides
+# Exclude agent skills, tool assets, and templates from repository language stats
+.agents/** linguist-vendored
+.agents/** linguist-detectable=false
