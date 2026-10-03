@@ -147,6 +147,12 @@ class AgentSettings(BaseSettings):
         ge=1,
         description="Maximum concurrent LangGraph incident investigation workflows allowed",
     )
+    memory_similarity_threshold: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=1.0,
+        description="Minimum cosine similarity required to inject memories into agent context",
+    )
 
     # General Environment
     environment: str = Field(

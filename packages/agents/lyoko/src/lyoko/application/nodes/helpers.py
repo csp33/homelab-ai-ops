@@ -77,6 +77,7 @@ def make_gate(
     mode: GateMode,
     approval_manager: ApprovalManager | None = None,
     chat_manager: ChatManager | None = None,
+    plan: str = "",
 ) -> ToolGate:
     alert_name = state.get("alert_name") or "event"
     event_id = state.get("event_id") or f"incident-{alert_name}"
@@ -88,6 +89,7 @@ def make_gate(
         origin=origin(state),
         session_id=state.get("session_id"),
         chat_id=state.get("chat_id") or settings.telegram_default_chat_id or "",
+        plan=plan,
         approval_manager=approval_manager,
         chat_manager=chat_manager,
     )

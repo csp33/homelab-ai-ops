@@ -75,6 +75,8 @@ async def test_approval_request_shows_the_exact_tool_and_arguments():
     await workflow.ainvoke(_state())
 
     (request,) = operator.requests
+    assert "Action: Scale radarr to 2 replicas in namespace 'media'." in request.details
+    assert "Plan: 1. Call resources_scale for deployment radarr." in request.details
     assert "resources_scale" in request.details
     assert '"replicas": 2' in request.details
     assert "KubePodCrashLooping" in request.details

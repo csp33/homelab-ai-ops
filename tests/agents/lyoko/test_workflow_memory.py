@@ -65,6 +65,7 @@ async def test_workflow_diagnose_injects_operator_memory():
 
         # Verify memory search was called with correct context
         assert mock_memory_repo.search_memories.called
+        assert mock_memory_repo.search_memories.call_args.kwargs["min_similarity"] == 0.2
         assert mock_embeddings.embed_text.called
 
         # Verify the diagnose prompt received by LLM includes the operator rule

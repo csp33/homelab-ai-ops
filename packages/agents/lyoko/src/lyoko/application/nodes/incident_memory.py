@@ -3,6 +3,8 @@
 import logging
 from typing import Any
 
+from lyoko.config import settings
+
 logger = logging.getLogger("lyoko.workflow.incident.memory")
 
 
@@ -33,6 +35,7 @@ async def retrieve_incident_lessons(
             namespace=namespace,
             service_name=service_name,
             limit=3,
+            min_similarity=settings.memory_similarity_threshold,
         )
 
         if memories:

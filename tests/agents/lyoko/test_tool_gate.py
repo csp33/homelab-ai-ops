@@ -106,6 +106,47 @@ async def test_approval_mode_without_a_channel_refuses():
     assert not gate.records[0].executed
 
 
+@pytest.mark.asyncio
+async def test_approval_mode_includes_action_summary_and_plan():
+    from unittest.mock import AsyncMock
+
+    from lyoko.application.hitl import ApprovalManager
+    from lyoko.domain.models.chat import ApprovalResponse
+
+    approval_manager = ApprovalManager()
+    chat_manager = AsyncMock()
+    broadcast_mock = AsyncMock()
+    chat_manager.broadcast_approval_request = broadcast_mock
+
+    gate = _gate(
+        GateMode.APPROVAL,
+        approval_manager=approval_manager,
+        chat_manager=chat_manager,
+        plan="Scale deployment radarr to 2 replicas",
+    )
+
+    # Trigger authorization as a background task since wait_for_approval waits
+    import asyncio
+
+    task = asyncio.create_task(
+        gate.authorize("resources_scale", {"name": "radarr", "namespace": "media", "replicas": 2})
+    )
+
+    await asyncio.sleep(0.01)
+    assert broadcast_mock.called
+    req = broadcast_mock.call_args[0][0]
+    assert "Action: Scale radarr to 2 replicas in namespace 'media'." in req.details
+    assert "Plan: Scale deployment radarr to 2 replicas" in req.details
+    assert "Tool: `resources_scale`" in req.details
+
+    # Resolve approval
+    approval_manager.resolve_approval(
+        ApprovalResponse(incident_id=req.incident_id, approved=True, user_id="123")
+    )
+    res = await task
+    assert res is None
+
+
 def test_matching_is_case_sensitive_so_lookalikes_do_not_slip_through():
     assert not matches_any("PODS_GET", ["pods_get"])
 
