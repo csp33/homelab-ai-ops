@@ -243,3 +243,7 @@ credentials.json
 auth.json
 *.id_rsa
 *.id_ed25519
+
+# Graphify Knowledge Graph artifacts
+graphify-out/
+.graphify*

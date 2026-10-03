@@ -29,6 +29,7 @@ dev = [
     "pytest-asyncio>=1.4.0,<2.0.0",
     "ruff>=0.16.0,<1.0.0",
     "httpx>=0.28.0,<1.0.0",
+    "graphifyy>=0.9.74,<1.0.0",
 ]
 
 [tool.ruff]
