@@ -34,7 +34,28 @@ from lyoko.infrastructure.mcp.client import FastMCPClient
 from lyoko.infrastructure.observability.langfuse import LangfuseTracer
 from lyoko.infrastructure.web.controller import create_feedback_router, create_webhook_router
 
+
+class HealthEndpointFilter(logging.Filter):
+    """Filter out HTTP access log records for health check endpoints (/health, /healthz)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.args and len(record.args) >= 3:
+            path = record.args[2]
+            if isinstance(path, str):
+                clean_path = path.split("?")[0].rstrip("/")
+                if clean_path in ("/health", "/healthz"):
+                    return False
+        msg = record.getMessage()
+        return not (
+            "GET /health" in msg
+            or "GET /healthz" in msg
+            or "HEAD /health" in msg
+            or "HEAD /healthz" in msg
+        )
+
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logging.getLogger("uvicorn.access").addFilter(HealthEndpointFilter())
 logger = logging.getLogger("lyoko")
 
 
@@ -178,6 +199,7 @@ async def verify_mcp_gateway(mcp_client: MCPClientInterface) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logging.getLogger("uvicorn.access").addFilter(HealthEndpointFilter())
     logger.info("Initializing LYOKO Auto-Remediation Agent...")
     db_uri = settings.get_postgres_uri()
     pool = None
@@ -319,6 +341,7 @@ def create_app() -> FastAPI:
     app.include_router(feedback_router)
 
     @app.get("/healthz")
+    @app.get("/health")
     async def health_check():
         has_db = getattr(app.state, "checkpointer", None) is not None
         has_memory = getattr(app.state, "memory_repository", None) is not None
@@ -336,6 +359,7 @@ app = create_app()
 
 
 def main():
+    logging.getLogger("uvicorn.access").addFilter(HealthEndpointFilter())
     logger.info(f"Starting LYOKO agent on {settings.lyoko_host}:{settings.lyoko_port}")
     uvicorn.run(app, host=settings.lyoko_host, port=settings.lyoko_port)
 

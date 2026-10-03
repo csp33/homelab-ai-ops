@@ -11,7 +11,28 @@ from homelab_mcp.infrastructure.telegram.client import TelegramClient
 from homelab_mcp.infrastructure.upstream.client import ProcessUpstreamClient
 from homelab_mcp.infrastructure.upstream.unifi import UnifiUpstreamClient
 
+
+class HealthEndpointFilter(logging.Filter):
+    """Filter out HTTP access log records for health check endpoints (/health, /healthz)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.args and len(record.args) >= 3:
+            path = record.args[2]
+            if isinstance(path, str):
+                clean_path = path.split("?")[0].rstrip("/")
+                if clean_path in ("/health", "/healthz"):
+                    return False
+        msg = record.getMessage()
+        return not (
+            "GET /health" in msg
+            or "GET /healthz" in msg
+            or "HEAD /health" in msg
+            or "HEAD /healthz" in msg
+        )
+
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logging.getLogger("uvicorn.access").addFilter(HealthEndpointFilter())
 logger = logging.getLogger("homelab_mcp")
 
 
@@ -119,6 +140,7 @@ service, mcp = build_gateway_application()
 
 
 def main():
+    logging.getLogger("uvicorn.access").addFilter(HealthEndpointFilter())
     logger.info(
         f"Starting homelab-mcp Gateway (transport: {settings.mcp_transport}, "
         f"host: {settings.mcp_host}:{settings.mcp_port})"
