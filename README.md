@@ -2,7 +2,12 @@
 
 # Homelab AIOps
 
-**Autonomous SRE and multi-agent operations platform for Kubernetes and smart infrastructure.**
+### Autonomous SRE & Self-Healing Platform for Homelabs
+
+<img src="assets/code-lyoko-logo.png" alt="Code Lyoko Logo" width="360" />
+
+<p><em>"Virtualization, Materialization, Self-Healing."</em><br/>
+<em>A tribute to our favorite childhood series — bringing quantum supercomputer automation to homelab infrastructure.</em></p>
 
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
@@ -27,6 +32,13 @@
 **Homelab AIOps** pairs an event-driven SRE multi-agent engine (**LYOKO**) with a unified, guardrail-protected tool gateway (**`homelab-mcp`**). 
 
 When incidents occur, the system diagnoses root causes using read-only specialists, retrieves prior lessons from persistent vector memory (**PostgreSQL + pgvector**), and requests human approval (HITL) via **Telegram** before applying any state modification.
+
+> [!NOTE]
+> **🎮 Why LYOKO?**
+>
+> A tribute to my favorite childhood show, *Code Lyoko*. Just like the team fighting off X.A.N.A.'s virtual attacks and deactivating towers from the factory console, LYOKO coordinates specialized domain operators to neutralize failures and protect your homelab.
+>
+> In this repository, **LYOKO** stands for **L**ive **Y**aml **O**ptimization & **K**8s **O**rchestration: your homelab's virtual defender that investigates alerts, neutralizes failures, and safely restores stability before downtime strikes.
 
 ---
 
@@ -88,6 +100,12 @@ For environment variables, local `uv` development, and testing guides, see the [
 - [Security & Guardrails](docs/security-guardrails.md): Namespace protections, command execution filtering, and GitOps policies.
 - [`homelab-mcp` Gateway](packages/mcps/homelab-mcp/README.md): Available tools, scoped search, and IDE integration.
 - [`lyoko` Agent](packages/agents/lyoko/README.md): StateGraph workflows, Alertmanager integration, and Langfuse tracing.
+
+---
+
+## Disclaimer & Trademarks
+
+*Code Lyoko* and its associated names, characters, artwork, and logos are trademarks and copyrights of **Mediatoon Distribution** / **Dargaud** (originally created by Antefilms / MoonScoop). This project is an independent, non-commercial, open-source fan tribute and engineering project, and is in no way affiliated with, endorsed by, or associated with the respective copyright or trademark holders.
 
 ---
 
