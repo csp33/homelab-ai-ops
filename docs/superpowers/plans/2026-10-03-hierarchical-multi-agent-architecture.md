@@ -84,12 +84,13 @@ from unittest.mock import AsyncMock, MagicMock
 from lyoko.application.specialists.agent import DomainSpecialistAgent
 from lyoko.domain.interfaces.llm import LLMClientInterface
 
+
 @pytest.mark.asyncio
 async def test_domain_specialist_runs_with_scoped_domain():
     mock_llm = MagicMock(spec=LLMClientInterface)
     mock_llm.chat = AsyncMock(return_value="Client top 1: humberto (435 GB)")
     mock_mcp = MagicMock()
-    
+
     agent = DomainSpecialistAgent(
         name="NetworkSpecialist",
         domain="unifi",
@@ -97,7 +98,7 @@ async def test_domain_specialist_runs_with_scoped_domain():
         mcp_client=mock_mcp,
         llm=mock_llm,
     )
-    
+
     response = await agent.run("Who is consuming the most traffic?")
     assert "humberto" in response
 ```

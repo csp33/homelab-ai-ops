@@ -241,4 +241,3 @@ async def test_gateway_search_tools_ranking_and_aliases(mock_auth):
     domain_tools = await gateway.get_domain_tools("network")
     assert len(domain_tools) == 4
     assert all(t.upstream_type == UpstreamType.UNIFI for t in domain_tools)
-
