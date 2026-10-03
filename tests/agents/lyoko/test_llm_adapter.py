@@ -257,3 +257,33 @@ async def test_openai_llm_adapter_streaming_react_loop():
 
     assert result == "Cluster is healthy."
     assert tokens == ["Cluster ", "is healthy."]
+
+
+@pytest.mark.asyncio
+async def test_openai_llm_adapter_breaks_identical_tool_call_loop():
+    """Identical tool calls across consecutive turns break the loop early to prevent runaway cost."""
+    tool_call_msg = MagicMock()
+    tool_call_msg.tool_calls = [
+        {"name": "k8s_pods_list", "args": {"namespace": "default"}, "id": "call_1"}
+    ]
+    mock_bound_client = AsyncMock()
+    mock_bound_client.ainvoke.return_value = tool_call_msg
+
+    adapter = OpenAILLMAdapter(api_key="sk-test")
+    mock_client = MagicMock()
+    mock_client.bind_tools.return_value = mock_bound_client
+    mock_summary_response = MagicMock()
+    mock_summary_response.content = "Summary after loop break."
+    mock_client.ainvoke = AsyncMock(return_value=mock_summary_response)
+    adapter._client = mock_client
+
+    mock_tool = MagicMock()
+    mock_tool.name = "k8s_pods_list"
+    mock_tool.ainvoke = AsyncMock(return_value="No resources found or empty result.")
+
+    result = await adapter.chat(prompt="Find pods", tools=[mock_tool], max_steps=15)
+
+    # Instead of running 15 steps, it breaks on the 3rd identical attempt (consecutive_repeat_count >= 2)
+    assert mock_bound_client.ainvoke.await_count == 3
+    mock_client.ainvoke.assert_awaited_once()
+    assert result == "Summary after loop break."

@@ -235,4 +235,3 @@ async def test_chat_with_checkpointer_and_on_token_serialization():
 
     reply = await agent.handle_message(_msg("Ping"), on_token=token_collector)
     assert reply == "Pong"
-

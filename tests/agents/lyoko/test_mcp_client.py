@@ -276,3 +276,18 @@ async def test_refused_gateway_call_is_still_traced_under_the_tool_name():
     assert output == "Refused: read-only phase"
     assert "mcp:pods_delete" in [r[0] for r in recorder.runs]
     client.call_tool.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_empty_tool_result_is_formatted_clearly():
+    """Empty content returned from gateway tools should be formatted with clear descriptive text."""
+    client = FastMCPClient(server_url="http://x/mcp", token="")
+    client.call_tool = AsyncMock(
+        return_value={"status": "success", "content": "", "is_error": False}
+    )
+    tools = {t.name: t for t in client.get_langchain_tools()}
+
+    output = await tools["gateway_call_tool"].ainvoke(
+        {"tool_name": "k8s_pods_list", "arguments": {"namespace": "default"}}
+    )
+    assert "No resources found or empty result." in output
