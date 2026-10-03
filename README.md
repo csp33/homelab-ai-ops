@@ -1,7 +1,8 @@
 <div align="center">
 
-# ⚡ Homelab AIOps
-### Autonomous SRE & Intelligent Operations Platform for Homelabs
+# Homelab AIOps
+
+**Autonomous SRE and multi-agent operations platform for Kubernetes and smart infrastructure.**
 
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
@@ -12,12 +13,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 <p align="center">
-  <b>Event-driven multi-agent remediation, guardrail-protected tool execution, and continuous vector memory.</b>
-  <br />
-  Operates across <b>Kubernetes</b>, <b>UniFi Network</b>, <b>Home Assistant</b>, <b>Grafana</b>, and <b>GitHub</b>.
+  Unified operations across <b>Kubernetes</b>, <b>UniFi Network</b>, <b>Home Assistant</b>, <b>Grafana</b>, and <b>GitHub</b>.
 </p>
 
-[Quick Start](docs/quickstart.md) · [Architecture](docs/architecture.md) · [Security & Guardrails](docs/security-guardrails.md) · [Packages](#packages)
+[Quick Start](docs/quickstart.md) · [Architecture](docs/architecture.md) · [Security](docs/security-guardrails.md) · [Packages](#packages)
 
 </div>
 
@@ -25,18 +24,18 @@
 
 ## Overview
 
-**`homelab-aiops`** is an open-source autonomous operations platform designed for Kubernetes homelabs and smart infrastructure. It pairs an event-driven **LangGraph** SRE multi-agent engine (**LYOKO**) with a unified, guardrail-protected **FastMCP** tool gateway (**`homelab-mcp`**).
+**Homelab AIOps** pairs an event-driven SRE multi-agent engine (**LYOKO**) with a unified, guardrail-protected tool gateway (**`homelab-mcp`**). 
 
-When incidents occur, the system diagnoses root causes with read-only specialists, checks prior lessons stored in **PostgreSQL + pgvector**, and requests human approval (HITL) via **Telegram** for any unverified state modification.
+When incidents occur, the system diagnoses root causes using read-only specialists, retrieves prior lessons from persistent vector memory (**PostgreSQL + pgvector**), and requests human approval (HITL) via **Telegram** before applying any state modification.
 
 ---
 
-## Why Homelab AIOps?
+## Key Capabilities
 
-- 🧠 **Continuous Episodic Memory**: Past incident resolutions and operator rules are stored with dense vector embeddings (`text-embedding-3-small` with HNSW cosine indexing). Operators can teach new operational rules on the fly via Telegram (`/feedback`, `[💡 Teach Rule]`).
-- 🛡️ **Zero-Trust Safety & HITL**: Investigation and verification are strictly read-only. Dangerous commands (`rm -rf`, `mkfs`) and protected namespaces (`kube-system`) are blocked at the gateway, while state-changing operations require explicit Telegram inline approval.
-- 🔌 **Unified MCP Tool Gateway**: A single authenticated gateway exposes typed capabilities across Kubernetes, UniFi Network, Home Assistant, Grafana, and GitHub over Streamable HTTP (`/mcp`) and `stdio`.
-- 🤖 **Hierarchical Multi-Agent Engine**: A central Supervisor plans and delegates tasks to domain specialists (**K8s SRE**, **Network Specialist**, **Smart Home Specialist**, **Metrics Specialist**) with domain-scoped tool catalogs.
+- **Continuous Episodic Memory**: Stores incident resolutions and operator rules as vector embeddings in PostgreSQL. Retrieves relevant lessons during triage and allows operators to teach custom operational guidelines on the fly.
+- **Zero-Trust Safety Harness**: Investigation and verification phases are strictly read-only. Destructive shell commands and protected namespaces are blocked at the gateway, while state-changing operations require explicit operator approval.
+- **Unified Tool Gateway**: Aggregates Kubernetes, UniFi Network, Home Assistant, Grafana, and GitHub behind a single authenticated FastMCP gateway over Streamable HTTP and stdio.
+- **Hierarchical Multi-Agent Engine**: A central LangGraph supervisor coordinates specialized domain subagents for cluster, network, smart home, and observability operations.
 
 ---
 
@@ -52,32 +51,10 @@ When incidents occur, the system diagnoses root causes with read-only specialist
 
 ---
 
-## Two Operating Modes
+## Operating Modes
 
-```mermaid
-flowchart LR
-    subgraph Mode1 ["1. Autonomous Incident Remediation"]
-        direction LR
-        A1[Alertmanager] --> D1[1. Diagnose<br/>(Read-only)]
-        D1 --> R1[2. Remediate<br/>(HITL Gated)]
-        R1 --> V1[3. Verify<br/>(Read-only)]
-        V1 --> N1[4. Notify & Learn]
-    end
-
-    subgraph Mode2 ["2. Interactive Operator Chat"]
-        direction LR
-        T2[Telegram Message] --> S2[Supervisor Agent]
-        S2 --> SP2[Domain Specialists]
-        SP2 --> G2[ToolGate / HITL]
-        G2 --> R2[Telegram Response]
-    end
-
-    classDef mode fill:#0f766e,stroke:#115e59,color:#fff;
-    class A1,D1,R1,V1,N1,T2,S2,SP2,G2,R2 mode;
-```
-
-1. **Incident Remediation**: Awakened by Prometheus Alertmanager webhooks, diagnosing root causes, forming remediation plans, requesting approval for mutations, verifying stabilization, and recording learned feedback.
-2. **Interactive Operator Assistant**: A Telegram chat interface coordinated by the same Supervisor and Specialists for day-to-day operations, querying telemetry, executing changes, and teaching custom operational rules.
+1. **Autonomous Incident Remediation**: Awakened by Prometheus Alertmanager webhooks. Runs an end-to-end loop: `Diagnose (Read-only) ➔ Remediate (Approval-Gated) ➔ Verify (Read-only) ➔ Notify & Learn`.
+2. **Interactive Operator Assistant**: A conversational Telegram assistant for day-to-day operations, log queries, resource adjustments, and teaching operator rules.
 
 ---
 
@@ -85,15 +62,15 @@ flowchart LR
 
 | Package | Role | Description |
 | :--- | :--- | :--- |
-| [`homelab-mcp`](packages/mcps/homelab-mcp) | Tool Gateway & Harness | **FastMCP** server aggregating Kubernetes, UniFi, Home Assistant, Grafana, and GitHub with RBAC, scoped search, and safety guardrails. |
-| [`lyoko`](packages/agents/lyoko) | Autonomous SRE Engine | **LangGraph** multi-agent orchestrator with hierarchical domain delegation, Telegram HITL approvals, and episodic vector memory. |
+| [`homelab-mcp`](packages/mcps/homelab-mcp) | Tool Gateway | FastMCP server aggregating upstream APIs with authentication, scoped tool search, and namespace guardrails. |
+| [`lyoko`](packages/agents/lyoko) | Multi-Agent Engine | LangGraph orchestrator with hierarchical domain specialists, Telegram approvals, and episodic vector memory. |
 
 ---
 
-## Quick Start (tl;dr)
+## Quick Start
 
 ```bash
-# 1. Clone & install dependencies
+# 1. Clone repository and install dependencies
 git clone https://github.com/csp33/homelab-aiops.git
 cd homelab-aiops
 uv sync
@@ -102,21 +79,21 @@ uv sync
 cp .env.example .env
 
 # 3. Start services
-uv run --package homelab-mcp python -m homelab_mcp.server   # Gateway on :8000
-uv run --package lyoko python -m lyoko.main                 # Agent on :9000
+uv run --package homelab-mcp python -m homelab_mcp.server   # Tool Gateway on :8000
+uv run --package lyoko python -m lyoko.main                 # Remediation Agent on :9000
 ```
 
-👉 See the complete **[Quick Start Guide](docs/quickstart.md)** for detailed `.env` options, database setup, and Docker instructions.
+For environment variables, PostgreSQL setup, and testing guides, see the [Quick Start Guide](docs/quickstart.md).
 
 ---
 
 ## Documentation
 
-- 🚀 [**Quick Start Guide**](docs/quickstart.md): Step-by-step setup, configuration options, and running tests.
-- 📐 [**System Architecture & Incident Lifecycle**](docs/architecture.md): Multi-agent orchestration, sequence diagrams, and vector memory retrieval.
-- 🛡️ [**Security & Safety Guardrails**](docs/security-guardrails.md): Guardrail engine, namespace isolation, command sanitization, and GitOps policies.
-- 🔌 [**`homelab-mcp` Gateway Guide**](packages/mcps/homelab-mcp/README.md): Available tools, scoped tool search, and IDE integration (Claude Desktop, Cursor).
-- 🤖 [**`lyoko` Agent Guide**](packages/agents/lyoko/README.md): StateGraph workflows, Alertmanager integration, Telegram bot, and Langfuse tracing.
+- [Quick Start Guide](docs/quickstart.md): Step-by-step installation, `.env` options, and verification.
+- [System Architecture](docs/architecture.md): Multi-agent design, sequence diagrams, and vector memory model.
+- [Security & Guardrails](docs/security-guardrails.md): Namespace protections, command execution filtering, and GitOps policies.
+- [`homelab-mcp` Gateway](packages/mcps/homelab-mcp/README.md): Available tools, scoped search, and IDE integration.
+- [`lyoko` Agent](packages/agents/lyoko/README.md): StateGraph workflows, Alertmanager integration, and Langfuse tracing.
 
 ---
 
