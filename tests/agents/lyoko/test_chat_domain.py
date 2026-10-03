@@ -106,6 +106,11 @@ async def test_concrete_chat_connector_implementation():
         async def send_message(self, chat_id: str, text: str, parse_mode: str = "Markdown") -> None:
             self.sent_messages.append((chat_id, text, parse_mode))
 
+        async def edit_message(
+            self, chat_id: str, message_id: str | int, text: str, parse_mode: str = "Markdown"
+        ) -> None:
+            self.sent_messages.append((chat_id, text, parse_mode))
+
         async def send_approval_request(self, request: ApprovalRequest) -> None:
             self.approval_requests.append(request)
 

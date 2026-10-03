@@ -79,6 +79,9 @@ class LyokoState(TypedDict, total=False):
     matched_memories: list[dict[str, Any]]
     lessons_context: str
     correlated_alerts: list[dict[str, Any]]
+    progress_message_id: str | None
+    progress_chat_id: str | None
+    """Reference to the live status message that is edited as the incident advances."""
 
 
 def create_lyoko_graph(

@@ -867,3 +867,63 @@ async def test_telegram_connector_handles_streaming_message_handler():
         allow_sending_without_reply=True,
     )
     assert mock_bot.send_message_draft.call_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_telegram_connector_edit_message_success():
+    """Verify edit_message successfully updates message in Telegram."""
+    connector = TelegramConnector(
+        bot_token="fake:token", allowed_user_ids={"12345"}, default_chat_id="12345"
+    )
+    mock_app = MagicMock()
+    mock_sent_msg = MagicMock()
+    mock_sent_msg.message_id = 999
+    mock_sent_msg.chat_id = 12345
+    mock_app.bot.edit_message_text = AsyncMock(return_value=mock_sent_msg)
+    connector._app = mock_app
+
+    res = await connector.edit_message(
+        chat_id="12345",
+        message_id="999",
+        text="**Updated** status",
+        parse_mode="HTML",
+    )
+
+    assert res is not None
+    assert res.message_id == "999"
+    assert res.chat_id == "12345"
+    mock_app.bot.edit_message_text.assert_called_once_with(
+        chat_id="12345",
+        message_id=999,
+        text="<b>Updated</b> status",
+        parse_mode="HTML",
+    )
+
+
+@pytest.mark.asyncio
+async def test_chat_manager_edit_message_and_broadcast_message():
+    """Verify ChatManager routes edit_message and broadcast_message returning SentMessage."""
+    connector = TelegramConnector(
+        bot_token="fake:token", allowed_user_ids={"12345"}, default_chat_id="12345"
+    )
+    mock_app = MagicMock()
+    mock_sent_msg = MagicMock()
+    mock_sent_msg.message_id = 100
+    mock_sent_msg.chat_id = 12345
+    mock_app.bot.send_message = AsyncMock(return_value=mock_sent_msg)
+    mock_app.bot.edit_message_text = AsyncMock(return_value=mock_sent_msg)
+    connector._app = mock_app
+
+    manager = ChatManager(connectors=[connector])
+
+    # Broadcast message
+    sent_list = await manager.broadcast_message(chat_id="12345", text="Initial alert")
+    assert len(sent_list) == 1
+    assert sent_list[0].message_id == "100"
+
+    # Edit message
+    edited_list = await manager.edit_message(
+        chat_id="12345", message_id="100", text="Edited status"
+    )
+    assert len(edited_list) == 1
+    assert edited_list[0].message_id == "100"

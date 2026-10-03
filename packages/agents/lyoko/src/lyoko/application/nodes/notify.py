@@ -50,10 +50,21 @@ def create_notify_node(chat_manager: ChatManager | None = None) -> Callable[[dic
             # The Telegram handler sends the reply to the message that started the incident.
             return {"reply": summary}
         if chat_manager is not None:
-            chat_id = state.get("chat_id") or settings.telegram_default_chat_id or ""
-            await chat_manager.broadcast_message(
-                chat_id=chat_id, text=summary, session_id=state.get("session_id")
-            )
+            progress_message_id = state.get("progress_message_id")
+            progress_chat_id = state.get("progress_chat_id")
+            edited = False
+            if progress_message_id and progress_chat_id:
+                results = await chat_manager.edit_message(
+                    chat_id=progress_chat_id,
+                    message_id=progress_message_id,
+                    text=summary,
+                )
+                edited = bool(results)
+            if not edited:
+                chat_id = state.get("chat_id") or settings.telegram_default_chat_id or ""
+                await chat_manager.broadcast_message(
+                    chat_id=chat_id, text=summary, session_id=state.get("session_id")
+                )
         return {}
 
     return notify_node

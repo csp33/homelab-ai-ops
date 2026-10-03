@@ -16,15 +16,22 @@ from lyoko.application.incident_prompts import (
     parse_result,
     parse_verdict,
 )
+from lyoko.application.incident_status import (
+    format_diagnosing_status,
+    format_remediating_status,
+    format_verifying_status,
+)
 from lyoko.application.nodes.helpers import (
     _EXECUTED_OUTCOMES,
     _NO_FIX_MESSAGE,
     describe_call,
     incident_context,
+    is_message,
     make_gate,
     origin,
     run_supervised,
 )
+from lyoko.application.nodes.incident_memory import retrieve_incident_lessons
 from lyoko.application.tool_gate import CallOutcome, GateMode, ToolCallRecord
 from lyoko.config import settings
 from lyoko.domain.interfaces.llm import LLMClientInterface
@@ -75,55 +82,29 @@ def create_diagnose_node(
                 "requires_escalation": True,
             }
 
-        matched_memories: list[dict[str, Any]] = []
-        lessons_context = ""
-
-        # Query semantic memory for relevant past experiences / operator feedback
-        if memory_repository is not None:
-            try:
-                alert_name = state.get("alert_name", "UnknownAlert")
-                labels = state.get("labels") or {}
-                namespace = labels.get("namespace")
-                service_name = (
-                    labels.get("deployment") or labels.get("app") or labels.get("container")
-                )
-                incident_query = f"{alert_name} {namespace} {service_name} {state.get('text', '')}"
-                query_embedding = None
-                if embeddings_service is not None:
-                    query_embedding = await embeddings_service.embed_text(incident_query)
-
-                memories = await memory_repository.search_memories(
-                    query_embedding=query_embedding,
-                    namespace=namespace,
-                    service_name=service_name,
-                    limit=3,
-                )
-
-                if memories:
-                    lessons_lines = []
-                    for m in memories:
-                        matched_memories.append(m.memory.model_dump())
-                        lessons_lines.append(
-                            f"- [Relevance: {m.similarity:.0%}] Pattern: {m.memory.incident_pattern} | "
-                            f"Operator Rule: '{m.memory.operator_feedback}'"
-                            + (
-                                f" | Recommended Action: {m.memory.action_rule}"
-                                if m.memory.action_rule
-                                else ""
-                            )
-                        )
-                    lessons_context = (
-                        "\n\n--- PRIOR OPERATOR FEEDBACK & LESSONS LEARNED ---\n"
-                        + "\n".join(lessons_lines)
-                        + "\n------------------------------------------------\n"
-                    )
-                    logger.info(
-                        f"Retrieved {len(memories)} relevant past lessons for {service_name or namespace}"
-                    )
-            except Exception as exc:
-                logger.warning("Failed to query semantic memory: %s", exc, exc_info=True)
+        matched_memories, lessons_context = await retrieve_incident_lessons(
+            state=state,
+            memory_repository=memory_repository,
+            embeddings_service=embeddings_service,
+        )
 
         logger.info("Diagnosing %s...", origin(state))
+        progress_msg_id: str | None = state.get("progress_message_id")
+        progress_chat_id: str | None = state.get("progress_chat_id")
+
+        if chat_manager is not None and not is_message(state) and not progress_msg_id:
+            chat_id = state.get("chat_id") or settings.telegram_default_chat_id or ""
+            if chat_id:
+                status_text = format_diagnosing_status(state)
+                sent_list = await chat_manager.broadcast_message(
+                    chat_id=chat_id,
+                    text=status_text,
+                    session_id=state.get("session_id"),
+                )
+                if sent_list:
+                    progress_msg_id = sent_list[0].message_id
+                    progress_chat_id = sent_list[0].chat_id
+
         gate = make_gate(
             state,
             GateMode.READ_ONLY,
@@ -148,12 +129,26 @@ def create_diagnose_node(
             return {"root_cause": f"Investigation failed: {exc}", "requires_escalation": True}
 
         diagnosis = parse_diagnosis(answer)
+        if chat_manager is not None and progress_msg_id and progress_chat_id:
+            status_text = format_remediating_status(
+                state,
+                diagnosis.root_cause,
+                requires_escalation=not diagnosis.actionable,
+            )
+            await chat_manager.edit_message(
+                chat_id=progress_chat_id,
+                message_id=progress_msg_id,
+                text=status_text,
+            )
+
         return {
             "root_cause": diagnosis.root_cause,
             "plan": diagnosis.plan,
             "requires_escalation": not diagnosis.actionable,
             "matched_memories": matched_memories,
             "lessons_context": lessons_context,
+            "progress_message_id": progress_msg_id,
+            "progress_chat_id": progress_chat_id,
         }
 
     return diagnose_node
@@ -202,7 +197,29 @@ def create_remediate_node(
             logger.error("Remediation failed: %s", exc, exc_info=True)
             error = str(exc)
 
-        return _remediation_outcome(gate.records, summary, error)
+        outcome = _remediation_outcome(gate.records, summary, error)
+        progress_msg_id = state.get("progress_message_id")
+        progress_chat_id = state.get("progress_chat_id")
+        if chat_manager is not None and progress_msg_id and progress_chat_id:
+            if not outcome.get("requires_escalation"):
+                status_text = format_verifying_status(
+                    state,
+                    state.get("root_cause", "Unknown"),
+                    outcome.get("action_taken", "Changes applied."),
+                )
+            else:
+                status_text = format_remediating_status(
+                    state,
+                    state.get("root_cause", "Unknown"),
+                    requires_escalation=True,
+                )
+            await chat_manager.edit_message(
+                chat_id=progress_chat_id,
+                message_id=progress_msg_id,
+                text=status_text,
+            )
+
+        return outcome
 
     return remediate_node
 
