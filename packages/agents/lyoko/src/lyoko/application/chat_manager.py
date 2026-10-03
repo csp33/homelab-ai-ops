@@ -1,7 +1,11 @@
 import logging
 
 from lyoko.application.chat_sessions import ChatSessionTracker
-from lyoko.domain.interfaces.chat_connector import ChatConnector, MessageHandler
+from lyoko.domain.interfaces.chat_connector import (
+    ApprovalHandler,
+    ChatConnector,
+    MessageHandler,
+)
 from lyoko.domain.models.chat import ApprovalRequest, SentMessage
 
 logger = logging.getLogger("lyoko.application.chat_manager")
@@ -30,6 +34,11 @@ class ChatManager:
         """Route incoming messages from every registered connector to ``handler``."""
         for conn in self.connectors:
             conn.register_message_handler(handler)
+
+    def register_approval_handler(self, handler: ApprovalHandler) -> None:
+        """Route incoming approval/button responses from every registered connector to ``handler``."""
+        for conn in self.connectors:
+            conn.register_approval_handler(handler)
 
     async def start_all(self) -> None:
         """Start all registered chat connectors."""

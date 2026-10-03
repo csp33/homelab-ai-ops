@@ -208,3 +208,22 @@ async def test_workflow_works_with_a_checkpointer():
 
     saved = await workflow.aget_state(config)
     assert "credentials" in saved.values["root_cause"]
+
+
+def test_incident_context_formats_correlated_alerts():
+    from lyoko.application.nodes.helpers import incident_context
+
+    state = {
+        "alert_name": "KubeNodeNotReady",
+        "labels": {"alertname": "KubeNodeNotReady", "node": "worker-1"},
+        "annotations": {"summary": "Node worker-1 not ready"},
+        "correlated_alerts": [
+            {"alertname": "TargetDown", "namespace": "monitoring", "pod": "prometheus-0"},
+            {"alertname": "KubePodCrashLooping", "namespace": "default", "pod": "api-123"},
+        ],
+    }
+    context = incident_context(state)
+    assert "KubeNodeNotReady" in context
+    assert "Correlated / Cascade Alerts (2):" in context
+    assert "- TargetDown (namespace: monitoring, pod: prometheus-0)" in context
+    assert "- KubePodCrashLooping (namespace: default, pod: api-123)" in context

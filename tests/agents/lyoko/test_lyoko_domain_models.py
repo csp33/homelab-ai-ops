@@ -22,6 +22,13 @@ def test_lyoko_incident_model():
     assert incident.namespace == "media"
     assert incident.pod_name == "radarr-79dfb8bf7-x82k"
     assert incident.deployment_name == "radarr"
+    assert incident.correlated_alerts == []
+
+    incident_with_correlated = Incident(
+        alert_name="KubeNodeNotReady",
+        correlated_alerts=[{"alertname": "TargetDown", "pod": "exporter-1"}],
+    )
+    assert len(incident_with_correlated.correlated_alerts) == 1
 
 
 def test_lyoko_incident_state():

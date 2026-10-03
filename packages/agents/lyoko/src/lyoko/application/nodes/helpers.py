@@ -22,6 +22,24 @@ def format_pairs(pairs: dict[str, str]) -> str:
     return "\n".join(f"- {key}: {value}" for key, value in sorted(pairs.items())) or "- (none)"
 
 
+def format_correlated(alerts: list[dict[str, Any]] | None) -> str:
+    if not alerts:
+        return ""
+    lines = [f"\nCorrelated / Cascade Alerts ({len(alerts)}):"]
+    for alert in alerts:
+        name = alert.get("alertname") or alert.get("labels", {}).get("alertname", "UnknownAlert")
+        ns = alert.get("namespace") or alert.get("labels", {}).get("namespace", "")
+        pod = alert.get("pod") or alert.get("labels", {}).get("pod", "")
+        details = []
+        if ns:
+            details.append(f"namespace: {ns}")
+        if pod:
+            details.append(f"pod: {pod}")
+        detail_str = f" ({', '.join(details)})" if details else ""
+        lines.append(f"- {name}{detail_str}")
+    return "\n".join(lines)
+
+
 def is_message(state: dict[str, Any]) -> bool:
     return state.get("event_type", EVENT_ALERT) == EVENT_MESSAGE
 
@@ -29,11 +47,13 @@ def is_message(state: dict[str, Any]) -> bool:
 def incident_context(state: dict[str, Any]) -> str:
     if is_message(state):
         return f"Problem reported by the operator in chat:\n{state.get('text', '')}"
-    return (
+    base = (
         f"Alert: {state.get('alert_name', 'UnknownAlert')}\n"
         f"Labels:\n{format_pairs(state.get('labels') or {})}\n"
         f"Annotations:\n{format_pairs(state.get('annotations') or {})}"
     )
+    correlated = format_correlated(state.get("correlated_alerts"))
+    return f"{base}\n{correlated}".rstrip()
 
 
 def origin(state: dict[str, Any]) -> str:

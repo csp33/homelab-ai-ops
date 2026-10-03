@@ -42,3 +42,13 @@ def test_postgres_uri_with_special_characters():
         settings.get_postgres_uri()
         == "postgresql://user%2Fname:p%2Bw%2Fd%3D123@pg.internal:5432/testdb"
     )
+
+
+def test_alert_storm_settings_defaults():
+    settings = AgentSettings(postgres_password="")
+    assert settings.alert_debounce_seconds == 10.0
+    assert settings.alert_storm_threshold == 8
+    assert settings.alert_storm_window_seconds == 60
+    assert settings.alert_storm_cooldown_seconds == 120
+    assert settings.alert_dedup_cooldown_seconds == 300
+    assert settings.max_concurrent_incidents == 2

@@ -8,6 +8,14 @@ from fastapi.testclient import TestClient
 from lyoko.infrastructure.web.controller import create_webhook_router
 
 
+@pytest.fixture(autouse=True)
+def fast_alert_guard(monkeypatch):
+    monkeypatch.setattr("lyoko.config.settings.alert_debounce_seconds", 0.0)
+    monkeypatch.setattr("lyoko.config.settings.alert_dedup_cooldown_seconds", 0)
+    monkeypatch.setattr("lyoko.config.settings.alert_storm_threshold", 8)
+    monkeypatch.setattr("lyoko.config.settings.alert_storm_window_seconds", 60)
+
+
 @pytest.fixture
 def mock_workflow():
     workflow = MagicMock()
@@ -184,3 +192,77 @@ def test_long_incident_keys_are_hashed_to_fit_telegram_callback_data(test_client
     incident_id = mock_workflow.ainvoke.call_args.args[0]["event_id"]
     assert long_pod not in incident_id
     assert len(f"approve:{incident_id}.99") <= 64
+
+
+def test_alertmanager_webhook_groups_batch_into_single_incident(test_client, mock_workflow):
+    payload = {
+        "status": "firing",
+        "alerts": [
+            {
+                "status": "firing",
+                "labels": {
+                    "alertname": "KubeNodeNotReady",
+                    "namespace": "default",
+                    "node": "worker-1",
+                },
+                "fingerprint": "fp-node",
+            },
+            {
+                "status": "firing",
+                "labels": {
+                    "alertname": "TargetDown",
+                    "namespace": "default",
+                    "job": "node-exporter",
+                },
+                "fingerprint": "fp-target",
+            },
+            {
+                "status": "firing",
+                "labels": {
+                    "alertname": "KubePodCrashLooping",
+                    "namespace": "default",
+                    "pod": "api-1",
+                },
+                "fingerprint": "fp-pod",
+            },
+        ],
+    }
+
+    response = test_client.post("/webhook/alertmanager", json=payload)
+    assert response.status_code == 200
+
+    # Only 1 incident dispatched despite 3 alerts
+    mock_workflow.ainvoke.assert_called_once()
+    state = mock_workflow.ainvoke.call_args.args[0]
+    assert state["alert_name"] == "KubeNodeNotReady"
+    assert len(state["correlated_alerts"]) == 2
+    assert state["correlated_alerts"][0]["alertname"] == "TargetDown"
+    assert state["correlated_alerts"][1]["alertname"] == "KubePodCrashLooping"
+
+
+def test_alertmanager_webhook_trips_circuit_breaker_on_storm(monkeypatch, mock_workflow):
+    monkeypatch.setattr("lyoko.config.settings.alert_storm_threshold", 3)
+    monkeypatch.setattr("lyoko.config.settings.alert_storm_window_seconds", 60)
+
+    app = FastAPI()
+    router = create_webhook_router(mock_workflow)
+    app.include_router(router)
+    client = TestClient(app)
+
+    payload = {
+        "status": "firing",
+        "alerts": [
+            {
+                "status": "firing",
+                "labels": {"alertname": f"Alert{i}", "namespace": f"ns{i}"},
+                "fingerprint": f"fp{i}",
+            }
+            for i in range(5)
+        ],
+    }
+
+    response = client.post("/webhook/alertmanager", json=payload)
+    assert response.status_code == 200
+
+    # When storm trips the circuit breaker, automated agent invocations are paused (0 dispatched)
+    mock_workflow.ainvoke.assert_not_called()

@@ -1,33 +1,17 @@
 """FastAPI web controllers for webhooks and operator feedback."""
 
-import hashlib
-import json
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 from lyoko.domain.interfaces.tracer import TracerInterface
-from lyoko.domain.models.incident import Incident
+from lyoko.domain.models.incident import Incident, compute_incident_key
 from lyoko.domain.models.memory import FeedbackRequest, MemoryEntry
-
-_MAX_KEY_LENGTH = 24
-
-
-def _incident_key(incident: Incident) -> str:
-    """Short, stable identifier for an incident.
-
-    The key ends up in Telegram button callback data, which Telegram limits to 64 bytes, so a
-    long value (for example a pod name) is replaced by a hash of the alert's labels.
-    """
-    key = incident.fingerprint or incident.pod_name
-    if key and len(key) <= _MAX_KEY_LENGTH:
-        return key
-    digest_input = json.dumps(incident.labels, sort_keys=True) + (key or "")
-    return hashlib.sha1(digest_input.encode(), usedforsecurity=False).hexdigest()[:16]
 
 
 def create_webhook_router(
     workflow_app: Any = None,
     tracer: TracerInterface | None = None,
+    alert_guard: Any = None,
 ) -> APIRouter:
     """Router handling Prometheus / Alertmanager incoming webhooks."""
     router = APIRouter(prefix="/webhook", tags=["webhooks"])
@@ -48,65 +32,71 @@ def create_webhook_router(
             raise HTTPException(status_code=503, detail="Workflow engine is not initialized")
 
         alerts = data.get("alerts", [])
-        for alert in alerts:
-            if alert.get("status") == "firing":
-                labels = {str(k): str(v) for k, v in (alert.get("labels") or {}).items()}
-                annotations = {str(k): str(v) for k, v in (alert.get("annotations") or {}).items()}
-                incident = Incident(
-                    alert_name=labels.get("alertname", "UnknownAlert"),
-                    namespace=labels.get("namespace", ""),
-                    pod_name=labels.get("pod", ""),
-                    deployment_name=labels.get("deployment") or labels.get("app"),
-                    fingerprint=alert.get("fingerprint"),
-                    labels=labels,
-                    annotations=annotations,
+
+        async def _dispatch(incident: Incident) -> None:
+            thread_id = f"incident-{compute_incident_key(incident)}"
+            initial_state = {
+                "event_type": "alert",
+                "event_id": thread_id,
+                "session_id": thread_id,
+                "alert_name": incident.alert_name,
+                "labels": incident.labels,
+                "annotations": incident.annotations,
+                "correlated_alerts": incident.correlated_alerts,
+                "root_cause": "",
+                "action_taken": "",
+                "is_resolved": False,
+                "requires_escalation": False,
+            }
+
+            trace_name = f"lyoko-{incident.alert_name}-{compute_incident_key(incident)}"
+
+            tags = ["lyoko", f"alert:{incident.alert_name}"]
+            metadata = {
+                "alert_name": incident.alert_name,
+                "fingerprint": incident.fingerprint or "",
+            }
+            if incident.namespace:
+                tags.insert(1, f"ns:{incident.namespace}")
+                metadata["namespace"] = incident.namespace
+            if incident.pod_name:
+                metadata["pod_name"] = incident.pod_name
+
+            if active_tracer:
+                config = active_tracer.get_trace_config(
+                    session_id=thread_id,
+                    user_id=f"alert:{incident.alert_name}",
+                    trace_name=trace_name,
+                    tags=tags,
+                    metadata=metadata,
                 )
-
-                thread_id = f"incident-{_incident_key(incident)}"
-
-                initial_state = {
-                    "event_type": "alert",
-                    "event_id": thread_id,
-                    "session_id": thread_id,
-                    "alert_name": incident.alert_name,
-                    "labels": labels,
-                    "annotations": annotations,
-                    "root_cause": "",
-                    "action_taken": "",
-                    "is_resolved": False,
-                    "requires_escalation": False,
+                config.setdefault("configurable", {})["thread_id"] = thread_id
+            else:
+                config = {
+                    "configurable": {"thread_id": thread_id},
+                    "tags": tags,
+                    "metadata": metadata,
+                    "run_name": trace_name,
                 }
 
-                trace_name = f"lyoko-{incident.alert_name}-{_incident_key(incident)}"
-                tags = ["lyoko", f"alert:{incident.alert_name}"]
-                metadata = {
-                    "alert_name": incident.alert_name,
-                    "fingerprint": incident.fingerprint or "",
-                }
-                if incident.namespace:
-                    tags.insert(1, f"ns:{incident.namespace}")
-                    metadata["namespace"] = incident.namespace
-                if incident.pod_name:
-                    metadata["pod_name"] = incident.pod_name
+            await engine.ainvoke(initial_state, config=config)
 
-                if active_tracer:
-                    config = active_tracer.get_trace_config(
-                        session_id=thread_id,
-                        user_id=f"alert:{incident.alert_name}",
-                        trace_name=trace_name,
-                        tags=tags,
-                        metadata=metadata,
-                    )
-                    config.setdefault("configurable", {})["thread_id"] = thread_id
-                else:
-                    config = {
-                        "configurable": {"thread_id": thread_id},
-                        "tags": tags,
-                        "metadata": metadata,
-                        "run_name": trace_name,
-                    }
+        guard = alert_guard or getattr(request.app.state, "alert_guard", None)
+        if guard is None:
+            from lyoko.application.alert_guard import AlertStormProtector
 
-                background_tasks.add_task(engine.ainvoke, initial_state, config=config)
+            chat_mgr = getattr(request.app.state, "chat_manager", None)
+            guard = AlertStormProtector(
+                chat_manager=chat_mgr,
+                dispatch_callback=_dispatch,
+            )
+            # Cache on app.state if available so state is preserved across requests
+            if hasattr(request.app, "state"):
+                request.app.state.alert_guard = guard
+        elif guard._dispatch_callback is None:
+            guard._dispatch_callback = _dispatch
+
+        background_tasks.add_task(guard.ingest_alerts, alerts)
 
         return {"status": "accepted", "message": f"Processing {len(alerts)} alerts in background."}
 

@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg_pool import AsyncConnectionPool
 
+from lyoko.application.alert_guard import AlertStormProtector
 from lyoko.application.chat_agent import InteractiveChatAgent
 from lyoko.application.chat_manager import ChatManager
 from lyoko.application.chat_sessions import ChatSessionTracker
@@ -268,6 +269,10 @@ async def lifespan(app: FastAPI):
     )
     supervisor = getattr(app.state, "supervisor", None) or build_supervisor(specialists, llm)
 
+    alert_guard = AlertStormProtector(chat_manager=chat_manager)
+    chat_manager.register_approval_handler(alert_guard.handle_force_approval)
+    app.state.alert_guard = alert_guard
+
     # Rebuilt now that the checkpointer exists. Everything reads the graph from app.state.
     workflow_engine = create_lyoko_graph(
         mcp_client,
@@ -306,6 +311,8 @@ def create_app() -> FastAPI:
     tracer = build_tracer()
     specialists = build_domain_specialists(mcp_client, llm)
     supervisor = build_supervisor(specialists, llm)
+    alert_guard = AlertStormProtector(chat_manager=chat_manager)
+    chat_manager.register_approval_handler(alert_guard.handle_force_approval)
 
     app = FastAPI(title="LYOKO Auto-Remediation Agent", lifespan=lifespan)
 
@@ -324,6 +331,7 @@ def create_app() -> FastAPI:
     app.state.supervisor = supervisor
     app.state.approval_manager = approval_manager
     app.state.chat_manager = chat_manager
+    app.state.alert_guard = alert_guard
     app.state.workflow_engine = workflow_engine
     app.state.tracer = tracer
     app.state.checkpointer = None
@@ -335,7 +343,7 @@ def create_app() -> FastAPI:
 
     # No engine is passed: the webhook reads app.state.workflow_engine on every request, so it
     # uses the graph rebuilt with the checkpointer in lifespan.
-    app.include_router(create_webhook_router(tracer=tracer))
+    app.include_router(create_webhook_router(tracer=tracer, alert_guard=alert_guard))
 
     feedback_router = create_feedback_router()
     app.include_router(feedback_router)
