@@ -40,11 +40,11 @@ class MCPClientInterface(ABC):
 
     @abstractmethod
     async def get_domain_catalog(self, domain: str) -> list[Any]:
-        """Return the lean tool index (name, description, upstream) for one upstream domain.
+        """Return the full lean tool index (name, description, upstream) for one domain.
 
-        Used to inject the domain's tool list into a specialist prompt. Raises on gateway
-        failure instead of returning an empty list, so a broken gateway is never mistaken for
-        an empty domain.
+        Follows the gateway's pagination to return every tool. Used to inject the domain's tool
+        list into a specialist prompt. Raises on gateway failure instead of returning an empty
+        list, so a broken gateway is never mistaken for an empty domain.
         """
 
     @abstractmethod

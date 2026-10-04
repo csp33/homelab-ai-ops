@@ -13,7 +13,7 @@
 </p>
 
 `homelab-mcp` exposes a small, uniform tool surface so an agent never has to load the whole catalog into context:
-- **Domain Discovery**: `gateway_get_domain_tools(domain)` returns a lean index (name + one-line description) of every allowed tool in one domain. Domain aliases resolve automatically (`network` ➔ `unifi`, `k8s` / `gitops` / `argocd` ➔ `kubernetes`, `iot` ➔ `homeassistant`, `metrics` / `prometheus` ➔ `grafana`).
+- **Domain Discovery**: `gateway_get_domain_tools(domain, limit=50, offset=0)` returns a lean index (name + one-line description) of the domain's tools, paginated (`limit` max 100, follow `has_more`) so large domains like UniFi (200+ tools) never flood the context. Domain aliases resolve automatically (`network` ➔ `unifi`, `k8s` / `gitops` / `argocd` ➔ `kubernetes`, `iot` ➔ `homeassistant`, `metrics` / `prometheus` ➔ `grafana`).
 - **On-Demand Schema**: `gateway_get_tool_schema(tool_name)` returns the full parameter schema of a single tool, fetched only right before it is called.
 - **Single Execution Choke Point**: `gateway_call_tool(tool_name, arguments)` runs any upstream tool, but only after the guardrail engine approves it.
 - **Domains**: `kubernetes`, `unifi`, `homeassistant`, `grafana`, `github`, and `telegram` (provided in-process by the gateway).

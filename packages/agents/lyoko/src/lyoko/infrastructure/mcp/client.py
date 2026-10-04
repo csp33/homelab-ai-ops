@@ -40,6 +40,9 @@ _GATEWAY_META_TOOLS = (
     "gateway_get_tool_schema",
     "gateway_call_tool",
 )
+# Domain catalog paging: the gateway caps a page at 100 entries; cap the full fetch too.
+_DOMAIN_PAGE_SIZE = 100
+_MAX_DOMAIN_PAGES = 20
 
 
 def _root_cause(exc: BaseException) -> BaseException:
@@ -159,28 +162,68 @@ class FastMCPClient(MCPClientInterface):
             error = await self._to_gateway_error(f"tool call '{name}'", exc)
             return {"error": str(error), "status": "failed", "tool": name}
 
-    async def get_domain_catalog(self, domain: str) -> list[dict[str, Any]]:
-        """Fetch the lean tool index (name, description, upstream) for one upstream domain.
+    async def get_domain_tools_page(
+        self,
+        domain: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Fetch one page of a domain's tool index from the gateway.
+
+        Returns the gateway payload: ``domain``, ``total``, ``limit``, ``offset``, ``has_more``
+        and ``tools`` (lean index entries: name, description, upstream).
 
         Raises:
-            MCPGatewayError: if the gateway cannot be used, so the caller never mistakes a
-                broken gateway for an empty domain.
+            MCPGatewayError: if the gateway cannot be used or reports the domain has no tools,
+                so a broken gateway is never mistaken for an empty domain.
         """
         auth_token = self.token if self.token else None
         try:
             async with Client(self.server_url, auth=auth_token) as client:
-                res = await client.call_tool("gateway_get_domain_tools", {"domain": domain})
+                res = await client.call_tool(
+                    "gateway_get_domain_tools",
+                    {"domain": domain, "limit": limit, "offset": offset},
+                )
                 data = res.data
         except Exception as exc:
             raise await self._to_gateway_error(f"list domain tools for '{domain}'", exc) from exc
 
         if isinstance(data, dict) and data.get("error"):
             raise MCPGatewayError(str(data["error"]))
-        if not isinstance(data, list):
-            return []
-        if data and isinstance(data[0], dict) and data[0].get("error"):
-            raise MCPGatewayError(str(data[0]["error"]))
-        return [t for t in data if isinstance(t, dict) and t.get("name")]
+        if not isinstance(data, dict):
+            return {
+                "domain": domain,
+                "total": 0,
+                "limit": limit,
+                "offset": offset,
+                "has_more": False,
+                "tools": [],
+            }
+        raw_tools = data.get("tools") or []
+        tools = [t for t in raw_tools if isinstance(t, dict) and t.get("name")]
+        return {**data, "tools": tools}
+
+    async def get_domain_catalog(
+        self,
+        domain: str,
+        page_size: int = _DOMAIN_PAGE_SIZE,
+    ) -> list[dict[str, Any]]:
+        """Fetch the full lean tool index for one upstream domain, following pagination.
+
+        Used to inject a domain's tool list into a specialist prompt. Raises on gateway failure
+        instead of returning an empty list, so a broken gateway is never mistaken for an empty
+        domain.
+        """
+        tools: list[dict[str, Any]] = []
+        offset = 0
+        for _ in range(_MAX_DOMAIN_PAGES):
+            page = await self.get_domain_tools_page(domain, limit=page_size, offset=offset)
+            page_tools = page.get("tools") or []
+            tools.extend(page_tools)
+            if not page.get("has_more") or not page_tools:
+                break
+            offset = int(page.get("offset", offset)) + len(page_tools)
+        return tools
 
     async def get_tool_schema(self, tool_name: str) -> Any:
         """Return the full parameter schema of a gateway tool.
@@ -228,9 +271,9 @@ class FastMCPClient(MCPClientInterface):
     ) -> list[Any]:
         """Domain-locked trio: discover the domain catalog, read a schema, execute a tool."""
 
-        async def _list_domain_tools() -> str:
+        async def _list_domain_tools(limit: int = 50, offset: int = 0) -> str:
             try:
-                return str(await self.get_domain_catalog(domain))
+                return str(await self.get_domain_tools_page(domain, limit=limit, offset=offset))
             except MCPGatewayError as exc:
                 raise ToolException(str(exc)) from exc
 
@@ -251,9 +294,10 @@ class FastMCPClient(MCPClientInterface):
                 coroutine=_list_domain_tools,
                 name="gateway_get_domain_tools",
                 description=(
-                    f"List every tool in the '{domain}' domain with a one-line description. "
-                    "Call this to discover what you can do, then gateway_get_tool_schema for the "
-                    "arguments and gateway_call_tool to run it. Do not invent tools outside this list."
+                    f"List the tools of the '{domain}' domain with a one-line description. "
+                    "Paginate with 'limit' (max 100) and 'offset'; follow 'has_more'. Call this to "
+                    "discover what you can do, then gateway_get_tool_schema for the arguments and "
+                    "gateway_call_tool to run it. Do not invent tools outside this list."
                 ),
                 handle_tool_error=True,
             ),
@@ -295,14 +339,16 @@ class FastMCPClient(MCPClientInterface):
         invocation; a refusal is raised as a ``ToolException`` and the tool never runs.
         """
 
-        async def _gateway_get_domain_tools(domain: str) -> str:
-            """List the tools of one upstream domain.
+        async def _gateway_get_domain_tools(domain: str, limit: int = 50, offset: int = 0) -> str:
+            """List one page of the tools of one upstream domain.
 
             Args:
                 domain: Upstream domain, e.g. 'kubernetes', 'unifi', 'homeassistant', 'grafana', 'github', 'telegram'.
+                limit: Maximum tools to return in this page (max 100).
+                offset: Number of tools to skip for pagination.
             """
             try:
-                return str(await self.get_domain_catalog(domain))
+                return str(await self.get_domain_tools_page(domain, limit=limit, offset=offset))
             except MCPGatewayError as exc:
                 raise ToolException(str(exc)) from exc
 

@@ -213,8 +213,15 @@ async def test_authorizer_allowing_the_call_lets_it_through():
 @pytest.mark.asyncio
 async def test_domain_discovery_tool_is_never_gated():
     client = FastMCPClient(server_url="http://x/mcp", token="")
-    client.get_domain_catalog = AsyncMock(
-        return_value=[{"name": "pods_list", "description": "List pods"}]
+    client.get_domain_tools_page = AsyncMock(
+        return_value={
+            "domain": "kubernetes",
+            "total": 1,
+            "limit": 50,
+            "offset": 0,
+            "has_more": False,
+            "tools": [{"name": "pods_list", "description": "List pods"}],
+        }
     )
     authorizer = AsyncMock(return_value="Refused")
     tools = {t.name: t for t in client.get_langchain_tools(authorizer=authorizer)}
@@ -223,6 +230,36 @@ async def test_domain_discovery_tool_is_never_gated():
 
     assert "pods_list" in output
     authorizer.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_domain_catalog_follows_pagination():
+    client = FastMCPClient(server_url="http://x/mcp", token="")
+    client.get_domain_tools_page = AsyncMock(
+        side_effect=[
+            {
+                "domain": "unifi",
+                "total": 3,
+                "limit": 2,
+                "offset": 0,
+                "has_more": True,
+                "tools": [{"name": "a"}, {"name": "b"}],
+            },
+            {
+                "domain": "unifi",
+                "total": 3,
+                "limit": 2,
+                "offset": 2,
+                "has_more": False,
+                "tools": [{"name": "c"}],
+            },
+        ]
+    )
+
+    catalog = await client.get_domain_catalog("unifi")
+
+    assert [t["name"] for t in catalog] == ["a", "b", "c"]
+    assert client.get_domain_tools_page.await_count == 2
 
 
 class _RunRecorder(BaseCallbackHandler):

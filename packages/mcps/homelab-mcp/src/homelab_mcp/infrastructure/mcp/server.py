@@ -16,6 +16,8 @@ from homelab_mcp.infrastructure.auth.google import GoogleJWTVerifier
 
 logger = logging.getLogger("homelab_mcp.gateway_server")
 
+_MAX_DOMAIN_PAGE = 100
+
 _GATEWAY_INSTRUCTIONS = (
     "Homelab Tool Gateway. The catalog is grouped into domains. "
     "Discover the tools of one domain with gateway_get_domain_tools(domain), read the exact "
@@ -122,28 +124,43 @@ def create_gateway_mcp_server(service: MCPGatewayService) -> FastMCP:
         return results
 
     @mcp.tool()
-    async def gateway_get_domain_tools(domain: UpstreamType) -> list[dict[str, Any]]:
-        """Return the tool index for one upstream domain.
+    async def gateway_get_domain_tools(
+        domain: UpstreamType,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Return one page of the tool index for one upstream domain.
 
-        Returns every allowed tool of that domain as a lean index (name, one-line description,
-        upstream). Use it to discover what exists in a domain, then call
+        Returns a lean index (name, one-line description, upstream) so a large domain does not
+        flood the context. Page with ``limit``/``offset`` and follow ``has_more``. Use
         gateway_get_tool_schema(tool_name) for the exact arguments before executing with
         gateway_call_tool.
 
         Args:
             domain: Upstream domain (e.g. kubernetes, unifi, homeassistant, grafana, github, telegram).
+            limit: Maximum tools to return in this page (default 50, max 100).
+            offset: Number of tools to skip for pagination (default 0).
         """
         tools = await service.get_domain_tools(domain)
-        if not tools:
-            return [
-                {
-                    "error": (
-                        f"No tools for domain '{str(domain)}'. "
-                        "It may be disabled, empty, or not configured."
-                    )
-                }
-            ]
-        return _lean_index(tools)
+        total = len(tools)
+        if total == 0:
+            return {
+                "error": (
+                    f"No tools for domain '{str(domain)}'. "
+                    "It may be disabled, empty, or not configured."
+                )
+            }
+        bounded_limit = max(1, min(limit, _MAX_DOMAIN_PAGE))
+        bounded_offset = max(0, offset)
+        page = tools[bounded_offset : bounded_offset + bounded_limit]
+        return {
+            "domain": str(domain),
+            "total": total,
+            "limit": bounded_limit,
+            "offset": bounded_offset,
+            "has_more": bounded_offset + len(page) < total,
+            "tools": _lean_index(page),
+        }
 
     @mcp.tool()
     async def gateway_get_tool_schema(tool_name: str) -> dict[str, Any]:

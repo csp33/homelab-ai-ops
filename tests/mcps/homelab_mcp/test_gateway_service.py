@@ -151,12 +151,13 @@ async def test_gateway_fastmcp_tools_and_truncation(mock_auth):
     )
     mcp = create_gateway_mcp_server(gateway)
 
-    # 1. gateway_get_domain_tools returns a lean index for one domain
+    # 1. gateway_get_domain_tools returns a paginated lean index for one domain
     domain_res = await mcp.call_tool("gateway_get_domain_tools", {"domain": "homeassistant"})
     assert not domain_res.is_error
     index = domain_res.structured_content.get("result", domain_res.structured_content)
-    assert len(index) == 2
-    by_name = {t["name"]: t for t in index}
+    assert index["total"] == 2
+    assert index["has_more"] is False
+    by_name = {t["name"]: t for t in index["tools"]}
     assert set(by_name) == {"ha_manage_lights", "ha_get_climate"}
     assert "parameters" not in by_name["ha_manage_lights"]  # Lean index
     assert (
@@ -164,10 +165,28 @@ async def test_gateway_fastmcp_tools_and_truncation(mock_auth):
         == "Turn on/off and configure lighting brightness and rgb colors."
     )
 
-    # 2. gateway_get_domain_tools for an empty/unknown domain returns an error entry
+    # 1b. Pagination: limit=1 splits the domain into pages
+    page1_res = await mcp.call_tool(
+        "gateway_get_domain_tools", {"domain": "homeassistant", "limit": 1, "offset": 0}
+    )
+    page1 = page1_res.structured_content.get("result", page1_res.structured_content)
+    assert len(page1["tools"]) == 1
+    assert page1["total"] == 2
+    assert page1["has_more"] is True
+    page1_name = page1["tools"][0]["name"]
+
+    page2_res = await mcp.call_tool(
+        "gateway_get_domain_tools", {"domain": "homeassistant", "limit": 1, "offset": 1}
+    )
+    page2 = page2_res.structured_content.get("result", page2_res.structured_content)
+    assert len(page2["tools"]) == 1
+    assert page2["has_more"] is False
+    assert page2["tools"][0]["name"] != page1_name
+
+    # 2. gateway_get_domain_tools for an empty/unknown domain returns an error
     unknown_res = await mcp.call_tool("gateway_get_domain_tools", {"domain": "github"})
     unknown = unknown_res.structured_content.get("result", unknown_res.structured_content)
-    assert isinstance(unknown, list) and "error" in unknown[0]
+    assert isinstance(unknown, dict) and "error" in unknown
 
     # 3. gateway_get_tool_schema
     schema_res = await mcp.call_tool("gateway_get_tool_schema", {"tool_name": "ha_manage_lights"})
