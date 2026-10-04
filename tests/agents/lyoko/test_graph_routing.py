@@ -24,12 +24,13 @@ def _settings(monkeypatch):
     monkeypatch.setattr("lyoko.application.workflow.settings.auto_approved_tools", [])
 
 
-def _message(text: str = "scale sonarr to 2 replicas") -> dict:
+def _message(text: str = "scale sonarr to 2 replicas", thread_id: str | None = None) -> dict:
     return {
         "event_type": "message",
         "event_id": "chat-ab12cd34",
         "session_id": "telegram-42-1760000000",
         "chat_id": "42",
+        "message_thread_id": thread_id,
         "text": text,
         "labels": {},
         "annotations": {},
@@ -239,6 +240,22 @@ async def test_chat_approval_belongs_to_the_chat_session_and_fits_telegram_limit
 
 
 @pytest.mark.asyncio
+async def test_chat_approval_is_sent_into_the_message_thread():
+    manager = ApprovalManager()
+    operator = Operator(manager, approve=True)
+    chat = AsyncMock()
+    chat.broadcast_approval_request = operator.broadcast_approval_request
+    llm = ScriptedLLM(route="CHAT", chat=_scale([]))
+    graph = create_lyoko_graph(
+        mcp_client=FakeMCPClient(), approval_manager=manager, chat_manager=chat, llm=llm
+    )
+
+    await graph.ainvoke(_message(thread_id="321"))
+
+    assert operator.thread_ids == ["321"]
+
+
+@pytest.mark.asyncio
 async def test_chat_change_denied_does_not_run():
     manager = ApprovalManager()
     operator = Operator(manager, approve=False, reason="not now")
@@ -324,7 +341,7 @@ async def test_approval_in_chat_does_not_block_another_event():
     chat = AsyncMock()
     requests: list = []
 
-    async def broadcast(request) -> None:
+    async def broadcast(request, message_thread_id=None) -> None:
         requests.append(request)
 
     chat.broadcast_approval_request = broadcast

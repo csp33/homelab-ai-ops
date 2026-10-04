@@ -92,12 +92,14 @@ class Operator:
 
     def __init__(self, manager: ApprovalManager, *, approve: bool, reason: str = "") -> None:
         self.requests = []
+        self.thread_ids: list[str | int | None] = []
         self._manager = manager
         self._approve = approve
         self._reason = reason
 
-    async def broadcast_approval_request(self, request) -> None:
+    async def broadcast_approval_request(self, request, message_thread_id=None) -> None:
         self.requests.append(request)
+        self.thread_ids.append(message_thread_id)
         asyncio.get_running_loop().call_later(
             0.01,
             lambda: self._manager.resolve_approval(

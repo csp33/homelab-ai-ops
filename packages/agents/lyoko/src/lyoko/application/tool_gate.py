@@ -91,6 +91,7 @@ class ToolGate:
         origin: str,
         session_id: str | None = None,
         chat_id: str = "",
+        message_thread_id: str | int | None = None,
         plan: str = "",
         approval_manager: ApprovalManager | None = None,
         chat_manager: ChatManager | None = None,
@@ -103,6 +104,7 @@ class ToolGate:
         self._origin = origin
         self._session_id = session_id or event_id
         self._chat_id = chat_id
+        self._message_thread_id = message_thread_id
         self._plan = plan
         self._approval_manager = approval_manager
         self._chat_manager = chat_manager
@@ -169,7 +171,9 @@ class ToolGate:
                 ApprovalAction(action_id="reject", label="❌ Deny", style="danger"),
             ],
         )
-        await self._chat_manager.broadcast_approval_request(request)
+        await self._chat_manager.broadcast_approval_request(
+            request, message_thread_id=self._message_thread_id
+        )
         response = await self._approval_manager.wait_for_approval(approval_id)
 
         if response.approved:

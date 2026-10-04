@@ -12,13 +12,19 @@ from lyoko.domain.models.chat import ChatUser, IncomingMessage
 from tests.agents.lyoko.fakes import FakeMCPClient, ScriptedLLM
 
 
-def _msg(text: str, message_id: str = "1", reply_to: str | None = None) -> IncomingMessage:
+def _msg(
+    text: str,
+    message_id: str = "1",
+    reply_to: str | None = None,
+    thread_id: str | None = None,
+) -> IncomingMessage:
     return IncomingMessage(
         message_id=message_id,
         chat_id="42",
         user=ChatUser(user_id="42", username="admin"),
         text=text,
         reply_to_message_id=reply_to,
+        message_thread_id=thread_id,
     )
 
 
@@ -105,12 +111,26 @@ async def test_graph_run_carries_event_identity_and_a_checkpoint_thread():
     assert state["event_type"] == "message"
     assert state["text"] == "hello"
     assert state["chat_id"] == "42"
+    assert state["message_thread_id"] is None
     assert state["session_id"].startswith("telegram-42-")
     # Short enough for "approve:<event>.<n>" to fit Telegram's 64 byte callback data.
     assert state["event_id"].startswith("chat-")
     assert len(f"approve:{state['event_id']}.99".encode()) <= 64
     assert config["configurable"]["thread_id"] == state["event_id"]
     assert config["run_name"] == "telegram-chat-interaction"
+
+
+@pytest.mark.asyncio
+async def test_message_thread_id_reaches_graph_state():
+    """A message in a forum topic must carry its thread so approvals reply in-topic."""
+    graph = MagicMock()
+    graph.ainvoke = AsyncMock(return_value={"reply": "ok"})
+    agent = InteractiveChatAgent(lambda: graph)
+
+    await agent.handle_message(_msg("hello", thread_id="321"))
+
+    state = graph.ainvoke.call_args.args[0]
+    assert state["message_thread_id"] == "321"
 
 
 @pytest.mark.asyncio

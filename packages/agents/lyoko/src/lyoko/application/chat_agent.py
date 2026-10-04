@@ -76,6 +76,7 @@ class InteractiveChatAgent:
             "event_id": event_id,
             "session_id": session_id,
             "chat_id": message.chat_id,
+            "message_thread_id": message.message_thread_id,
             "text": message.text,
             "history_context": history_context,
             "labels": {},

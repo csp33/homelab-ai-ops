@@ -89,6 +89,7 @@ def make_gate(
         origin=origin(state),
         session_id=state.get("session_id"),
         chat_id=state.get("chat_id") or settings.telegram_default_chat_id or "",
+        message_thread_id=state.get("message_thread_id"),
         plan=plan,
         approval_manager=approval_manager,
         chat_manager=chat_manager,
