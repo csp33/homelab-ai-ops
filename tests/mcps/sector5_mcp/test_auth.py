@@ -347,3 +347,31 @@ async def test_gateway_token_verifier_with_hs256_token():
         assert access_token is not None
         assert access_token.client_id == "admin@cspaez.org"
         assert access_token.token == token
+
+
+def test_build_auth_provider_requests_google_offline_refresh_token():
+    """Google needs access_type=offline (+ prompt=consent) to hand back a refresh token."""
+    from unittest.mock import MagicMock
+
+    from sector5_mcp.infrastructure.mcp import auth as auth_module
+
+    settings = MagicMock()
+    settings.auth_enabled = True
+    settings.google_client_id = "client-id.apps.googleusercontent.com"
+    settings.google_client_secret = "client-secret-xyz"
+    settings.allowed_google_emails = ["admin@cspaez.org"]
+    settings.canonical_base_url = "https://mcp.example.com"
+    settings.redirect_path = "/oauth/callback"
+
+    with (
+        patch.object(auth_module, "settings", settings),
+        patch.object(auth_module, "OIDCProxy") as mock_proxy,
+        patch.object(auth_module, "MultiAuth") as mock_multi,
+    ):
+        auth_module.build_auth_provider(MagicMock())
+
+    assert mock_proxy.called
+    extra = mock_proxy.call_args.kwargs["extra_authorize_params"]
+    assert extra["access_type"] == "offline"
+    assert extra["prompt"] == "consent"
+    assert mock_multi.called
