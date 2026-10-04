@@ -22,7 +22,7 @@
         "id": "gateway-upstream",
         "label": "Gateway & Infrastructure Execution",
         "focus": ["mcp_gw", "k8s_cluster", "unifi_net", "ha_iot", "graf_prom", "github_gitops"],
-        "note": "Unified FastMCP gateway validates auth, scores tool relevance, and enforces safety guardrails."
+        "note": "Unified FastMCP gateway validates auth, discovers tools per domain, and enforces safety guardrails."
       }
     ]
   },
@@ -80,7 +80,7 @@
     { "from": "mcp_gw", "to": "github_gitops", "variant": "security" }
   ],
   "cards": [
-    { "dot": "cyan", "title": "Multi-Agent Orchestration", "items": ["LangGraph StateGraph coordinates supervisor and 4 domain specialists", "Dynamic tool discovery with token-weighted relevance ranking", "Continuous episodic learning from operator feedback via pgvector"] },
+    { "dot": "cyan", "title": "Multi-Agent Orchestration", "items": ["LangGraph StateGraph coordinates supervisor and 4 domain specialists", "Per-domain tool discovery with paginated catalogs and lazy schema lookup", "Continuous episodic learning from operator feedback via pgvector"] },
     { "dot": "emerald", "title": "Zero-Trust Safety Gateway", "items": ["Unified FastMCP endpoint aggregates all upstream capabilities", "ToolGate enforces read-only investigation and human approval for changes", "GuardrailEngine blocks namespace violations and destructive commands"] },
     { "dot": "violet", "title": "Comprehensive Observability", "items": ["End-to-end Langfuse trace tree for every alert and Telegram message", "Deterministic token tracking and cost accounting across all agent steps", "Single source of truth across Kubernetes, UniFi, and Home Assistant"] }
   ]

@@ -70,7 +70,7 @@ When incidents occur, the system diagnoses root causes using read-only specialis
 
 | Package | Role | Description |
 | :--- | :--- | :--- |
-| [`homelab-mcp`](packages/mcps/homelab-mcp) | Tool Gateway | FastMCP server aggregating upstream APIs with authentication, scoped tool search, and namespace guardrails. |
+| [`homelab-mcp`](packages/mcps/homelab-mcp) | Tool Gateway | FastMCP server aggregating upstream APIs with authentication, per-domain tool catalogs, and namespace guardrails. |
 | [`lyoko`](packages/agents/lyoko) | Multi-Agent Engine | LangGraph orchestrator with hierarchical domain specialists, Telegram approvals, and episodic vector memory. |
 
 ---
