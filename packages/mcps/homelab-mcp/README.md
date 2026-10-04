@@ -111,7 +111,7 @@ Add the following to your `claude_desktop_config.json` or Cursor MCP settings:
       "command": "uv",
       "args": [
         "--directory",
-        "/path/to/homelab-aiops",
+        "/path/to/lyoko-ai-ops",
         "run",
         "--package",
         "homelab-mcp",

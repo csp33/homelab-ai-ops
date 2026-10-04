@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-This guide walks you through setting up and running `homelab-aiops`.
+This guide walks you through setting up and running `lyoko-ai-ops`.
 
 ---
 
@@ -21,8 +21,8 @@ The easiest way to run the full platform is with Docker Compose. This automatica
 
 ```bash
 # Clone the repository
-git clone https://github.com/csp33/homelab-aiops.git
-cd homelab-aiops
+git clone https://github.com/csp33/lyoko-ai-ops.git
+cd lyoko-ai-ops
 
 # Create and configure environment file
 cp .env.example .env

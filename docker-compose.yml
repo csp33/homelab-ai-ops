@@ -1,7 +1,7 @@
 services:
   postgres:
     image: pgvector/pgvector:pg17
-    container_name: homelab-aiops-postgres
+    container_name: lyoko-ai-ops-postgres
     restart: unless-stopped
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
@@ -24,7 +24,7 @@ services:
     build:
       context: .
       dockerfile: packages/mcps/homelab-mcp/Dockerfile
-    container_name: homelab-aiops-mcp
+    container_name: lyoko-ai-ops-mcp
     restart: unless-stopped
     ports:
       - "${MCP_PORT:-8000}:8000"
@@ -41,7 +41,7 @@ services:
     build:
       context: .
       dockerfile: packages/agents/lyoko/Dockerfile
-    container_name: homelab-aiops-migration
+    container_name: lyoko-ai-ops-migration
     restart: "no"
     command: ["alembic", "-c", "/app/packages/agents/lyoko/alembic.ini", "upgrade", "head"]
     depends_on:
@@ -58,7 +58,7 @@ services:
     build:
       context: .
       dockerfile: packages/agents/lyoko/Dockerfile
-    container_name: homelab-aiops-lyoko
+    container_name: lyoko-ai-ops-lyoko
     restart: unless-stopped
     ports:
       - "${LYOKO_PORT:-9000}:9000"

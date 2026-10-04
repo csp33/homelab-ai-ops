@@ -199,7 +199,7 @@ def test_guardrail_github_repos_allowlist_and_denylist():
     # 1. Allowed repo matching wildcard
     engine.validate_tool_call(
         "github_get_file_contents",
-        {"repo": "csp33/homelab-aiops", "path": "values.yaml"},
+        {"repo": "csp33/lyoko-ai-ops", "path": "values.yaml"},
         upstream_name="github",
     )
 

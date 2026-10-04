@@ -1,12 +1,12 @@
-# AGENTS.md — Homelab AIOps
+# AGENTS.md — LYOKO AIOps
 
-Project context, architectural standards, and operating rules for AI coding agents and contributors working in `homelab-aiops`.
+Project context, architectural standards, and operating rules for AI coding agents and contributors working in `lyoko-ai-ops`.
 
 ---
 
 ## 1. Project Overview
 
-`homelab-aiops` is a modular, open-source Homelab AIOps & autonomous operations platform designed for Kubernetes homelab environments and smart infrastructure.
+`lyoko-ai-ops` is a modular, open-source LYOKO AIOps & autonomous operations platform designed for Kubernetes homelab environments and smart infrastructure.
 
 The platform consists of two primary systems within a Python `uv` monorepo:
 
@@ -49,7 +49,7 @@ The platform consists of two primary systems within a Python `uv` monorepo:
 ### Monorepo Structure (`uv` Workspace & Clean Architecture)
 
 ```text
-homelab-aiops/
+lyoko-ai-ops/
 ├── pyproject.toml              # Root uv workspace configuration
 ├── uv.lock                     # Shared deterministic dependency lock
 ├── .env.example                # Documented configuration template
@@ -91,7 +91,7 @@ homelab-aiops/
 
 ### Clean Architecture & Layer Boundary Governance (Strict Rule)
 
-Every package in `homelab-aiops` strictly adheres to **Clean Architecture** (Ports & Adapters / Hexagonal Architecture). Boundary crossing rules are strictly enforced:
+Every package in `lyoko-ai-ops` strictly adheres to **Clean Architecture** (Ports & Adapters / Hexagonal Architecture). Boundary crossing rules are strictly enforced:
 
 1. **`domain/` (Pure Entities & Ports)**:
    - Contains pure business logic, domain entity models (`dataclasses`, `Pydantic`), domain exceptions, and abstract interfaces (`ABC` ports).

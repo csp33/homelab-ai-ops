@@ -58,13 +58,13 @@ async def test_github_tools_discovery_and_execution(mock_auth):
 
     res = await gateway.execute_tool(
         "github_get_file_contents",
-        {"repo": "csp33/homelab-aiops", "path": "values.yaml"},
+        {"repo": "csp33/lyoko-ai-ops", "path": "values.yaml"},
     )
     assert res.status == "success"
     assert "apiVersion: apps/v1" in res.content
     mock_github.call_tool.assert_awaited_once_with(
         "github_get_file_contents",
-        {"repo": "csp33/homelab-aiops", "path": "values.yaml"},
+        {"repo": "csp33/lyoko-ai-ops", "path": "values.yaml"},
     )
 
 

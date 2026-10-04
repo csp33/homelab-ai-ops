@@ -1,6 +1,6 @@
 # Security & Safety Guardrails
 
-`homelab-aiops` is designed to run against real physical infrastructure, Kubernetes clusters, network switches, and IoT controllers. Safety is enforced through a defense-in-depth model combining gateway-level guardrails, multi-tenant authentication, and human-in-the-loop (HITL) approval gating.
+`lyoko-ai-ops` is designed to run against real physical infrastructure, Kubernetes clusters, network switches, and IoT controllers. Safety is enforced through a defense-in-depth model combining gateway-level guardrails, multi-tenant authentication, and human-in-the-loop (HITL) approval gating.
 
 ---
 
@@ -81,6 +81,6 @@ This repository is strictly open source and public:
 
 ## Related Documentation
 
-- [System Architecture](file:///Users/spcarlos33/.gemini/antigravity/worktrees/homelab-aiops/split_root_readme/docs/architecture.md)
-- [homelab-mcp Package Guide](file:///Users/spcarlos33/.gemini/antigravity/worktrees/homelab-aiops/split_root_readme/packages/mcps/homelab-mcp/README.md)
-- [LYOKO Agent Package Guide](file:///Users/spcarlos33/.gemini/antigravity/worktrees/homelab-aiops/split_root_readme/packages/agents/lyoko/README.md)
+- [System Architecture](architecture.md)
+- [homelab-mcp Package Guide](../packages/mcps/homelab-mcp/README.md)
+- [LYOKO Agent Package Guide](../packages/agents/lyoko/README.md)
