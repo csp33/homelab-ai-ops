@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:pg17
     container_name: homelab-aiops-postgres
     restart: unless-stopped
     ports:
@@ -34,6 +34,25 @@ services:
     env_file:
       - path: .env
         required: false
+    volumes:
+      - ./packages/mcps/homelab-mcp/src:/app/packages/mcps/homelab-mcp/src:ro
+
+  migration:
+    build:
+      context: .
+      dockerfile: packages/agents/lyoko/Dockerfile
+    container_name: homelab-aiops-migration
+    restart: "no"
+    command: ["alembic", "-c", "/app/packages/agents/lyoko/alembic.ini", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: "postgres"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lyoko}
+    env_file:
+      - path: .env
+        required: false
 
   lyoko:
     build:
@@ -48,15 +67,22 @@ services:
         condition: service_healthy
       homelab-mcp:
         condition: service_started
+      migration:
+        condition: service_completed_successfully
     environment:
       LYOKO_HOST: "0.0.0.0"
       LYOKO_PORT: "9000"
       MCP_SERVER_URL: "http://homelab-mcp:8000/mcp"
       POSTGRES_HOST: "postgres"
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lyoko}
+      PYTHONPATH: "/app/packages/agents/lyoko/src"
     env_file:
       - path: .env
         required: false
+    volumes:
+      - ./packages/agents/lyoko/src:/app/packages/agents/lyoko/src:ro
+      - ./packages/agents/lyoko/migrations:/app/packages/agents/lyoko/migrations:ro
+      - ./packages/agents/lyoko/alembic.ini:/app/packages/agents/lyoko/alembic.ini:ro
 
 volumes:
   postgres_data:

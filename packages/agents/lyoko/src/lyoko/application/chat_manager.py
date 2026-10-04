@@ -62,6 +62,7 @@ class ChatManager:
         reply_to_message_id: str | int | None = None,
         parse_mode: str = "Markdown",
         session_id: str | None = None,
+        message_thread_id: str | int | None = None,
     ) -> list[SentMessage]:
         """Send message across all registered connectors with fault tolerance.
 
@@ -75,6 +76,7 @@ class ChatManager:
                     text=text,
                     reply_to_message_id=reply_to_message_id,
                     parse_mode=parse_mode,
+                    message_thread_id=message_thread_id,
                 )
                 self._link_sent_message(sent, session_id)
                 if isinstance(sent, SentMessage):
@@ -106,7 +108,9 @@ class ChatManager:
                 logger.error("Error editing message via connector: %s", e)
         return results
 
-    async def broadcast_approval_request(self, request: ApprovalRequest) -> None:
+    async def broadcast_approval_request(
+        self, request: ApprovalRequest, message_thread_id: str | int | None = None
+    ) -> None:
         """Send approval request across all registered connectors with fault tolerance.
 
         Replies to the approval message continue the request's session, which defaults to the
@@ -114,7 +118,9 @@ class ChatManager:
         """
         for conn in self.connectors:
             try:
-                sent = await conn.send_approval_request(request)
+                sent = await conn.send_approval_request(
+                    request, message_thread_id=message_thread_id
+                )
                 self._link_sent_message(sent, request.session_id or request.incident_id)
             except Exception as e:
                 logger.error("Error broadcasting approval request via connector: %s", e)

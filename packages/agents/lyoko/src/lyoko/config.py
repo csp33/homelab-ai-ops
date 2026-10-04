@@ -83,6 +83,11 @@ class AgentSettings(BaseSettings):
         ),
         description="Default Telegram Chat/Channel ID for broadcast notifications and alerts",
     )
+    telegram_discussion_group_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("telegram_discussion_group_id", "discussion_group_id"),
+        description="Telegram Discussion Group / Supergroup ID linked to the broadcast channel",
+    )
 
     # Guardrails
     max_remediation_retries: int = Field(

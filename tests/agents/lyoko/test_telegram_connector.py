@@ -56,6 +56,7 @@ async def test_telegram_connector_incoming_message_handler():
     mock_update.effective_user.first_name = "Admin"
     mock_update.effective_chat.id = 12345
     mock_update.message.message_id = 42
+    mock_update.message.message_thread_id = None
     mock_update.message.text = "/status"
     mock_update.message.set_reaction = AsyncMock()
     mock_update.message.reply_text = AsyncMock()
@@ -68,7 +69,11 @@ async def test_telegram_connector_incoming_message_handler():
     assert received_msgs[0].user.username == "admin"
     mock_update.message.set_reaction.assert_called_once_with(reaction="👀")
     mock_update.message.reply_text.assert_called_once_with(
-        "Acknowledged", parse_mode="HTML", reply_to_message_id=42, allow_sending_without_reply=True
+        "Acknowledged",
+        parse_mode="HTML",
+        reply_to_message_id=42,
+        message_thread_id=None,
+        allow_sending_without_reply=True,
     )
 
 
@@ -282,6 +287,7 @@ async def test_telegram_connector_send_message():
         text="Hello",
         parse_mode="HTML",
         reply_to_message_id=None,
+        message_thread_id=None,
         allow_sending_without_reply=True,
     )
 
@@ -293,6 +299,7 @@ async def test_telegram_connector_send_message():
         text="Broadcast",
         parse_mode="HTML",
         reply_to_message_id=None,
+        message_thread_id=None,
         allow_sending_without_reply=True,
     )
 
@@ -304,6 +311,7 @@ async def test_telegram_connector_send_message():
         text="Reply text",
         parse_mode="HTML",
         reply_to_message_id=42,
+        message_thread_id=None,
         allow_sending_without_reply=True,
     )
 
@@ -403,13 +411,25 @@ async def test_chat_manager():
     # Broadcast message
     await manager.broadcast_message("chat_123", "Alert text")
     conn1.send_message.assert_called_once_with(
-        chat_id="chat_123", text="Alert text", reply_to_message_id=None, parse_mode="Markdown"
+        chat_id="chat_123",
+        text="Alert text",
+        reply_to_message_id=None,
+        parse_mode="Markdown",
+        message_thread_id=None,
     )
     conn2.send_message.assert_called_once_with(
-        chat_id="chat_123", text="Alert text", reply_to_message_id=None, parse_mode="Markdown"
+        chat_id="chat_123",
+        text="Alert text",
+        reply_to_message_id=None,
+        parse_mode="Markdown",
+        message_thread_id=None,
     )
     conn3.send_message.assert_called_once_with(
-        chat_id="chat_123", text="Alert text", reply_to_message_id=None, parse_mode="Markdown"
+        chat_id="chat_123",
+        text="Alert text",
+        reply_to_message_id=None,
+        parse_mode="Markdown",
+        message_thread_id=None,
     )
 
     # Broadcast approval request
@@ -420,16 +440,20 @@ async def test_chat_manager():
         chat_id="123",
     )
     await manager.broadcast_approval_request(req)
-    conn1.send_approval_request.assert_called_once_with(req)
-    conn2.send_approval_request.assert_called_once_with(req)
-    conn3.send_approval_request.assert_called_once_with(req)
+    conn1.send_approval_request.assert_called_once_with(req, message_thread_id=None)
+    conn2.send_approval_request.assert_called_once_with(req, message_thread_id=None)
+    conn3.send_approval_request.assert_called_once_with(req, message_thread_id=None)
 
     # Fault tolerance: one connector raises
     conn1.send_message.side_effect = RuntimeError("Network error")
     conn2.send_message.reset_mock()
     await manager.broadcast_message("chat_123", "Alert text 2")
     conn2.send_message.assert_called_once_with(
-        chat_id="chat_123", text="Alert text 2", reply_to_message_id=None, parse_mode="Markdown"
+        chat_id="chat_123",
+        text="Alert text 2",
+        reply_to_message_id=None,
+        parse_mode="Markdown",
+        message_thread_id=None,
     )
 
 
@@ -463,6 +487,7 @@ async def test_telegram_connector_channel_post_authorization():
     mock_update.effective_chat.title = "Homelab Ops"
     mock_update.effective_chat.type = "channel"
     mock_update.effective_message.message_id = 101
+    mock_update.effective_message.message_thread_id = None
     mock_update.effective_message.text = "Check k8s status"
     mock_update.effective_message.reply_text = AsyncMock()
 
@@ -476,6 +501,7 @@ async def test_telegram_connector_channel_post_authorization():
         "Channel response",
         parse_mode="HTML",
         reply_to_message_id=101,
+        message_thread_id=None,
         allow_sending_without_reply=True,
     )
 
@@ -853,6 +879,7 @@ async def test_telegram_connector_handles_streaming_message_handler():
     mock_update.effective_user.id = 12345
     mock_update.effective_chat.id = 12345
     mock_update.message.message_id = 42
+    mock_update.message.message_thread_id = None
     mock_update.message.text = "Hello stream"
     mock_update.message.set_reaction = AsyncMock()
     mock_update.message.reply_text = AsyncMock()
@@ -864,6 +891,7 @@ async def test_telegram_connector_handles_streaming_message_handler():
         "Final reply",
         parse_mode="HTML",
         reply_to_message_id=42,
+        message_thread_id=None,
         allow_sending_without_reply=True,
     )
     assert mock_bot.send_message_draft.call_count >= 1
@@ -927,3 +955,84 @@ async def test_chat_manager_edit_message_and_broadcast_message():
     )
     assert len(edited_list) == 1
     assert edited_list[0].message_id == "100"
+
+
+@pytest.mark.asyncio
+async def test_telegram_connector_channel_post_redirects_to_discussion_group():
+    """Verify replies to channel posts are sent into the linked discussion group comment thread."""
+    connector = TelegramConnector(
+        bot_token="fake:token",
+        allowed_user_ids=set(),
+        allowed_chat_ids={"-1001234567890", "-1004400196957"},
+        default_chat_id="-1001234567890",
+        discussion_group_id="-1004400196957",
+    )
+
+    async def handler(msg: IncomingMessage) -> str:
+        return "Reply in thread"
+
+    connector.register_message_handler(handler)
+
+    mock_app = MagicMock()
+    mock_app.bot.send_message = AsyncMock(
+        return_value=MagicMock(message_id=999, chat_id="-1004400196957")
+    )
+    connector._app = mock_app
+
+    # 1. Simulate the automatic forward of the channel post arriving in the discussion group
+    forward_msg = MagicMock()
+    forward_msg.message_id = 200
+    forward_origin = MagicMock()
+    forward_origin.type = "channel"
+    forward_origin.chat.id = -1001234567890
+    forward_origin.message_id = 50
+    forward_msg.forward_origin = forward_origin
+
+    connector._record_channel_forward(forward_msg)
+
+    # 2. Simulate user posting in channel
+    channel_update = MagicMock()
+    channel_update.message = None
+    channel_update.effective_chat.id = -1001234567890
+    channel_update.effective_chat.type = "channel"
+    channel_update.effective_user = None
+    channel_update.effective_message.message_id = 50
+    channel_update.effective_message.message_thread_id = None
+    channel_update.effective_message.text = "Hello from channel"
+    channel_update.effective_message.is_automatic_forward = False
+    channel_update.effective_message.set_reaction = AsyncMock()
+    channel_update.effective_message.reply_text = AsyncMock()
+
+    await connector._handle_telegram_message(channel_update, MagicMock())
+
+    # Reply should NOT be sent to channel via reply_text
+    channel_update.effective_message.reply_text.assert_not_called()
+
+    # Reply MUST be sent to discussion group with reply_to_message_id=200
+    mock_app.bot.send_message.assert_called_once()
+    call_kwargs = mock_app.bot.send_message.call_args[1]
+    assert call_kwargs["chat_id"] == "-1004400196957"
+    assert call_kwargs["reply_to_message_id"] == 200
+    assert call_kwargs["message_thread_id"] == 200
+    assert "Reply in thread" in call_kwargs["text"]
+
+
+@pytest.mark.asyncio
+async def test_telegram_connector_automatic_forward_ignored():
+    """Verify automatic channel forwards into the discussion group do not trigger handlers."""
+    connector = TelegramConnector(
+        bot_token="fake:token",
+        allowed_chat_ids={"-1004400196957"},
+        discussion_group_id="-1004400196957",
+    )
+    handler = AsyncMock()
+    connector.register_message_handler(handler)
+
+    mock_update = MagicMock()
+    mock_update.message = None
+    mock_update.effective_chat.id = -1004400196957
+    mock_update.effective_message.text = "Forwarded text"
+    mock_update.effective_message.is_automatic_forward = True
+
+    await connector._handle_telegram_message(mock_update, MagicMock())
+    handler.assert_not_called()
