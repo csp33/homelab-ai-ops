@@ -26,6 +26,18 @@ async def test_domain_specialist_initialization_and_prompts():
 
 
 @pytest.mark.asyncio
+async def test_all_specialists_carry_filtering_discipline():
+    for prompt in (
+        K8S_SPECIALIST_PROMPT,
+        NETWORK_SPECIALIST_PROMPT,
+        SMARTHOME_SPECIALIST_PROMPT,
+        OBSERVABILITY_SPECIALIST_PROMPT,
+    ):
+        assert "Filtering discipline" in prompt
+        assert "filter the returned output yourself" in prompt
+
+
+@pytest.mark.asyncio
 async def test_domain_specialist_run_executes_with_scoped_domain():
     mock_llm = MagicMock(spec=LLMClientInterface)
     mock_llm.chat = AsyncMock(return_value="Top client: humberto (435 GB)")
