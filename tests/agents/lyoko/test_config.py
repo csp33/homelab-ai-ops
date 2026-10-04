@@ -59,4 +59,4 @@ def test_tool_budget_and_memory_threshold_defaults():
     assert settings.max_tool_calls_per_run == 20
     assert settings.max_tool_output_chars == 8000
     assert settings.memory_similarity_threshold == 0.2
-    assert settings.chat_memory_similarity_threshold == 0.5
+    assert settings.chat_memory_similarity_threshold == 0.35

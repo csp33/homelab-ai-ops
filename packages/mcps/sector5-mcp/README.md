@@ -13,9 +13,9 @@
 </p>
 
 `sector5-mcp` exposes a small, uniform tool surface so an agent never has to load the whole catalog into context:
-- **Domain Discovery**: `gateway_get_domain_tools(domain, limit=50, offset=0)` returns a lean index (name + one-line description) of the domain's tools, paginated (`limit` max 100, follow `has_more`) so large domains like UniFi (200+ tools) never flood the context. Domain aliases resolve automatically (`network` ➔ `unifi`, `k8s` / `gitops` / `argocd` ➔ `kubernetes`, `iot` ➔ `homeassistant`, `metrics` / `prometheus` ➔ `grafana`).
-- **On-Demand Schema**: `gateway_get_tool_schema(tool_name)` returns the full parameter schema of a single tool, fetched only right before it is called.
-- **Single Execution Choke Point**: `gateway_call_tool(tool_name, arguments)` runs any upstream tool, but only after the guardrail engine approves it.
+- **Domain Discovery**: `gateway_get_domain_tools(domain, limit=50, offset=0)` returns the domain's tools (name + one-line description + JSON argument schema), paginated (`limit` max 100, follow `has_more`). The argument schema travels with the list, so an agent never guesses argument names or pays a separate schema round-trip. Domain aliases resolve automatically (`network` ➔ `unifi`, `k8s` / `gitops` / `argocd` ➔ `kubernetes`, `iot` ➔ `homeassistant`, `metrics` / `prometheus` ➔ `grafana`).
+- **On-Demand Schema**: `gateway_get_tool_schema(tool_name)` returns one tool's full parameter schema. Use it as a targeted re-read to correct a call rejected for its arguments, or for a tool that fell outside the current page.
+- **Single Execution Choke Point**: `gateway_call_tool(tool_name, arguments)` runs any upstream tool, but only after the guardrail engine approves it. If the upstream rejects the call for its arguments (e.g. a 422), the error carries the tool's correct schema inline so the agent can self-correct and retry once.
 - **Domains**: `kubernetes`, `unifi`, `homeassistant`, `grafana`, `github`, and `telegram` (provided in-process by the gateway).
 
 
@@ -34,7 +34,7 @@ Every tool call is evaluated by the `GuardrailEngine` before it is dispatched up
 
 ## Tool domains
 
-Tool names come straight from each upstream server. Call `gateway_get_domain_tools(domain="kubernetes")` to list a domain's tools (lean index), then `gateway_get_tool_schema(tool_name=...)` and `gateway_call_tool(tool_name=..., arguments={...})` to inspect and run one.
+Tool names come straight from each upstream server. Call `gateway_get_domain_tools(domain="kubernetes")` to list a domain's tools with their argument schemas, then `gateway_call_tool(tool_name=..., arguments={...})` to run one (`gateway_get_tool_schema` re-reads a single schema when a call is rejected for its arguments).
 
 | Domain | Upstream MCP provider | Capabilities | Example tools |
 | :--- | :--- | :--- | :--- |

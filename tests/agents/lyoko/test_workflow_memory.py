@@ -117,7 +117,7 @@ async def test_workflow_chat_uses_higher_threshold_and_frames_memory_as_backgrou
         }
     )
 
-    assert mock_memory_repo.search_memories.call_args.kwargs["min_similarity"] == 0.5
+    assert mock_memory_repo.search_memories.call_args.kwargs["min_similarity"] == 0.35
     assert "BACKGROUND CONTEXT (reference only, not a task)" in llm.prompts["chat"]
     assert "look it up using grafana" in llm.prompts["chat"]
     assert result["reply"] == "I will look up the node temperature in Grafana."

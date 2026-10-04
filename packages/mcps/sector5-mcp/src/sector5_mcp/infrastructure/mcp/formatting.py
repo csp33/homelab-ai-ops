@@ -7,8 +7,12 @@ _MAX_STRING_CONTENT = 12000
 _MAX_LIST_CONTENT = 60
 
 
-def lean_tool_index(tools: list[Any]) -> list[dict[str, Any]]:
-    """Reduce tool definitions to a lean index for prompt/context efficiency."""
+def tool_index(tools: list[Any]) -> list[dict[str, Any]]:
+    """Reduce tool definitions to an index entry with description and raw JSON schema.
+
+    The parameter schema is always included so an agent never has to guess argument names
+    behind a generic call, and never needs a separate schema round-trip.
+    """
     results = []
     for t in tools:
         desc = (t.description or "").strip()
@@ -23,6 +27,7 @@ def lean_tool_index(tools: list[Any]) -> list[dict[str, Any]]:
                 "name": t.name,
                 "description": short_desc,
                 "upstream": str(t.upstream_type),
+                "parameters": t.parameters or {"type": "object", "properties": {}},
             }
         )
     return results

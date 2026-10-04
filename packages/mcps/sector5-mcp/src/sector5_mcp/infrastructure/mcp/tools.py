@@ -1,13 +1,32 @@
 """Gateway MCP tool handlers for domain discovery and execution."""
 
+import json
 from typing import Any
 
 from fastmcp import FastMCP
 from sector5_mcp.application.service import MCPGatewayService
 from sector5_mcp.domain.models.upstream import UpstreamType
-from sector5_mcp.infrastructure.mcp.formatting import lean_tool_index, shape_tool_content
+from sector5_mcp.infrastructure.mcp.formatting import shape_tool_content, tool_index
 
 _MAX_DOMAIN_PAGE = 100
+
+# Markers an upstream uses to reject a call for its arguments (e.g. a 422). When one appears, the
+# gateway attaches the tool's real schema so the agent can self-correct without a second lookup.
+_ARGUMENT_ERROR_MARKERS = (
+    "unknown argument",
+    "required argument",
+    "missing required",
+    "invalid argument",
+    "invalid type",
+    "unexpected keyword",
+    "422",
+    "unprocessable",
+)
+
+
+def _is_argument_error(message: str) -> bool:
+    lowered = message.lower()
+    return any(marker in lowered for marker in _ARGUMENT_ERROR_MARKERS)
 
 
 def register_gateway_tools(mcp: FastMCP, service: MCPGatewayService) -> None:
@@ -21,10 +40,9 @@ def register_gateway_tools(mcp: FastMCP, service: MCPGatewayService) -> None:
     ) -> dict[str, Any]:
         """Return one page of the tool index for one upstream domain.
 
-        Returns a lean index (name, one-line description, upstream) so a large domain does not
-        flood the context. Page with ``limit``/``offset`` and follow ``has_more``. Use
-        gateway_get_tool_schema(tool_name) for the exact arguments before executing with
-        gateway_call_tool.
+        Each entry carries the tool name, a one-line description, and its full JSON parameter
+        schema, so the exact argument names are always visible and never guessed. Page with
+        ``limit``/``offset`` and follow ``has_more``. Execute with gateway_call_tool.
 
         Args:
             domain: Upstream domain (e.g. kubernetes, unifi, homeassistant, grafana, github, telegram).
@@ -49,7 +67,7 @@ def register_gateway_tools(mcp: FastMCP, service: MCPGatewayService) -> None:
             "limit": bounded_limit,
             "offset": bounded_offset,
             "has_more": bounded_offset + len(page) < total,
-            "tools": lean_tool_index(page),
+            "tools": tool_index(page),
         }
 
     @mcp.tool()
@@ -59,17 +77,15 @@ def register_gateway_tools(mcp: FastMCP, service: MCPGatewayService) -> None:
         Args:
             tool_name: The exact name of the tool to inspect.
         """
-        base_name = tool_name.split(".", 1)[1] if "." in tool_name else tool_name
-        tools = await service.discover_tools()
-        for t in tools:
-            if t.name in (tool_name, base_name):
-                return {
-                    "name": t.name,
-                    "description": t.description,
-                    "upstream": str(t.upstream_type),
-                    "parameters": t.parameters,
-                }
-        return {"error": f"Tool '{tool_name}' not found."}
+        definition = await service.get_tool_definition(tool_name)
+        if definition is None:
+            return {"error": f"Tool '{tool_name}' not found."}
+        return {
+            "name": definition.name,
+            "description": definition.description,
+            "upstream": str(definition.upstream_type),
+            "parameters": definition.parameters,
+        }
 
     @mcp.tool()
     async def gateway_call_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -80,8 +96,18 @@ def register_gateway_tools(mcp: FastMCP, service: MCPGatewayService) -> None:
             arguments: Dictionary of arguments matching the tool schema.
         """
         result = await service.execute_tool(tool_name, arguments)
+        content = shape_tool_content(result.content, result.is_error)
+        if result.is_error and _is_argument_error(str(result.content)):
+            definition = await service.get_tool_definition(tool_name)
+            if definition is not None:
+                content = (
+                    f"{content}\n\n[The call was rejected for its arguments. The correct parameter "
+                    f"schema for '{definition.name}' is:\n"
+                    f"{json.dumps(definition.parameters)}\n"
+                    "Retry once with these exact argument names.]"
+                )
         return {
             "status": result.status,
-            "content": shape_tool_content(result.content, result.is_error),
+            "content": content,
             "is_error": result.is_error,
         }

@@ -233,6 +233,20 @@ async def test_domain_discovery_tool_is_never_gated():
 
 
 @pytest.mark.asyncio
+async def test_domain_tools_are_the_scoped_discovery_trio():
+    """Specialists keep discovery; the domain list carries schemas so args are never guessed."""
+    client = FastMCPClient(server_url="http://x/mcp", token="")
+
+    tools = {t.name: t for t in await client.get_domain_langchain_tools("grafana")}
+
+    assert set(tools) == {
+        "gateway_get_domain_tools",
+        "gateway_get_tool_schema",
+        "gateway_call_tool",
+    }
+
+
+@pytest.mark.asyncio
 async def test_get_domain_catalog_follows_pagination():
     client = FastMCPClient(server_url="http://x/mcp", token="")
     client.get_domain_tools_page = AsyncMock(
