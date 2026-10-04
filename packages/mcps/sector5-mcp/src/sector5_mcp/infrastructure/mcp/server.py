@@ -23,24 +23,14 @@ _GATEWAY_INSTRUCTIONS = (
 )
 
 
-def create_gateway_mcp_server(
-    service: MCPGatewayService,
-    base_url: str | None = None,
-    prewarm: bool = True,
-) -> FastMCP:
-    """Create FastMCP Gateway server aggregating upstream tools.
-
-    ``base_url`` binds this server's OAuth provider to a specific public host.
-    ``prewarm`` controls whether this server triggers the initial upstream tool
-    discovery at startup (only the first of several per-host servers should).
-    """
-    auth_provider = build_auth_provider(service, base_url=base_url)
+def create_gateway_mcp_server(service: MCPGatewayService) -> FastMCP:
+    """Create FastMCP Gateway server aggregating upstream tools."""
+    auth_provider = build_auth_provider(service)
 
     @asynccontextmanager
     async def server_lifespan(server: FastMCP):
-        if prewarm:
-            logger.info("Pre-warming upstream MCP connections and routing table...")
-            asyncio.create_task(service.discover_tools())
+        logger.info("Pre-warming upstream MCP connections and routing table...")
+        asyncio.create_task(service.discover_tools())
         yield
 
     mcp = FastMCP(

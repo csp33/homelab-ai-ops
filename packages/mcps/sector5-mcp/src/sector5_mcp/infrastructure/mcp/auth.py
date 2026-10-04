@@ -35,16 +35,11 @@ class GatewayTokenVerifier(TokenVerifier):
         return None
 
 
-def build_auth_provider(service: MCPGatewayService, base_url: str | None = None) -> Any | None:
-    """Build the gateway auth provider from settings, or None when auth is disabled.
-
-    ``base_url`` overrides the canonical ``settings.canonical_base_url`` so that one gateway can
-    expose a distinct OAuth issuer and protected resource per public host.
-    """
+def build_auth_provider(service: MCPGatewayService) -> Any | None:
+    """Build the gateway auth provider from settings, or None when auth is disabled."""
     if not settings.auth_enabled:
         return None
 
-    resolved_base_url = base_url or settings.canonical_base_url
     token_verifier = GatewayTokenVerifier(service)
     if not (settings.google_client_id and settings.google_client_secret):
         return token_verifier
@@ -65,15 +60,11 @@ def build_auth_provider(service: MCPGatewayService, base_url: str | None = None)
         client_id=settings.google_client_id,
         client_secret=settings.google_client_secret,
         jwt_signing_key=settings.google_client_secret,
-        base_url=resolved_base_url,
+        base_url=settings.base_url,
         redirect_path=settings.redirect_path,
         verify_id_token=True,
         valid_scopes=["openid", "email", "profile"],
-        extra_authorize_params={
-            "scope": "openid email profile",
-            "access_type": "offline",
-            "prompt": "consent",
-        },
+        extra_authorize_params={"scope": "openid email profile"},
         token_verifier=google_verifier,
     )
     return MultiAuth(server=oidc_proxy, verifiers=[token_verifier])
