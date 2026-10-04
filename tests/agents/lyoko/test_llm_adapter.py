@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.messages import ToolMessage
 from lyoko.infrastructure.llm.openai import OpenAILLMAdapter
 
 
@@ -287,3 +288,67 @@ async def test_openai_llm_adapter_breaks_identical_tool_call_loop():
     assert mock_bound_client.ainvoke.await_count == 3
     mock_client.ainvoke.assert_awaited_once()
     assert result == "Summary after loop break."
+
+
+@pytest.mark.asyncio
+async def test_openai_llm_adapter_truncates_large_tool_output():
+    """A single tool result longer than the budget is truncated before entering the context."""
+    tool_call_msg = MagicMock()
+    tool_call_msg.tool_calls = [{"name": "k8s_resources_list", "args": {}, "id": "call_1"}]
+    final_msg = MagicMock()
+    final_msg.tool_calls = []
+    final_msg.content = "done"
+
+    mock_bound_client = AsyncMock()
+    mock_bound_client.ainvoke.side_effect = [tool_call_msg, final_msg]
+
+    adapter = OpenAILLMAdapter(api_key="sk-test")
+    mock_client = MagicMock()
+    mock_client.bind_tools.return_value = mock_bound_client
+    adapter._client = mock_client
+
+    huge_output = "x" * 50000
+    mock_tool = MagicMock()
+    mock_tool.name = "k8s_resources_list"
+    mock_tool.ainvoke = AsyncMock(return_value=huge_output)
+
+    with patch("lyoko.infrastructure.llm.openai.settings.max_tool_output_chars", 1000):
+        result = await adapter.chat(prompt="List resources", tools=[mock_tool], max_steps=5)
+
+    assert result == "done"
+    second_messages = mock_bound_client.ainvoke.call_args_list[1].args[0]
+    tool_messages = [m for m in second_messages if isinstance(m, ToolMessage)]
+    assert len(tool_messages) == 1
+    assert len(tool_messages[0].content) < len(huge_output)
+    assert "truncated" in tool_messages[0].content
+
+
+@pytest.mark.asyncio
+async def test_openai_llm_adapter_bounds_total_tool_calls():
+    """The per-run tool-call budget stops execution and forces a final summary."""
+    tool_call_msg = MagicMock()
+    tool_call_msg.tool_calls = [
+        {"name": "k8s_resources_get", "args": {"name": "app-a"}, "id": "c1"},
+        {"name": "k8s_resources_get", "args": {"name": "app-b"}, "id": "c2"},
+        {"name": "k8s_resources_get", "args": {"name": "app-c"}, "id": "c3"},
+    ]
+    mock_bound_client = AsyncMock()
+    mock_bound_client.ainvoke.return_value = tool_call_msg
+
+    adapter = OpenAILLMAdapter(api_key="sk-test")
+    mock_client = MagicMock()
+    mock_client.bind_tools.return_value = mock_bound_client
+    summary = MagicMock()
+    summary.content = "Summary after budget."
+    mock_client.ainvoke = AsyncMock(return_value=summary)
+    adapter._client = mock_client
+
+    mock_tool = MagicMock()
+    mock_tool.name = "k8s_resources_get"
+    mock_tool.ainvoke = AsyncMock(return_value="ok")
+
+    with patch("lyoko.infrastructure.llm.openai.settings.max_tool_calls_per_run", 2):
+        result = await adapter.chat(prompt="Check all apps", tools=[mock_tool], max_steps=10)
+
+    assert mock_tool.ainvoke.await_count == 2
+    assert result == "Summary after budget."

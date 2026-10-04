@@ -7,6 +7,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableLambda
 from langchain_openai import ChatOpenAI
+from lyoko.config import settings
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.infrastructure.observability.langfuse import get_langfuse_trace_config
 
@@ -35,6 +36,15 @@ def _child_config(
     if metadata:
         config["metadata"] = dict(metadata)
     return config
+
+
+def _bound_tool_output(output: Any) -> str:
+    """Cap a single tool result so one call cannot dominate the context budget."""
+    text = str(output)
+    limit = settings.max_tool_output_chars
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n\n[System Note: Tool output truncated to fit the context budget.]"
 
 
 class OpenAILLMAdapter(LLMClientInterface):
@@ -109,6 +119,8 @@ class OpenAILLMAdapter(LLMClientInterface):
                         messages.append(SystemMessage(content=system_prompt))
                     messages.append(HumanMessage(content=prompt_text))
 
+                    tool_call_budget = settings.max_tool_calls_per_run
+                    executed_tool_calls = 0
                     previous_tool_calls_sig: tuple[tuple[str, str], ...] | None = None
                     consecutive_repeat_count = 0
 
@@ -160,9 +172,32 @@ class OpenAILLMAdapter(LLMClientInterface):
                             )
                             break
 
+                        budget_exceeded = False
                         for tool_call in response.tool_calls:
                             tool_name = tool_call["name"]
                             tool_args = tool_call["args"]
+
+                            if executed_tool_calls >= tool_call_budget:
+                                logger.warning(
+                                    "ReAct agent reached the tool-call budget (%d); skipping '%s'.",
+                                    tool_call_budget,
+                                    tool_name,
+                                )
+                                budget_exceeded = True
+                                messages.append(
+                                    ToolMessage(
+                                        content=(
+                                            "[System Note: Tool-call budget reached for this run. "
+                                            "This call was not executed; summarize your findings now "
+                                            "without further tool calls.]"
+                                        ),
+                                        tool_call_id=tool_call["id"],
+                                        name=tool_name,
+                                    )
+                                )
+                                continue
+
+                            executed_tool_calls += 1
                             logger.info(
                                 "ReAct step %d/%d: calling '%s' with %s",
                                 step + 1,
@@ -182,7 +217,7 @@ class OpenAILLMAdapter(LLMClientInterface):
                                 except Exception as exc:
                                     tool_output = f"Error executing tool '{tool_name}': {exc}"
 
-                            output_str = str(tool_output)
+                            output_str = _bound_tool_output(tool_output)
                             if consecutive_repeat_count == 1:
                                 output_str += (
                                     "\n\n[System Note: This tool was called with the exact same "
@@ -197,6 +232,9 @@ class OpenAILLMAdapter(LLMClientInterface):
                                     name=tool_name,
                                 )
                             )
+
+                        if budget_exceeded:
+                            break
 
                     logger.warning(
                         "ReAct agent reached maximum allowed steps (%d) or stopped loop. Requesting final summary.",

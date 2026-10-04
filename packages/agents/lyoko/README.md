@@ -95,6 +95,10 @@ Configure LYOKO using environment variables (in `.env` or Kubernetes ConfigMap/S
 | `AUTO_APPROVED_TOOLS` | `[]` | Glob patterns of state-changing tools that run during remediation without approval (e.g. `k8s_resources_scale`). |
 | `MAX_AGENT_STEPS` | `25` | Maximum tool-use iterations of each specialist run. |
 | `MAX_SUPERVISOR_STEPS` | `5` | Maximum supervisor delegation iterations per phase. |
+| `MAX_TOOL_CALLS_PER_RUN` | `20` | Maximum tool calls one agent run may execute before it must summarize. Bounds fan-out across large resource lists. |
+| `MAX_TOOL_OUTPUT_CHARS` | `8000` | Maximum characters of a single tool result kept in the agent context; longer results are truncated. |
+| `MEMORY_SIMILARITY_THRESHOLD` | `0.2` | Similarity floor for injecting semantic memories into incident diagnosis. |
+| `CHAT_MEMORY_SIMILARITY_THRESHOLD` | `0.5` | Higher similarity floor for injecting memories into interactive chat, so loosely related notes cannot hijack the request. |
 | `TELEGRAM_ENABLED` | `false` | Enable Telegram assistant, channel posting, and HITL approvals. |
 | `TELEGRAM_BOT_TOKEN` | `""` | Telegram Bot Token from `@BotFather`. |
 | `TELEGRAM_ALLOWED_USER_IDS` | `[]` | List of authorized Telegram user IDs. |
