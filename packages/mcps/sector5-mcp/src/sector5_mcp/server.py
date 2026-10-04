@@ -106,6 +106,7 @@ def build_gateway_application() -> tuple[MCPGatewayService, any]:
                 "GRAFANA_API_KEY": settings.grafana_token,
             },
             upstream_type=UpstreamType.GRAFANA,
+            prefix="grafana_",
         )
 
     # 5. GitHub MCP (github-mcp-server / modelcontextprotocol/server-github)
@@ -121,6 +122,7 @@ def build_gateway_application() -> tuple[MCPGatewayService, any]:
             command=settings.github_command,
             env=github_env,
             upstream_type=UpstreamType.GITHUB,
+            prefix="github_",
         )
 
     # 6. Telegram Bot Client (in-process provider registered as the 'telegram' domain)

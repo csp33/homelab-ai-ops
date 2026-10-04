@@ -47,5 +47,6 @@ def test_build_gateway_application_includes_grafana_when_configured():
         assert UpstreamType.GRAFANA in service.upstreams
         client = service.upstreams[UpstreamType.GRAFANA]
         assert client.upstream_type == UpstreamType.GRAFANA
+        assert client.prefix == "grafana_"
         assert client.env.get("GRAFANA_URL") == "http://grafana:3000"
         assert client.env.get("GRAFANA_SERVICE_ACCOUNT_TOKEN") == "glsa_test_token_12345"
