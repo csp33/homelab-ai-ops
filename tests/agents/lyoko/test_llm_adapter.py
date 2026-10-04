@@ -352,3 +352,57 @@ async def test_openai_llm_adapter_bounds_total_tool_calls():
 
     assert mock_tool.ainvoke.await_count == 2
     assert result == "Summary after budget."
+
+
+@pytest.mark.asyncio
+async def test_openai_llm_adapter_breaks_on_repeated_tool_errors():
+    """A tool erroring with different arguments still trips the error guard, not blind retries."""
+
+    def _error_call(regex: str, call_id: str) -> MagicMock:
+        msg = MagicMock()
+        msg.tool_calls = [
+            {
+                "name": "grafana_list_prometheus_metric_names",
+                "args": {"regex": regex},
+                "id": call_id,
+            }
+        ]
+        return msg
+
+    mock_bound_client = AsyncMock()
+    mock_bound_client.ainvoke.side_effect = [
+        _error_call("temperature", "c1"),
+        _error_call("temp", "c2"),
+        _error_call("node", "c3"),
+    ]
+
+    adapter = OpenAILLMAdapter(api_key="sk-test")
+    mock_client = MagicMock()
+    mock_client.bind_tools.return_value = mock_bound_client
+    summary = MagicMock()
+    summary.content = "Summary after repeated errors."
+    mock_client.ainvoke = AsyncMock(return_value=summary)
+    adapter._client = mock_client
+
+    def _invoke(args):
+        return str(
+            {
+                "status": "error",
+                "content": "getting backend: datasource with UID '' not found.",
+                "is_error": True,
+            }
+        )
+
+    mock_tool = MagicMock()
+    mock_tool.name = "grafana_list_prometheus_metric_names"
+    mock_tool.ainvoke = AsyncMock(side_effect=_invoke)
+
+    result = await adapter.chat(prompt="Node temperature", tools=[mock_tool], max_steps=15)
+
+    assert mock_bound_client.ainvoke.await_count == 3
+    assert result == "Summary after repeated errors."
+
+    last_messages = mock_bound_client.ainvoke.call_args_list[-1].args[0]
+    tool_messages = [m for m in last_messages if isinstance(m, ToolMessage)]
+    assert any("This tool keeps failing" in m.content for m in tool_messages)
+    assert any("gateway_get_tool_schema" in m.content for m in tool_messages)
