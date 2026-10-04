@@ -1,10 +1,11 @@
 """Streaming draft updates for Telegram messages.
 
-Wraps Telegram's native ``sendMessageDraft`` API with rate-limiting and stop support so a long
-LLM response can be shown as it is generated.
+Wraps Telegram's native ``sendMessageDraft`` API with rate-limiting, keep-alive and stop support
+so a long LLM response can be shown as it is generated.
 """
 
 import asyncio
+import contextlib
 import logging
 from typing import Any
 
@@ -18,58 +19,125 @@ class TelegramDraftStreamer:
         self,
         bot: Any,
         chat_id: int | str,
+        chat_type: str = "",
         draft_id: int | None = None,
         min_interval_seconds: float = 0.4,
+        heartbeat_interval_seconds: float = 20.0,
     ) -> None:
         self.bot = bot
         self.chat_id = chat_id
+        self.chat_type = chat_type
         self.draft_id = (
             draft_id
             if draft_id is not None
             else (abs(hash(f"{chat_id}_{id(self)}")) % 2147483640 + 1)
         )
         self.min_interval_seconds = min_interval_seconds
+        self.heartbeat_interval_seconds = heartbeat_interval_seconds
         self._accumulated_text = ""
         self._last_sent_time = 0.0
         self._last_sent_text = ""
         self._lock = asyncio.Lock()
         self._disabled = False
+        self._can_stop = True
         self._stopped = asyncio.Event()
+        self._heartbeat_task: asyncio.Task | None = None
 
     def stop(self) -> None:
         """Signal that message generation should stop immediately."""
         self._stopped.set()
         self._disabled = True
+        self._cancel_heartbeat()
 
     def is_stopped(self) -> bool:
         """Return True if message generation was stopped."""
         return self._stopped.is_set()
 
+    def _cancel_heartbeat(self) -> None:
+        task = self._heartbeat_task
+        self._heartbeat_task = None
+        if task is not None and not task.done():
+            task.cancel()
+
+    async def close(self) -> None:
+        """Stop the keep-alive heartbeat once the final message has been persisted."""
+        task = self._heartbeat_task
+        self._heartbeat_task = None
+        if task is None:
+            return
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await task
+
+    async def _send_draft(self, text: str) -> None:
+        """Send or update the draft, retrying without ``can_stop`` if the server rejects it.
+
+        ``can_stop`` is a Bot API 10.3 addition. Older servers reject the call outright, which
+        would otherwise disable streaming even where it is supported, so fall back to a plain
+        draft update the first time it fails and remember that ``can_stop`` is unavailable.
+        """
+        target_chat_id = int(self.chat_id)
+        base_kwargs: dict[str, Any] = {
+            "chat_id": target_chat_id,
+            "draft_id": self.draft_id,
+            "text": text,
+        }
+        if self._can_stop:
+            try:
+                await self.bot.send_message_draft(**base_kwargs, api_kwargs={"can_stop": True})
+                return
+            except Exception as exc:
+                logger.debug(
+                    "send_message_draft with can_stop failed, retrying without it: %s", exc
+                )
+                self._can_stop = False
+        await self.bot.send_message_draft(**base_kwargs)
+
+    async def _heartbeat_loop(self) -> None:
+        """Re-send the draft periodically so it does not expire during long tool phases.
+
+        A streamed draft is only a temporary 30-second preview. While the agent is calling tools
+        no tokens arrive, so the draft would silently disappear before the answer is ready.
+        """
+        try:
+            while not self._disabled and not self._stopped.is_set():
+                await asyncio.sleep(self.heartbeat_interval_seconds)
+                if self._disabled or self._stopped.is_set():
+                    return
+                try:
+                    await self._send_draft(self._accumulated_text)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    logger.debug("send_message_draft heartbeat failed: %s", exc)
+                    return
+        except asyncio.CancelledError:
+            return
+
     async def start_thinking(self) -> None:
         """Send initial empty draft to show native 'Thinking...' placeholder with Stop button."""
+        # send_message_draft only works in private chats (per Telegram API)
+        if self.chat_type != "private":
+            self._disabled = True
+            return
         if not self.bot or not hasattr(self.bot, "send_message_draft"):
+            self._disabled = True
             return
         try:
-            target_chat_id = int(self.chat_id)
-            await self.bot.send_message_draft(
-                chat_id=target_chat_id,
-                draft_id=self.draft_id,
-                text="",
-                api_kwargs={"can_stop": True},
-            )
+            await self._send_draft("")
         except Exception as exc:
-            logger.debug(
-                "send_message_draft start_thinking not supported or failed for chat %s: %s",
-                self.chat_id,
-                exc,
-            )
+            logger.warning("Telegram draft streaming disabled for chat %s: %s", self.chat_id, exc)
             self._disabled = True
+            return
+        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
     async def on_token(self, token: str) -> None:
         """Receive a token, append to buffer, and update draft if throttle interval elapsed."""
         if self._stopped.is_set():
             raise asyncio.CancelledError("Message generation stopped by user via Telegram")
-        if self._disabled or not self.bot or not hasattr(self.bot, "send_message_draft"):
+        if self.chat_type != "private" or self._disabled or not self.bot:
+            return
+        if not hasattr(self.bot, "send_message_draft"):
             return
         self._accumulated_text += token
         now = asyncio.get_event_loop().time()
@@ -83,15 +151,9 @@ class TelegramDraftStreamer:
             if self._disabled or self._stopped.is_set():
                 return
             try:
-                target_chat_id = int(self.chat_id)
                 self._last_sent_time = now
                 self._last_sent_text = self._accumulated_text
-                await self.bot.send_message_draft(
-                    chat_id=target_chat_id,
-                    draft_id=self.draft_id,
-                    text=self._accumulated_text,
-                    api_kwargs={"can_stop": True},
-                )
+                await self._send_draft(self._accumulated_text)
             except Exception as exc:
                 logger.debug("send_message_draft error: %s", exc)
                 self._disabled = True

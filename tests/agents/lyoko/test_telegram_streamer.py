@@ -19,6 +19,7 @@ async def test_telegram_draft_streamer_thinking_and_tokens():
     streamer = TelegramDraftStreamer(
         bot=mock_bot,
         chat_id="12345",
+        chat_type="private",
         draft_id=999,
         min_interval_seconds=0.0,  # no delay in test
     )
@@ -41,6 +42,8 @@ async def test_telegram_draft_streamer_thinking_and_tokens():
     assert last_call["draft_id"] == 999
     assert last_call["api_kwargs"] == {"can_stop": True}
 
+    await streamer.close()
+
 
 @pytest.mark.asyncio
 async def test_telegram_draft_streamer_stop():
@@ -50,7 +53,9 @@ async def test_telegram_draft_streamer_stop():
     mock_bot = MagicMock()
     mock_bot.send_message_draft = AsyncMock()
 
-    streamer = TelegramDraftStreamer(bot=mock_bot, chat_id="12345", draft_id=123)
+    streamer = TelegramDraftStreamer(
+        bot=mock_bot, chat_id="12345", chat_type="private", draft_id=123
+    )
     assert streamer.is_stopped() is False
 
     streamer.stop()
@@ -68,7 +73,9 @@ async def test_telegram_connector_handle_stopped_generation():
     connector = TelegramConnector(
         bot_token="fake:token", allowed_user_ids={"12345"}, default_chat_id="12345"
     )
-    streamer = TelegramDraftStreamer(bot=MagicMock(), chat_id="12345", draft_id=777)
+    streamer = TelegramDraftStreamer(
+        bot=MagicMock(), chat_id="12345", chat_type="private", draft_id=777
+    )
     connector._active_streamers[("12345", 777)] = streamer
 
     mock_update = MagicMock()
@@ -90,7 +97,7 @@ async def test_telegram_draft_streamer_graceful_failure():
     mock_bot = MagicMock()
     mock_bot.send_message_draft = AsyncMock(side_effect=RuntimeError("DRAFTS_NOT_SUPPORTED"))
 
-    streamer = TelegramDraftStreamer(bot=mock_bot, chat_id="12345")
+    streamer = TelegramDraftStreamer(bot=mock_bot, chat_id="12345", chat_type="private")
     await streamer.start_thinking()
     assert streamer._disabled is True
 
@@ -98,6 +105,70 @@ async def test_telegram_draft_streamer_graceful_failure():
     mock_bot.send_message_draft.reset_mock()
     await streamer.on_token("text")
     mock_bot.send_message_draft.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_telegram_draft_streamer_skips_non_private_chat():
+    """Verify streaming is disabled for groups/channels where send_message_draft cannot work."""
+    from lyoko.infrastructure.chat.streamer import TelegramDraftStreamer
+
+    mock_bot = MagicMock()
+    mock_bot.send_message_draft = AsyncMock()
+
+    streamer = TelegramDraftStreamer(bot=mock_bot, chat_id="-1001234567890", chat_type="supergroup")
+    await streamer.start_thinking()
+    await streamer.on_token("hello")
+
+    assert streamer._disabled is True
+    mock_bot.send_message_draft.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_telegram_draft_streamer_retries_without_can_stop():
+    """Verify a server that rejects can_stop still streams via a plain draft update."""
+    from lyoko.infrastructure.chat.streamer import TelegramDraftStreamer
+
+    mock_bot = MagicMock()
+    mock_bot.send_message_draft = AsyncMock(
+        side_effect=[
+            RuntimeError("can_stop not supported"),
+            None,
+        ]
+    )
+
+    streamer = TelegramDraftStreamer(bot=mock_bot, chat_id="12345", chat_type="private")
+    await streamer.start_thinking()
+
+    assert streamer._disabled is False
+    assert streamer._can_stop is False
+    assert mock_bot.send_message_draft.call_count == 2
+    assert mock_bot.send_message_draft.call_args_list[0].kwargs["api_kwargs"] == {"can_stop": True}
+    assert "api_kwargs" not in mock_bot.send_message_draft.call_args_list[1].kwargs
+
+    await streamer.close()
+
+
+@pytest.mark.asyncio
+async def test_telegram_draft_streamer_keeps_draft_alive():
+    """Verify the heartbeat re-sends the draft so it does not expire during long tool phases."""
+    from lyoko.infrastructure.chat.streamer import TelegramDraftStreamer
+
+    mock_bot = MagicMock()
+    mock_bot.send_message_draft = AsyncMock()
+
+    streamer = TelegramDraftStreamer(
+        bot=mock_bot,
+        chat_id="12345",
+        chat_type="private",
+        heartbeat_interval_seconds=0.01,
+    )
+    await streamer.start_thinking()
+    initial_calls = mock_bot.send_message_draft.call_count
+
+    await asyncio.sleep(0.05)
+    await streamer.close()
+
+    assert mock_bot.send_message_draft.call_count > initial_calls
 
 
 @pytest.mark.asyncio
@@ -126,6 +197,7 @@ async def test_telegram_connector_handles_streaming_message_handler():
     mock_update = MagicMock()
     mock_update.effective_user.id = 12345
     mock_update.effective_chat.id = 12345
+    mock_update.effective_chat.type = "private"
     mock_update.message.message_id = 42
     mock_update.message.message_thread_id = None
     mock_update.message.text = "Hello stream"

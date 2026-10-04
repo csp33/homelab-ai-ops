@@ -134,16 +134,17 @@ class TelegramInboundMixin:
                     action="typing",
                 )
 
-        # 3. Create streamer for real-time draft updates
+        # 3. Create streamer for real-time draft updates (only for private chats)
         bot_instance = (
             getattr(context, "bot", None)
             if context and getattr(context, "bot", None)
             else (self._app.bot if self._app else None)
         )
-        streamer = TelegramDraftStreamer(bot=bot_instance, chat_id=chat_id)
+        streamer = TelegramDraftStreamer(bot=bot_instance, chat_id=chat_id, chat_type=chat_type)
         streamer_key = (str(chat_id), streamer.draft_id)
         self._active_streamers[streamer_key] = streamer
         try:
+            # send_message_draft only works in private chats (per Telegram API)
             with contextlib.suppress(Exception):
                 await streamer.start_thinking()
 
@@ -232,4 +233,5 @@ class TelegramInboundMixin:
                             allow_sending_without_reply=True,
                         )
         finally:
+            await streamer.close()
             self._active_streamers.pop(streamer_key, None)
