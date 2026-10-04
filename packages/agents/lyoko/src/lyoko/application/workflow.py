@@ -29,15 +29,15 @@ from lyoko.application.chat_manager import ChatManager
 from lyoko.application.hitl import ApprovalManager
 from lyoko.application.nodes.chat import create_chat_node
 from lyoko.application.nodes.helpers import EVENT_ALERT, EVENT_MESSAGE
-from lyoko.application.nodes.incident import (
-    create_diagnose_node,
-    create_remediate_node,
-    create_verify_node,
-)
+from lyoko.application.nodes.incident_diagnose import create_diagnose_node
+from lyoko.application.nodes.incident_remediate import create_remediate_node
+from lyoko.application.nodes.incident_verify import create_verify_node
 from lyoko.application.nodes.notify import create_notify_node
 from lyoko.application.nodes.router import choose_branch, create_route_node
 from lyoko.config import settings
+from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
 from lyoko.domain.interfaces.llm import LLMClientInterface
+from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
 
 __all__ = [
     "EVENT_ALERT",
@@ -96,8 +96,8 @@ def create_lyoko_graph(
     llm: LLMClientInterface | None = None,
     supervisor: Any = None,
     specialists: dict[str, Any] | None = None,
-    memory_repository: Any = None,
-    embeddings_service: Any = None,
+    memory_repository: MemoryRepositoryInterface | None = None,
+    embeddings_service: EmbeddingsServiceInterface | None = None,
 ) -> Any:
     """Build the LangGraph StateGraph that routes, answers, investigates and remediates."""
     route_node = create_route_node(llm=llm)

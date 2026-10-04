@@ -312,7 +312,7 @@ async def test_openai_llm_adapter_truncates_large_tool_output():
     mock_tool.name = "k8s_resources_list"
     mock_tool.ainvoke = AsyncMock(return_value=huge_output)
 
-    with patch("lyoko.infrastructure.llm.openai.settings.max_tool_output_chars", 1000):
+    with patch("lyoko.infrastructure.llm.tool_loop.settings.max_tool_output_chars", 1000):
         result = await adapter.chat(prompt="List resources", tools=[mock_tool], max_steps=5)
 
     assert result == "done"
@@ -347,7 +347,7 @@ async def test_openai_llm_adapter_bounds_total_tool_calls():
     mock_tool.name = "k8s_resources_get"
     mock_tool.ainvoke = AsyncMock(return_value="ok")
 
-    with patch("lyoko.infrastructure.llm.openai.settings.max_tool_calls_per_run", 2):
+    with patch("lyoko.infrastructure.llm.tool_loop.settings.max_tool_calls_per_run", 2):
         result = await adapter.chat(prompt="Check all apps", tools=[mock_tool], max_steps=10)
 
     assert mock_tool.ainvoke.await_count == 2
