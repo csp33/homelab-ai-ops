@@ -4,6 +4,7 @@ Handles inline approval buttons, MessageGenerationStopped events, and the channe
 recorded from automatic forwards into the linked discussion group.
 """
 
+import contextlib
 import html
 import inspect
 import logging
@@ -11,7 +12,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from lyoko.domain.models.chat import ApprovalResponse
-from lyoko.infrastructure.chat.streamer import TelegramDraftStreamer
+from lyoko.infrastructure.chat.streamer import TelegramStreamingReply
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -19,45 +20,26 @@ logger = logging.getLogger("lyoko.chat.telegram")
 
 
 class TelegramCallbackMixin:
-    """Handle button clicks, streamed-generation stops, and channel-forward mapping."""
+    """Handle button clicks and channel-forward mapping."""
 
-    _active_streamers: dict[tuple[str, int], TelegramDraftStreamer]
+    _active_streamers: dict[tuple[str, int], TelegramStreamingReply]
     _channel_to_discussion: dict[tuple[str, int], int]
     _approval_handlers: list[Callable[[ApprovalResponse], Awaitable[None]]]
 
-    async def _handle_stopped_generation(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
-        """Handle MessageGenerationStopped event when user clicks Stop on a streaming draft."""
-        stopped = getattr(update, "stopped_message_generation", None)
-        if not stopped and hasattr(update, "to_dict"):
-            stopped = update.to_dict().get("stopped_message_generation")
-        if not stopped:
+    async def _handle_stop_callback(self, query: Any, chat_id: str | None, message_id: str) -> None:
+        """Stop the in-flight generation whose streaming placeholder carries the stop button."""
+        try:
+            key = (str(chat_id), int(message_id))
+        except (TypeError, ValueError):
             return
-
-        chat_data = (
-            getattr(stopped, "chat", None)
-            if hasattr(stopped, "chat")
-            else (stopped.get("chat") if isinstance(stopped, dict) else None)
-        )
-        chat_id = str(
-            getattr(chat_data, "id", "")
-            or (chat_data.get("id", "") if isinstance(chat_data, dict) else "")
-        )
-        draft_id = (
-            getattr(stopped, "draft_id", None)
-            if hasattr(stopped, "draft_id")
-            else (stopped.get("draft_id") if isinstance(stopped, dict) else None)
-        )
-
-        if chat_id and draft_id is not None:
-            key = (str(chat_id), int(draft_id))
-            streamer = self._active_streamers.get(key)
-            if streamer is not None:
-                logger.info(
-                    "User requested stop for streaming draft %s in chat %s", draft_id, chat_id
-                )
-                streamer.stop()
+        streamer = self._active_streamers.get(key)
+        if streamer is not None:
+            logger.info(
+                "User requested stop for streaming reply %s in chat %s", message_id, chat_id
+            )
+            streamer.stop()
+        with contextlib.suppress(Exception):
+            await query.edit_message_reply_markup(reply_markup=None)
 
     async def _handle_callback_query(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -77,10 +59,16 @@ class TelegramCallbackMixin:
 
         await query.answer()
 
-        # Format: "<action_id>:<incident_id>" e.g. "approve:<incident_id>"
+        # Format: "<action_id>:<payload>" e.g. "approve:<incident_id>" or "stop:<message_id>"
         parts = query.data.split(":", 1)
         action_type = parts[0]
-        incident_id = parts[1] if len(parts) > 1 else ""
+        payload = parts[1] if len(parts) > 1 else ""
+
+        if action_type.lower() == "stop":
+            await self._handle_stop_callback(query, chat_id, payload)
+            return
+
+        incident_id = payload
         approved = action_type.lower() == "approve"
         is_force = action_type.lower() == "force"
         is_feedback = action_type.lower() in ["feedback", "teach", "redirect"]

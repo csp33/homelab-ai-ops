@@ -12,7 +12,8 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from lyoko.domain.models.chat import ChatUser, IncomingMessage
-from lyoko.infrastructure.chat.streamer import TelegramDraftStreamer
+from lyoko.infrastructure.chat.formatting import markdown_to_telegram_html
+from lyoko.infrastructure.chat.streamer import TelegramStreamingReply
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -24,7 +25,7 @@ class TelegramInboundMixin:
 
     _app: Any
     _message_handlers: list[Callable[[IncomingMessage], Awaitable[str | None]]]
-    _active_streamers: dict[tuple[str, int], TelegramDraftStreamer]
+    _active_streamers: dict[tuple[str, int], TelegramStreamingReply]
 
     async def _handle_telegram_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -134,27 +135,31 @@ class TelegramInboundMixin:
                     action="typing",
                 )
 
-        # 3. Create streamer for real-time draft updates (only for private chats)
+        # 3. Handle /feedback or /teach command (no streaming placeholder for commands)
+        text = str(msg.text).strip()
+        if text.startswith("/feedback") or text.startswith("/teach"):
+            await self._handle_feedback_command(msg, text)
+            return
+
+        # 4. Stream the answer into a real placeholder message, threaded to the incoming message
         bot_instance = (
             getattr(context, "bot", None)
             if context and getattr(context, "bot", None)
             else (self._app.bot if self._app else None)
         )
-        streamer = TelegramDraftStreamer(bot=bot_instance, chat_id=chat_id, chat_type=chat_type)
-        streamer_key = (str(chat_id), streamer.draft_id)
+        target_chat_id, target_reply_id, target_thread_id = self._resolve_reply_target(
+            msg, chat_id, chat_type, message_thread_id
+        )
+        streamer = TelegramStreamingReply(
+            bot=bot_instance,
+            chat_id=target_chat_id,
+            reply_to_message_id=target_reply_id,
+            message_thread_id=target_thread_id,
+        )
+        await streamer.start()
+        streamer_key = (str(target_chat_id), streamer.draft_id)
         self._active_streamers[streamer_key] = streamer
         try:
-            # send_message_draft only works in private chats (per Telegram API)
-            with contextlib.suppress(Exception):
-                await streamer.start_thinking()
-
-            text = str(msg.text).strip()
-
-            # 4. Handle /feedback or /teach command
-            if text.startswith("/feedback") or text.startswith("/teach"):
-                await self._handle_feedback_command(msg, text)
-                return
-
             username = None
             if (
                 user
@@ -198,39 +203,47 @@ class TelegramInboundMixin:
                 message_thread_id=str(message_thread_id) if message_thread_id is not None else None,
             )
 
+            answered = False
             for handler in self._message_handlers:
                 try:
-                    accepts_on_token = False
+                    accepts_on_status = False
                     try:
                         sig = inspect.signature(handler)
-                        accepts_on_token = "on_token" in sig.parameters or any(
+                        accepts_on_status = "on_status" in sig.parameters or any(
                             p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
                         )
                     except (ValueError, TypeError):
                         pass
 
-                    if accepts_on_token:
-                        reply = await handler(incoming, on_token=streamer.on_token)
+                    if accepts_on_status:
+                        reply = await handler(incoming, on_status=streamer.set_status)
                     else:
                         reply = await handler(incoming)
 
-                    if reply and not streamer.is_stopped():
+                    if not reply:
+                        continue
+
+                    answered = True
+                    if streamer.is_stopped():
+                        await streamer.finalize_stopped()
+                        return
+                    if not await streamer.finalize(markdown_to_telegram_html(reply)):
                         await self._reply_to_chat(msg, reply, chat_id, chat_type, message_thread_id)
                 except (asyncio.CancelledError, GeneratorExit):
-                    logger.info(
-                        "Message generation cancelled by user for draft %s in chat %s",
-                        streamer.draft_id,
-                        chat_id,
-                    )
+                    logger.info("Message generation cancelled by user in chat %s", chat_id)
                     return
                 except Exception as exc:
                     logger.error("Error executing message handler: %s", exc)
-                    with contextlib.suppress(Exception):
-                        await msg.reply_text(
-                            f"⚠️ Error processing request: {exc}",
-                            reply_to_message_id=msg.message_id,
-                            message_thread_id=message_thread_id,
-                            allow_sending_without_reply=True,
-                        )
+                    answered = True
+                    if not await streamer.finalize(f"⚠️ Error processing request: {exc}"):
+                        with contextlib.suppress(Exception):
+                            await msg.reply_text(
+                                f"⚠️ Error processing request: {exc}",
+                                reply_to_message_id=msg.message_id,
+                                message_thread_id=message_thread_id,
+                                allow_sending_without_reply=True,
+                            )
+            if not answered:
+                await streamer.discard()
         finally:
             self._active_streamers.pop(streamer_key, None)

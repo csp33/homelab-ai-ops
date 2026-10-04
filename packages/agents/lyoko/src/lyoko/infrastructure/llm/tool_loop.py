@@ -40,6 +40,21 @@ def _is_tool_error(output: str) -> bool:
     return any(marker in lowered for marker in _ERROR_MARKERS)
 
 
+def _tool_status(tool_call: dict[str, Any]) -> str:
+    """Render a short, factual progress line for the tool the agent is about to call."""
+    name = str(tool_call.get("name") or "tool")
+    args = tool_call.get("args") or {}
+    if name.startswith("ask_") and name.endswith("_specialist"):
+        return f"🧩 Consulting the {name[4:-11]} specialist"
+    if name == "gateway_call_tool":
+        return f"🛰️ Calling <code>{args.get('tool_name', 'tool')}</code>"
+    if name == "gateway_get_domain_tools":
+        return f"🔍 Discovering {args.get('domain', 'domain')} tools"
+    if name == "gateway_get_tool_schema":
+        return f"🔍 Reading the <code>{args.get('tool_name', 'tool')}</code> schema"
+    return f"🛰️ Calling <code>{name}</code>"
+
+
 async def run_react_tool_loop(
     prompt_text: str,
     *,
@@ -48,7 +63,7 @@ async def run_react_tool_loop(
     summary_client: Any,
     tools_by_name: dict[str, Any],
     max_iterations: int,
-    on_token: Any,
+    on_status: Any = None,
 ) -> str:
     """Run the bounded ReAct loop until the model stops calling tools or a guardrail trips."""
     messages: list[Any] = []
@@ -65,20 +80,9 @@ async def run_react_tool_loop(
     repeated_error_count = 0
 
     for step in range(max_iterations):
-        if on_token is not None:
-            accumulated_response = None
-            accumulated_text: list[str] = []
-            async for chunk in model_with_tools.astream(messages):
-                accumulated_response = (
-                    chunk if accumulated_response is None else accumulated_response + chunk
-                )
-                if chunk.content:
-                    text_piece = str(chunk.content)
-                    accumulated_text.append(text_piece)
-                    await on_token(text_piece)
-            response = accumulated_response
-        else:
-            response = await model_with_tools.ainvoke(messages)
+        if step == 0 and on_status is not None:
+            await on_status("🧠 Analyzing the request")
+        response = await model_with_tools.ainvoke(messages)
 
         if response is None:
             response = await model_with_tools.ainvoke(messages)
@@ -133,6 +137,8 @@ async def run_react_tool_loop(
                 continue
 
             executed_tool_calls += 1
+            if on_status is not None:
+                await on_status(_tool_status(tool_call))
             logger.info(
                 "ReAct step %d/%d: calling '%s' with %s",
                 step + 1,
@@ -212,14 +218,7 @@ async def run_react_tool_loop(
             content="You have reached the maximum allowed steps. Please summarize your findings, actions taken, and current status based on the information gathered so far without making further tool calls."
         )
     )
-    if on_token is not None:
-        accumulated_content: list[str] = []
-        async for chunk in summary_client.astream(messages):
-            if chunk.content:
-                text_piece = str(chunk.content)
-                accumulated_content.append(text_piece)
-                await on_token(text_piece)
-        return "".join(accumulated_content)
-
+    if on_status is not None:
+        await on_status("✍️ Writing the answer")
     final_response = await summary_client.ainvoke(messages)
     return str(final_response.content)

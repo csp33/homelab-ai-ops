@@ -7,7 +7,6 @@ from lyoko.domain.models.chat import (
     SentMessage,
 )
 
-TokenCallback = Callable[[str], Awaitable[None]]
 MessageHandler = Callable[..., Awaitable[str | None]]
 ApprovalHandler = Callable[[ApprovalResponse], Awaitable[None]]
 

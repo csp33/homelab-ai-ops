@@ -2,189 +2,215 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from lyoko.domain.models.chat import (
-    IncomingMessage,
-)
-from lyoko.infrastructure.chat.telegram import TelegramConnector
+from lyoko.infrastructure.chat.streamer import TelegramStreamingReply
+
+
+def _fake_bot(message_id: int = 555) -> MagicMock:
+    bot = MagicMock()
+    sent = MagicMock(message_id=message_id)
+    bot.send_message = AsyncMock(return_value=sent)
+    bot.edit_message_text = AsyncMock()
+    bot.delete_message = AsyncMock()
+    return bot
 
 
 @pytest.mark.asyncio
-async def test_telegram_draft_streamer_thinking_and_tokens():
-    """Verify TelegramDraftStreamer sends thinking draft and throttled token updates."""
-    from lyoko.infrastructure.chat.streamer import TelegramDraftStreamer
-
-    mock_bot = MagicMock()
-    mock_bot.send_message_draft = AsyncMock()
-
-    streamer = TelegramDraftStreamer(
-        bot=mock_bot,
-        chat_id="12345",
-        chat_type="private",
-        draft_id=999,
-        min_interval_seconds=0.0,  # no delay in test
+async def test_start_sends_threaded_checklist_with_stop_button():
+    """Verify the placeholder is sent threaded to the incoming message with a stop button."""
+    bot = _fake_bot()
+    streamer = TelegramStreamingReply(
+        bot=bot, chat_id="12345", reply_to_message_id="42", message_thread_id="7"
     )
 
-    await streamer.start_thinking()
-    mock_bot.send_message_draft.assert_called_once_with(
-        chat_id=12345,
-        draft_id=999,
-        text="",
-        api_kwargs={"can_stop": True},
-    )
+    await streamer.start()
 
-    mock_bot.send_message_draft.reset_mock()
-    await streamer.on_token("Hello ")
-    await streamer.on_token("world!")
-
-    assert mock_bot.send_message_draft.call_count >= 1
-    last_call = mock_bot.send_message_draft.call_args[1]
-    assert last_call["text"] == "Hello world!"
-    assert last_call["draft_id"] == 999
-    assert last_call["api_kwargs"] == {"can_stop": True}
+    bot.send_message.assert_called_once()
+    kwargs = bot.send_message.call_args.kwargs
+    assert kwargs["chat_id"] == "12345"
+    assert kwargs["reply_to_message_id"] == 42
+    assert kwargs["message_thread_id"] == 7
+    assert kwargs["reply_markup"] is not None
+    assert kwargs["parse_mode"] == "HTML"
+    assert "Progress" in kwargs["text"]
+    assert "· 0s" in kwargs["text"]
+    assert streamer.message_id == 555
+    await streamer._cancel_status()
 
 
 @pytest.mark.asyncio
-async def test_telegram_draft_streamer_stop():
-    """Verify stop() marks streamer stopped and on_token raises CancelledError."""
-    from lyoko.infrastructure.chat.streamer import TelegramDraftStreamer
+async def test_set_status_appends_checklist_steps():
+    """Verify each factual status appends a step: completed steps check, active step timer."""
+    bot = _fake_bot()
+    streamer = TelegramStreamingReply(bot=bot, chat_id="12345")
+    await streamer.start()
+    bot.edit_message_text.reset_mock()
 
-    mock_bot = MagicMock()
-    mock_bot.send_message_draft = AsyncMock()
+    await streamer.set_status("🧩 Consulting the kubernetes specialist")
+    await streamer.set_status("🛰️ Calling <code>kubectl_get</code>")
 
-    streamer = TelegramDraftStreamer(
-        bot=mock_bot, chat_id="12345", chat_type="private", draft_id=123
-    )
-    assert streamer.is_stopped() is False
+    last = bot.edit_message_text.call_args.kwargs["text"]
+    assert "🧩 Consulting the kubernetes specialist" in last
+    assert last.count("✔") == 2
+    assert last.count("⏳") == 1
+    assert "🛰️ Calling <code>kubectl_get</code>" in last
+    assert bot.edit_message_text.call_args.kwargs["parse_mode"] == "HTML"
+
+
+@pytest.mark.asyncio
+async def test_set_status_ignores_duplicate_and_post_stop():
+    """Verify duplicate statuses and statuses after stop are ignored."""
+    bot = _fake_bot()
+    streamer = TelegramStreamingReply(bot=bot, chat_id="12345")
+    await streamer.start()
+
+    await streamer.set_status("🧩 Consulting the kubernetes specialist")
+    bot.edit_message_text.reset_mock()
+    await streamer.set_status("🧩 Consulting the kubernetes specialist")
+    bot.edit_message_text.assert_not_called()
 
     streamer.stop()
+    await streamer.set_status("🛰️ Calling <code>x</code>")
+    bot.edit_message_text.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_finalize_shows_done_then_replaces_with_answer():
+    """Verify finalize swaps the checklist for Done, then replaces it with the answer."""
+    bot = _fake_bot()
+    streamer = TelegramStreamingReply(bot=bot, chat_id="12345", finalize_delay_seconds=0)
+    await streamer.start()
+    await streamer.set_status("🛰️ Calling <code>kubectl_get</code>")
+    bot.edit_message_text.reset_mock()
+
+    ok = await streamer.finalize("<b>Ack</b>")
+
+    assert ok is True
+    assert bot.edit_message_text.call_count == 2
+    done_kwargs = bot.edit_message_text.call_args_list[0].kwargs
+    assert "✅" in done_kwargs["text"] and "Done" in done_kwargs["text"]
+    assert "kubectl_get" in done_kwargs["text"]
+    assert done_kwargs["reply_markup"] is None
+    answer_kwargs = bot.edit_message_text.call_args_list[1].kwargs
+    assert answer_kwargs["text"] == "<b>Ack</b>"
+    assert answer_kwargs["parse_mode"] == "HTML"
+
+
+@pytest.mark.asyncio
+async def test_finalize_waits_before_replacing_with_answer():
+    """Verify the Done marker stays visible for the configured delay before the swap."""
+    bot = _fake_bot()
+    streamer = TelegramStreamingReply(bot=bot, chat_id="12345", finalize_delay_seconds=0.05)
+    await streamer.start()
+    bot.edit_message_text.reset_mock()
+
+    await asyncio.sleep(0)
+    finalize_task = asyncio.create_task(streamer.finalize("<b>Ack</b>"))
+    await asyncio.sleep(0.01)
+
+    # Only the Done marker has been written so far.
+    assert bot.edit_message_text.call_count == 1
+    assert "Done" in bot.edit_message_text.call_args.kwargs["text"]
+
+    await finalize_task
+    assert bot.edit_message_text.call_args.kwargs["text"] == "<b>Ack</b>"
+
+
+@pytest.mark.asyncio
+async def test_finalize_drops_checklist_when_answer_exceeds_limit():
+    """Verify an answer that would overflow the limit is sent alone, without the checklist."""
+    from lyoko.infrastructure.chat.streamer import MAX_MESSAGE_LENGTH
+
+    bot = _fake_bot()
+    streamer = TelegramStreamingReply(bot=bot, chat_id="12345", finalize_delay_seconds=0)
+    await streamer.start()
+    bot.edit_message_text.reset_mock()
+
+    await streamer.finalize("A" * MAX_MESSAGE_LENGTH)
+
+    text = bot.edit_message_text.call_args.kwargs["text"]
+    assert "Progress" not in text
+    assert text.startswith("A")
+
+
+@pytest.mark.asyncio
+async def test_finalize_falls_back_to_plain_on_html_error():
+    """Verify a rejected HTML markup is retried as plain text."""
+
+    def _edit_raises_on_html(*args, **kwargs):  # noqa: ANN002, ANN003
+        if kwargs.get("parse_mode"):
+            raise RuntimeError("bad html")
+        return None
+
+    bot = _fake_bot()
+    bot.edit_message_text = AsyncMock(side_effect=_edit_raises_on_html)
+    streamer = TelegramStreamingReply(bot=bot, chat_id="12345", finalize_delay_seconds=0)
+    await streamer.start()
+
+    ok = await streamer.finalize("<b>x</b>")
+
+    assert ok is True
+    assert "parse_mode" not in bot.edit_message_text.call_args.kwargs
+    assert bot.edit_message_text.call_args.kwargs["text"] == "x"
+
+
+@pytest.mark.asyncio
+async def test_start_failure_disables_streaming():
+    """Verify a failed placeholder disables streaming so the caller falls back to a reply."""
+    bot = _fake_bot()
+    bot.send_message = AsyncMock(side_effect=RuntimeError("boom"))
+    streamer = TelegramStreamingReply(bot=bot, chat_id="12345")
+
+    await streamer.start()
+
+    assert streamer.message_id is None
+    assert streamer._disabled is True
+    await streamer.set_status("x")
+    bot.edit_message_text.assert_not_called()
+    assert await streamer.finalize("y") is False
+
+
+@pytest.mark.asyncio
+async def test_stop_freezes_checklist_with_note():
+    """Verify stop() freezes the checklist and appends a stopped note."""
+    bot = _fake_bot()
+    streamer = TelegramStreamingReply(bot=bot, chat_id="12345")
+    await streamer.start()
+    await streamer.set_status("🛰️ Calling <code>kubectl_get</code>")
+    streamer.stop()
+
     assert streamer.is_stopped() is True
 
-    with pytest.raises(asyncio.CancelledError):
-        await streamer.on_token("token after stop")
+    bot.edit_message_text.reset_mock()
+    await streamer.finalize_stopped()
+    text = bot.edit_message_text.call_args.kwargs["text"]
+    assert "Generation stopped" in text
+    assert "🛰️ Calling <code>kubectl_get</code>" in text
 
 
 @pytest.mark.asyncio
-async def test_telegram_connector_handle_stopped_generation():
-    """Verify _handle_stopped_generation cancels active streamer."""
-    from lyoko.infrastructure.chat.streamer import TelegramDraftStreamer
-
-    connector = TelegramConnector(
-        bot_token="fake:token", allowed_user_ids={"12345"}, default_chat_id="12345"
+async def test_status_loop_refreshes_active_step_timer():
+    """Verify the background loop keeps the active step's elapsed timer live."""
+    bot = _fake_bot()
+    streamer = TelegramStreamingReply(
+        bot=bot, chat_id="12345", status_interval_seconds=0.01, finalize_delay_seconds=0
     )
-    streamer = TelegramDraftStreamer(
-        bot=MagicMock(), chat_id="12345", chat_type="private", draft_id=777
-    )
-    connector._active_streamers[("12345", 777)] = streamer
+    await streamer.start()
+    bot.edit_message_text.reset_mock()
 
-    mock_update = MagicMock()
-    mock_stopped = MagicMock()
-    mock_stopped.chat.id = 12345
-    mock_stopped.draft_id = 777
-    mock_update.stopped_message_generation = mock_stopped
+    await asyncio.sleep(0.05)
 
-    await connector._handle_stopped_generation(mock_update, MagicMock())
-
-    assert streamer.is_stopped() is True
+    assert bot.edit_message_text.call_count >= 1
+    assert "Progress" in bot.edit_message_text.call_args.kwargs["text"]
+    await streamer.finalize("<b>done</b>")
 
 
 @pytest.mark.asyncio
-async def test_telegram_draft_streamer_graceful_failure():
-    """Verify exceptions in send_message_draft disable streaming silently."""
-    from lyoko.infrastructure.chat.streamer import TelegramDraftStreamer
+async def test_discard_deletes_placeholder():
+    """Verify discard removes the placeholder when no answer replaces it."""
+    bot = _fake_bot()
+    streamer = TelegramStreamingReply(bot=bot, chat_id="12345")
+    await streamer.start()
 
-    mock_bot = MagicMock()
-    mock_bot.send_message_draft = AsyncMock(side_effect=RuntimeError("DRAFTS_NOT_SUPPORTED"))
+    await streamer.discard()
 
-    streamer = TelegramDraftStreamer(bot=mock_bot, chat_id="12345", chat_type="private")
-    await streamer.start_thinking()
-    assert streamer._disabled is True
-
-    # Subsequent tokens should not call send_message_draft
-    mock_bot.send_message_draft.reset_mock()
-    await streamer.on_token("text")
-    mock_bot.send_message_draft.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_telegram_draft_streamer_skips_non_private_chat():
-    """Verify streaming is disabled for groups/channels where send_message_draft cannot work."""
-    from lyoko.infrastructure.chat.streamer import TelegramDraftStreamer
-
-    mock_bot = MagicMock()
-    mock_bot.send_message_draft = AsyncMock()
-
-    streamer = TelegramDraftStreamer(bot=mock_bot, chat_id="-1001234567890", chat_type="supergroup")
-    await streamer.start_thinking()
-    await streamer.on_token("hello")
-
-    assert streamer._disabled is True
-    mock_bot.send_message_draft.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_telegram_draft_streamer_retries_without_can_stop():
-    """Verify a server that rejects can_stop still streams via a plain draft update."""
-    from lyoko.infrastructure.chat.streamer import TelegramDraftStreamer
-
-    mock_bot = MagicMock()
-    mock_bot.send_message_draft = AsyncMock(
-        side_effect=[
-            RuntimeError("can_stop not supported"),
-            None,
-        ]
-    )
-
-    streamer = TelegramDraftStreamer(bot=mock_bot, chat_id="12345", chat_type="private")
-    await streamer.start_thinking()
-
-    assert streamer._disabled is False
-    assert streamer._can_stop is False
-    assert mock_bot.send_message_draft.call_count == 2
-    assert mock_bot.send_message_draft.call_args_list[0].kwargs["api_kwargs"] == {"can_stop": True}
-    assert "api_kwargs" not in mock_bot.send_message_draft.call_args_list[1].kwargs
-
-
-@pytest.mark.asyncio
-async def test_telegram_connector_handles_streaming_message_handler():
-    """Verify _handle_telegram_message passes on_token callback to streaming handlers."""
-    connector = TelegramConnector(
-        bot_token="fake:token", allowed_user_ids={"12345"}, default_chat_id="12345"
-    )
-
-    streamed_tokens: list[str] = []
-
-    async def streaming_handler(msg: IncomingMessage, on_token=None) -> str:
-        if on_token:
-            await on_token("Chunk 1 ")
-            await on_token("Chunk 2")
-            streamed_tokens.append("streamed")
-        return "Final reply"
-
-    connector.register_message_handler(streaming_handler)
-
-    mock_bot = MagicMock()
-    mock_bot.send_message_draft = AsyncMock()
-    mock_context = MagicMock()
-    mock_context.bot = mock_bot
-
-    mock_update = MagicMock()
-    mock_update.effective_user.id = 12345
-    mock_update.effective_chat.id = 12345
-    mock_update.effective_chat.type = "private"
-    mock_update.message.message_id = 42
-    mock_update.message.message_thread_id = None
-    mock_update.message.text = "Hello stream"
-    mock_update.message.set_reaction = AsyncMock()
-    mock_update.message.reply_text = AsyncMock()
-
-    await connector._handle_telegram_message(mock_update, mock_context)
-
-    assert "streamed" in streamed_tokens
-    mock_update.message.reply_text.assert_called_once_with(
-        "Final reply",
-        parse_mode="HTML",
-        reply_to_message_id=42,
-        message_thread_id=None,
-        allow_sending_without_reply=True,
-    )
-    assert mock_bot.send_message_draft.call_count >= 1
+    bot.delete_message.assert_called_once_with(chat_id="12345", message_id=555)

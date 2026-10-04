@@ -51,7 +51,7 @@ class OpenAILLMAdapter(LLMClientInterface):
         metadata: dict[str, Any] | None = None,
         max_steps: int | None = None,
         parent_config: dict[str, Any] | None = None,
-        on_token: Any = None,
+        on_status: Any = None,
     ) -> str:
         """Process conversational prompt with optional tools, Langfuse session, user, and tracing.
 
@@ -61,7 +61,8 @@ class OpenAILLMAdapter(LLMClientInterface):
         With ``parent_config`` the call joins the trace of the enclosing graph run as a child
         span named ``trace_name``. Without it, a new trace is started.
 
-        ``on_token`` is an optional async callback invoked as text tokens are streamed.
+        ``on_status`` is an optional async callback invoked with a short, factual status (such as
+        the tool or specialist actually running) so the operator can see live progress.
         """
         if parent_config is not None:
             config = child_config(parent_config, trace_name, tags, metadata)
@@ -87,7 +88,7 @@ class OpenAILLMAdapter(LLMClientInterface):
                     summary_client=self.client,
                     tools_by_name=tools_by_name,
                     max_iterations=max_iterations,
-                    on_token=on_token,
+                    on_status=on_status,
                 )
 
             try:
@@ -103,15 +104,6 @@ class OpenAILLMAdapter(LLMClientInterface):
         if system_prompt:
             messages.append(SystemMessage(content=system_prompt))
         messages.append(HumanMessage(content=prompt))
-
-        if on_token is not None:
-            accumulated_content = []
-            async for chunk in self.client.astream(messages, config=config if config else None):
-                if chunk.content:
-                    text_piece = str(chunk.content)
-                    accumulated_content.append(text_piece)
-                    await on_token(text_piece)
-            return "".join(accumulated_content)
 
         response = await self.client.ainvoke(messages, config=config if config else None)
         return str(response.content)

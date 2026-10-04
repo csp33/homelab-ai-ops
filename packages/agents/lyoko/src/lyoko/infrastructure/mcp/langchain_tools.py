@@ -10,8 +10,23 @@ from langchain_core.runnables import RunnableLambda
 from langchain_core.tools import StructuredTool, ToolException
 from lyoko.domain.exceptions.mcp import MCPGatewayError
 from lyoko.domain.interfaces.mcp import MCPClientInterface, ToolAuthorizer
+from pydantic import BaseModel, ConfigDict, Field
 
 _DOMAIN_ARG_HELP = "kubernetes, unifi, homeassistant, grafana, github, telegram"
+
+
+class _CallToolArgs(BaseModel):
+    """Permissive schema for ``gateway_call_tool``.
+
+    Models frequently emit the target tool's parameters as top-level siblings of ``tool_name``
+    instead of nesting them under ``arguments``. Extra keys are accepted here and merged into
+    ``arguments`` so either shape executes the intended call instead of failing validation.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    tool_name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
 
 
 def _authorized_call(
@@ -77,13 +92,21 @@ def _build_discovery_trio(
         except MCPGatewayError as exc:
             raise ToolException(str(exc)) from exc
 
-    async def _call_tool(tool_name: str, arguments: dict[str, Any]) -> str:
+    async def _call_tool(tool_name: str, arguments: Any = None, **extra: Any) -> str:
+        # Models often flatten the target tool's parameters to the top level. Merge both shapes
+        # so the intended call executes regardless of how the arguments were nested.
+        merged: dict[str, Any] = {}
+        if isinstance(arguments, dict):
+            merged.update(arguments)
+        for key, value in extra.items():
+            merged.setdefault(key, value)
+
         # Every call goes through one generic tool, so name the nested run after the real
         # gateway tool. Traces then show ``mcp:pods_log`` instead of an anonymous call.
         return await RunnableLambda(
             _authorized_call(client, tool_name, authorizer),
             name=f"mcp:{tool_name}",
-        ).ainvoke(arguments)
+        ).ainvoke(merged)
 
     if domain is None:
         domain_description = (
@@ -96,7 +119,8 @@ def _build_discovery_trio(
         )
         call_description = (
             "Execute any operational homelab tool by name with arguments to fetch live status, "
-            "manage devices, query metrics, or perform operations."
+            "manage devices, query metrics, or perform operations. Put the target tool's "
+            "parameters in the `arguments` object."
         )
     else:
         domain_description = (
@@ -106,7 +130,10 @@ def _build_discovery_trio(
             "gateway_call_tool to run it. Do not invent tools outside this list."
         )
         schema_description = f"Get the parameter schema of one '{domain}' tool before calling it."
-        call_description = f"Execute a '{domain}' domain tool by exact name with arguments."
+        call_description = (
+            f"Execute a '{domain}' domain tool by exact name with arguments. Put the target "
+            "tool's parameters in the `arguments` object."
+        )
 
     return [
         StructuredTool.from_function(
@@ -125,6 +152,7 @@ def _build_discovery_trio(
             coroutine=_call_tool,
             name="gateway_call_tool",
             description=call_description,
+            args_schema=_CallToolArgs,
             handle_tool_error=True,
         ),
     ]

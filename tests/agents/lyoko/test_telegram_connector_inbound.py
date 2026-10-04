@@ -6,7 +6,23 @@ from lyoko.domain.models.chat import (
     ApprovalRequest,
     IncomingMessage,
 )
+from lyoko.infrastructure.chat.streamer import INITIAL_STATUS
 from lyoko.infrastructure.chat.telegram import TelegramConnector
+
+
+def _mock_bot(message_id: int = 555) -> MagicMock:
+    """Build a stand-in bot whose placeholder send succeeds and edits are recorded."""
+    bot = MagicMock()
+    bot.send_message = AsyncMock(return_value=MagicMock(message_id=message_id))
+    bot.edit_message_text = AsyncMock()
+    bot.delete_message = AsyncMock()
+    return bot
+
+
+def _context(bot: MagicMock) -> MagicMock:
+    context = MagicMock()
+    context.bot = bot
+    return context
 
 
 @pytest.mark.asyncio
@@ -22,6 +38,7 @@ async def test_telegram_connector_incoming_message_handler():
 
     connector.register_message_handler(handler)
 
+    bot = _mock_bot()
     mock_update = MagicMock()
     mock_update.effective_user.id = 12345
     mock_update.effective_user.username = "admin"
@@ -33,20 +50,19 @@ async def test_telegram_connector_incoming_message_handler():
     mock_update.message.set_reaction = AsyncMock()
     mock_update.message.reply_text = AsyncMock()
 
-    await connector._handle_telegram_message(mock_update, MagicMock())
+    await connector._handle_telegram_message(mock_update, _context(bot))
 
     assert len(received_msgs) == 1
     assert received_msgs[0].text == "/status"
     assert received_msgs[0].user.user_id == "12345"
     assert received_msgs[0].user.username == "admin"
     mock_update.message.set_reaction.assert_called_once_with(reaction="👀")
-    mock_update.message.reply_text.assert_called_once_with(
-        "Acknowledged",
-        parse_mode="HTML",
-        reply_to_message_id=42,
-        message_thread_id=None,
-        allow_sending_without_reply=True,
-    )
+
+    # The progress log is edited in place and finalized into the answer, not a new reply.
+    bot.send_message.assert_called_once()
+    assert INITIAL_STATUS in bot.send_message.call_args.kwargs["text"]
+    assert bot.edit_message_text.call_args.kwargs["text"].endswith("Acknowledged")
+    mock_update.message.reply_text.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -60,6 +76,7 @@ async def test_telegram_connector_reaction_failure_is_logged_and_does_not_block_
 
     connector.register_message_handler(handler)
 
+    bot = _mock_bot()
     mock_update = MagicMock()
     mock_update.effective_user.id = 12345
     mock_update.effective_user.username = "admin"
@@ -71,12 +88,12 @@ async def test_telegram_connector_reaction_failure_is_logged_and_does_not_block_
     mock_update.message.reply_text = AsyncMock()
 
     with caplog.at_level("WARNING", logger="lyoko.chat.telegram"):
-        await connector._handle_telegram_message(mock_update, MagicMock())
+        await connector._handle_telegram_message(mock_update, _context(bot))
 
     assert "Failed to set" in caplog.text
     assert "REACTION_INVALID" in caplog.text
     assert "43" in caplog.text
-    mock_update.message.reply_text.assert_called_once()
+    assert bot.edit_message_text.call_args.kwargs["text"].endswith("Acknowledged")
 
 
 @pytest.mark.asyncio
@@ -90,6 +107,7 @@ async def test_telegram_connector_message_handler_exception():
 
     connector.register_message_handler(failing_handler)
 
+    bot = _mock_bot()
     mock_update = MagicMock()
     mock_update.effective_user.id = 12345
     mock_update.effective_user.username = "admin"
@@ -99,14 +117,13 @@ async def test_telegram_connector_message_handler_exception():
     mock_update.message.text = "/crash"
     mock_update.message.reply_text = AsyncMock()
 
-    await connector._handle_telegram_message(mock_update, MagicMock())
+    await connector._handle_telegram_message(mock_update, _context(bot))
 
-    mock_update.message.reply_text.assert_called_once()
-    assert "Error processing request" in mock_update.message.reply_text.call_args[0][0]
+    assert "Error processing request" in bot.edit_message_text.call_args.kwargs["text"]
 
 
 @pytest.mark.asyncio
-async def test_telegram_connector_populates_reply_to_message_id():
+async def test_telegram_connector_discards_placeholder_without_reply():
     connector = TelegramConnector(
         bot_token="fake:token", allowed_user_ids={"12345"}, default_chat_id="12345"
     )
@@ -117,6 +134,7 @@ async def test_telegram_connector_populates_reply_to_message_id():
 
     connector.register_message_handler(handler)
 
+    bot = _mock_bot()
     update = MagicMock()
     update.effective_user.id = 12345
     update.effective_chat.id = 12345
@@ -126,9 +144,43 @@ async def test_telegram_connector_populates_reply_to_message_id():
     update.message.set_reaction = AsyncMock()
     update.message.reply_text = AsyncMock()
 
-    await connector._handle_telegram_message(update, MagicMock())
+    await connector._handle_telegram_message(update, _context(bot))
 
     assert received[0].reply_to_message_id == "41"
+    bot.delete_message.assert_called_once_with(chat_id="12345", message_id=555)
+
+
+@pytest.mark.asyncio
+async def test_telegram_connector_falls_back_to_reply_text_when_placeholder_fails():
+    connector = TelegramConnector(
+        bot_token="fake:token", allowed_user_ids={"12345"}, default_chat_id="12345"
+    )
+
+    async def handler(msg: IncomingMessage) -> str:
+        return "Acknowledged"
+
+    connector.register_message_handler(handler)
+
+    bot = _mock_bot()
+    bot.send_message = AsyncMock(side_effect=RuntimeError("placeholder unavailable"))
+    update = MagicMock()
+    update.effective_user.id = 12345
+    update.effective_chat.id = 12345
+    update.message.message_id = 60
+    update.message.message_thread_id = None
+    update.message.text = "hello"
+    update.message.set_reaction = AsyncMock()
+    update.message.reply_text = AsyncMock()
+
+    await connector._handle_telegram_message(update, _context(bot))
+
+    update.message.reply_text.assert_called_once_with(
+        "Acknowledged",
+        parse_mode="HTML",
+        reply_to_message_id=60,
+        message_thread_id=None,
+        allow_sending_without_reply=True,
+    )
 
 
 @pytest.mark.asyncio
@@ -174,11 +226,7 @@ async def test_telegram_connector_channel_post_redirects_to_discussion_group():
 
     connector.register_message_handler(handler)
 
-    mock_app = MagicMock()
-    mock_app.bot.send_message = AsyncMock(
-        return_value=MagicMock(message_id=999, chat_id="-1004400196957")
-    )
-    connector._app = mock_app
+    bot = _mock_bot(message_id=999)
 
     # 1. Simulate the automatic forward of the channel post arriving in the discussion group
     forward_msg = MagicMock()
@@ -204,15 +252,15 @@ async def test_telegram_connector_channel_post_redirects_to_discussion_group():
     channel_update.effective_message.set_reaction = AsyncMock()
     channel_update.effective_message.reply_text = AsyncMock()
 
-    await connector._handle_telegram_message(channel_update, MagicMock())
+    await connector._handle_telegram_message(channel_update, _context(bot))
 
-    # Reply should NOT be sent to channel via reply_text
+    # The placeholder goes to the discussion group, not the channel.
     channel_update.effective_message.reply_text.assert_not_called()
-
-    # Reply MUST be sent to discussion group with reply_to_message_id=200
-    mock_app.bot.send_message.assert_called_once()
-    call_kwargs = mock_app.bot.send_message.call_args[1]
+    bot.send_message.assert_called_once()
+    call_kwargs = bot.send_message.call_args.kwargs
     assert call_kwargs["chat_id"] == "-1004400196957"
     assert call_kwargs["reply_to_message_id"] == 200
     assert call_kwargs["message_thread_id"] == 200
-    assert "Reply in thread" in call_kwargs["text"]
+
+    # The placeholder is finalized with the answer appended below the checklist.
+    assert bot.edit_message_text.call_args.kwargs["text"].endswith("Reply in thread")

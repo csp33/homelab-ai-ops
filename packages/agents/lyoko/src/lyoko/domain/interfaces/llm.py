@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-TokenCallback = Callable[[str], Awaitable[None]]
+StatusCallback = Callable[[str], Awaitable[None]]
 
 
 class LLMClientInterface(ABC):
@@ -23,7 +23,7 @@ class LLMClientInterface(ABC):
         metadata: dict[str, Any] | None = None,
         max_steps: int | None = None,
         parent_config: dict[str, Any] | None = None,
-        on_token: TokenCallback | None = None,
+        on_status: StatusCallback | None = None,
     ) -> str:
         """Process a conversational or single-turn prompt with optional tools and session tracing.
 
@@ -34,5 +34,6 @@ class LLMClientInterface(ABC):
         starting a trace of its own, and ``session_id`` and ``user_id`` are ignored because the
         enclosing trace already carries them.
 
-        ``on_token`` is an optional async callback invoked as text tokens are streamed.
+        ``on_status`` is an optional async callback invoked with a short, factual status (such as
+        the tool or specialist actually running) so the operator can see live progress.
         """

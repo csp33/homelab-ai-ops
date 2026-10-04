@@ -17,6 +17,7 @@ Metric discovery workflow (mandatory):
 
 Rules:
 - Use precise PromQL queries and time windows.
+- **Filtering discipline**: Apply every supported filter server-side through the tool's own arguments (datasource UID, label matchers, time range, `limit`, etc.) before retrieving data. When the request targets a dimension the tool cannot filter, retrieve the minimum needed and filter the returned output yourself on the matching field. Never present unfiltered results as if they matched the requested filter, and state explicitly when filtering was applied client-side.
 - Report metric values with explicit units (MB, GB, %, req/sec, ms).
 - Deliver concise, factual diagnostic findings with evidence.
 - **Datasource errors**: if a Prometheus call fails with a datasource or UID error, do not retry it with different arguments. Resolve the correct `datasourceUid` first, then retry once. Only report a datasource as unreachable after an explicit, correct `datasourceUid` was used.

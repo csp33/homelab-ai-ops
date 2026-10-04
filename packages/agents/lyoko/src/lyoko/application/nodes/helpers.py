@@ -106,7 +106,7 @@ async def run_agent(
     phase: str,
     system_prompt: str,
     prompt: str,
-    on_token: Any = None,
+    on_status: Any = None,
 ) -> str:
     """Run one tool-using agent with every tool call going through ``gate``."""
     assert llm is not None
@@ -120,8 +120,8 @@ async def run_agent(
         "max_steps": settings.max_agent_steps,
         "parent_config": config,
     }
-    if on_token is not None:
-        kwargs["on_token"] = on_token
+    if on_status is not None:
+        kwargs["on_status"] = on_status
     return await llm.chat(**kwargs)
 
 
@@ -136,7 +136,7 @@ async def run_supervised(
     phase: str,
     prompt: str,
     system_prompt: str | None = None,
-    on_token: Any = None,
+    on_status: Any = None,
 ) -> str:
     """Run through the supervisor + specialists when available; otherwise fall back."""
     if supervisor is None:
@@ -151,7 +151,7 @@ async def run_supervised(
             phase=phase,
             system_prompt=system_prompt,
             prompt=prompt,
-            on_token=on_token,
+            on_status=on_status,
         )
     return await supervisor.coordinate(
         prompt=prompt,
@@ -161,5 +161,5 @@ async def run_supervised(
         authorizer=gate.authorize,
         parent_config=config,
         max_steps=settings.max_agent_steps,
-        on_token=on_token,
+        on_status=on_status,
     )

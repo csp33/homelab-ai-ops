@@ -19,18 +19,45 @@ UNIFI_ROOT_TOOLS = {
 }
 
 
+def _extract_parameters(sub_tool: dict[str, Any]) -> dict[str, Any]:
+    """Resolve a subtool's input JSON schema from the several shapes the index may use.
+
+    ``unifi_tool_index`` nests the schema under ``schema.input`` when ``include_schemas`` is
+    enabled, but older builds may expose a flat ``parameters``/``schema.input_schema`` key.
+    Without this, every subtool would register an empty schema and agents would see no arguments.
+    """
+    flattened = sub_tool.get("parameters")
+    if isinstance(flattened, dict) and flattened:
+        return flattened
+
+    schema = sub_tool.get("schema")
+    if isinstance(schema, dict):
+        for key in ("input", "input_schema"):
+            candidate = schema.get(key)
+            if isinstance(candidate, dict) and candidate:
+                return candidate
+
+    return {}
+
+
 class UnifiUpstreamClient(ProcessUpstreamClient):
     """Adapter for UniFi Network MCP server expanding subtools from unifi_tool_index."""
 
     async def list_tools(self) -> list[ToolDefinition]:
-        """Discover tools and expand subtools from unifi_tool_index."""
+        """Discover tools and expand subtools from unifi_tool_index.
+
+        The index is requested with ``include_schemas=True`` so every expanded subtool carries
+        its real JSON argument schema. Otherwise agents see bare ``tool()`` signatures, cannot
+        discover filter arguments, and the gateway's argument-error self-correction returns an
+        empty schema.
+        """
         tools = await super().list_tools()
         if not any(t.name == "unifi_tool_index" for t in tools):
             return tools
 
         existing_names = {t.name for t in tools}
         try:
-            index_res = await self.call_tool("unifi_tool_index", {})
+            index_res = await self.call_tool("unifi_tool_index", {"include_schemas": True})
             if index_res and not index_res.is_error and index_res.content:
                 content = index_res.content
                 if isinstance(content, str):
@@ -44,7 +71,7 @@ class UnifiUpstreamClient(ProcessUpstreamClient):
                                 ToolDefinition(
                                     name=st_name,
                                     description=sub_tool.get("description", ""),
-                                    parameters=sub_tool.get("parameters", {}),
+                                    parameters=_extract_parameters(sub_tool),
                                     upstream_type=self.upstream_type,
                                 )
                             )

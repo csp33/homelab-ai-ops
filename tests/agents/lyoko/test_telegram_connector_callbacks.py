@@ -152,6 +152,30 @@ async def test_telegram_connector_feedback_callback_button():
 
 
 @pytest.mark.asyncio
+async def test_telegram_connector_stop_callback():
+    """Verify clicking Stop aborts the in-flight streaming reply and clears the button."""
+    connector = TelegramConnector(
+        bot_token="fake:token", allowed_user_ids={"12345"}, default_chat_id="12345"
+    )
+    streamer = MagicMock()
+    connector._active_streamers[("12345", 555)] = streamer
+
+    mock_update = MagicMock()
+    mock_update.effective_user.id = 12345
+    mock_update.effective_chat.id = 12345
+    mock_query = MagicMock()
+    mock_query.data = "stop:555"
+    mock_query.answer = AsyncMock()
+    mock_query.edit_message_reply_markup = AsyncMock()
+    mock_update.callback_query = mock_query
+
+    await connector._handle_callback_query(mock_update, MagicMock())
+
+    streamer.stop.assert_called_once()
+    mock_query.edit_message_reply_markup.assert_called_once_with(reply_markup=None)
+
+
+@pytest.mark.asyncio
 async def test_telegram_connector_feedback_command():
     """Verify /feedback command saves rule to PostgreSQL and generates embedding."""
     mock_memory_repo = AsyncMock()
