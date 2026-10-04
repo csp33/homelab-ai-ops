@@ -146,6 +146,7 @@ def build_chat_manager(
             allowed_user_ids=settings.telegram_allowed_user_ids,
             allowed_chat_ids=settings.telegram_allowed_chat_ids,
             default_chat_id=settings.telegram_default_chat_id,
+            discussion_group_id=settings.telegram_discussion_group_id,
             memory_repository=memory_repo,
             embeddings_service=embeddings_service,
         )

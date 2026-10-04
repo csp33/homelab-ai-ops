@@ -314,6 +314,7 @@ class TelegramConnector(ChatConnector):
         allowed_user_ids: set[str] | list[str] | str | None = None,
         allowed_chat_ids: set[str] | list[str] | str | None = None,
         default_chat_id: str | None = None,
+        discussion_group_id: str | int | None = None,
         memory_repository: Any = None,
         embeddings_service: Any = None,
     ) -> None:
@@ -350,9 +351,14 @@ class TelegramConnector(ChatConnector):
         if self.default_chat_id:
             self.allowed_chat_ids.add(self.default_chat_id)
 
+        self.discussion_group_id = str(discussion_group_id).strip() if discussion_group_id else None
+        if self.discussion_group_id:
+            self.allowed_chat_ids.add(self.discussion_group_id)
+
         self.memory_repository = memory_repository
         self.embeddings_service = embeddings_service
 
+        self._channel_to_discussion: dict[tuple[str, int], int] = {}
         self._message_handlers: list[Callable[[IncomingMessage], Awaitable[str | None]]] = []
         self._approval_handlers: list[Callable[[ApprovalResponse], Awaitable[None]]] = []
         self._active_streamers: dict[tuple[str, int], TelegramDraftStreamer] = {}
@@ -425,7 +431,31 @@ class TelegramConnector(ChatConnector):
             return
 
         chat = getattr(update, "effective_chat", None) or getattr(msg, "chat", None)
+        chat_type = str(getattr(chat, "type", "")) if chat else ""
+        chat_id = (
+            str(chat.id)
+            if chat and getattr(chat, "id", None) is not None and not hasattr(chat.id, "_mock_name")
+            else ""
+        )
+        logger.info(
+            "_handle_telegram_message: msg_id=%s, chat_type=%s, chat_id=%s, "
+            "is_automatic_forward=%s, text=%r",
+            getattr(msg, "message_id", None),
+            chat_type,
+            chat_id,
+            getattr(msg, "is_automatic_forward", None),
+            (str(msg.text).strip()[:80] if msg.text else None),
+        )
+
+        # Automatic forward from channel to discussion group - record the mapping so replies to
+        # the original channel post can be threaded here, then do not process it as a user command.
+        if getattr(msg, "is_automatic_forward", None) is True:
+            self._record_channel_forward(msg)
+            return
+
+        chat = getattr(update, "effective_chat", None) or getattr(msg, "chat", None)
         user = getattr(update, "effective_user", None) or getattr(msg, "from_user", None)
+        chat_type = str(getattr(chat, "type", "")) if chat else ""
 
         chat_id = (
             str(chat.id)
@@ -437,6 +467,9 @@ class TelegramConnector(ChatConnector):
             if user and getattr(user, "id", None) is not None and not hasattr(user.id, "_mock_name")
             else None
         )
+
+        # Thread the reply into the same topic/thread as the incoming message
+        message_thread_id = getattr(msg, "message_thread_id", None)
 
         # Check authorization (allowed user or allowed channel/chat)
         user_auth = self.is_user_authorized(user_id)
@@ -454,6 +487,7 @@ class TelegramConnector(ChatConnector):
                     await msg.reply_text(
                         "⛔ Access denied. Your user ID or chat is not authorized.",
                         reply_to_message_id=msg.message_id,
+                        message_thread_id=message_thread_id,
                         allow_sending_without_reply=True,
                     )
             return
@@ -576,27 +610,85 @@ class TelegramConnector(ChatConnector):
 
                     if reply and not streamer.is_stopped():
                         formatted_reply = markdown_to_telegram_html(reply)
-                        try:
-                            await msg.reply_text(
-                                formatted_reply,
-                                parse_mode="HTML",
-                                reply_to_message_id=msg.message_id,
-                                allow_sending_without_reply=True,
+                        target_chat_id = chat_id
+                        target_reply_id = msg.message_id
+                        target_thread_id = message_thread_id
+
+                        # If this message was posted directly in a broadcast channel and a discussion
+                        # group is available, send the reply as a comment in the discussion group thread
+                        # instead of creating a new opener post in the channel.
+                        if chat_type == "channel" and self.discussion_group_id:
+                            disc_msg_id = self._channel_to_discussion.get(
+                                (str(chat_id), msg.message_id)
                             )
-                        except Exception as html_err:
-                            logger.warning("Failed to reply with HTML, falling back: %s", html_err)
+                            logger.info(
+                                "Channel post %s in chat %s: get_discussion_message_id returned %s",
+                                msg.message_id,
+                                chat_id,
+                                disc_msg_id,
+                            )
+                            if disc_msg_id:
+                                target_chat_id = self.discussion_group_id
+                                target_reply_id = disc_msg_id
+                                target_thread_id = disc_msg_id
+                                logger.info(
+                                    "Redirecting reply for channel post %s to discussion group %s "
+                                    "with reply_to=%s, thread=%s",
+                                    msg.message_id,
+                                    self.discussion_group_id,
+                                    target_reply_id,
+                                    target_thread_id,
+                                )
+
+                        if target_chat_id != chat_id:
                             try:
+                                await self.send_message(
+                                    chat_id=target_chat_id,
+                                    text=reply,
+                                    reply_to_message_id=target_reply_id,
+                                    message_thread_id=target_thread_id,
+                                    parse_mode="HTML",
+                                )
+                            except Exception as disc_err:
+                                logger.warning(
+                                    "Failed to reply to discussion group %s, falling back to channel reply: %s",
+                                    target_chat_id,
+                                    disc_err,
+                                )
                                 await msg.reply_text(
-                                    reply,
+                                    formatted_reply,
+                                    parse_mode="HTML",
                                     reply_to_message_id=msg.message_id,
+                                    message_thread_id=message_thread_id,
                                     allow_sending_without_reply=True,
                                 )
-                            except Exception:
-                                await self.send_message(
-                                    chat_id=chat_id,
-                                    text=reply,
+                        else:
+                            try:
+                                await msg.reply_text(
+                                    formatted_reply,
+                                    parse_mode="HTML",
                                     reply_to_message_id=msg.message_id,
+                                    message_thread_id=message_thread_id,
+                                    allow_sending_without_reply=True,
                                 )
+                            except Exception as html_err:
+                                logger.warning(
+                                    "Failed to reply with HTML, falling back: %s", html_err
+                                )
+                                try:
+                                    await msg.reply_text(
+                                        reply,
+                                        reply_to_message_id=msg.message_id,
+                                        message_thread_id=message_thread_id,
+                                        allow_sending_without_reply=True,
+                                    )
+                                except Exception:
+                                    await self.send_message(
+                                        chat_id=chat_id,
+                                        text=reply,
+                                        reply_to_message_id=msg.message_id,
+                                        message_thread_id=message_thread_id,
+                                    )
                 except (asyncio.CancelledError, GeneratorExit):
                     logger.info(
                         "Message generation cancelled by user for draft %s in chat %s",
@@ -610,6 +702,7 @@ class TelegramConnector(ChatConnector):
                         await msg.reply_text(
                             f"⚠️ Error processing request: {exc}",
                             reply_to_message_id=msg.message_id,
+                            message_thread_id=message_thread_id,
                             allow_sending_without_reply=True,
                         )
         finally:
@@ -617,6 +710,7 @@ class TelegramConnector(ChatConnector):
 
     async def _handle_feedback_command(self, msg: Any, text: str) -> None:
         """Process /feedback or /teach operator instruction and persist to PostgreSQL."""
+        message_thread_id = getattr(msg, "message_thread_id", None)
         feedback_content = text.removeprefix("/feedback").removeprefix("/teach").strip()
         if not feedback_content:
             help_text = (
@@ -629,6 +723,7 @@ class TelegramConnector(ChatConnector):
                 help_text,
                 parse_mode="HTML",
                 reply_to_message_id=msg.message_id,
+                message_thread_id=message_thread_id,
                 allow_sending_without_reply=True,
             )
             return
@@ -637,6 +732,7 @@ class TelegramConnector(ChatConnector):
             await msg.reply_text(
                 "⚠️ The persistent memory database (PostgreSQL) is not available.",
                 reply_to_message_id=msg.message_id,
+                message_thread_id=message_thread_id,
                 allow_sending_without_reply=True,
             )
             return
@@ -690,6 +786,7 @@ class TelegramConnector(ChatConnector):
             success_msg,
             parse_mode="HTML",
             reply_to_message_id=msg.message_id,
+            message_thread_id=message_thread_id,
             allow_sending_without_reply=True,
         )
 
@@ -777,6 +874,31 @@ class TelegramConnector(ChatConnector):
         except Exception as edit_err:
             logger.debug("Could not edit message text after callback: %s", edit_err)
 
+    def _record_channel_forward(self, msg: Any) -> None:
+        """Record a channel-post -> discussion-message mapping from an automatic forward."""
+        channel_id = None
+        channel_msg_id = None
+
+        origin = getattr(msg, "forward_origin", None)
+        if origin and getattr(origin, "type", "") == "channel":
+            chat_obj = getattr(origin, "chat", None)
+            channel_id = str(chat_obj.id) if chat_obj else None
+            channel_msg_id = getattr(origin, "message_id", None)
+        elif getattr(msg, "is_automatic_forward", False) or getattr(msg, "forward_from_chat", None):
+            from_chat = getattr(msg, "forward_from_chat", None)
+            if from_chat:
+                channel_id = str(from_chat.id)
+                channel_msg_id = getattr(msg, "forward_from_message_id", None)
+
+        if channel_id and channel_msg_id is not None:
+            key = (str(channel_id), int(channel_msg_id))
+            self._channel_to_discussion[key] = msg.message_id
+            logger.info(
+                "Mapped channel post %s to discussion message %s",
+                key,
+                msg.message_id,
+            )
+
     async def start(self) -> None:
         """Initialize and start Telegram application and polling loop."""
         if not self.bot_token:
@@ -801,6 +923,22 @@ class TelegramConnector(ChatConnector):
 
         await self._app.initialize()
         await self._app.start()
+
+        # If discussion group was not explicitly configured, try to discover linked chat from default channel
+        if not self.discussion_group_id and self.default_chat_id:
+            try:
+                chat_info = await self._app.bot.get_chat(self.default_chat_id)
+                if getattr(chat_info, "linked_chat_id", None):
+                    self.discussion_group_id = str(chat_info.linked_chat_id)
+                    self.allowed_chat_ids.add(self.discussion_group_id)
+                    logger.info(
+                        "Discovered linked discussion group %s for channel %s",
+                        self.discussion_group_id,
+                        self.default_chat_id,
+                    )
+            except Exception as exc:
+                logger.debug("Could not auto-discover linked discussion group: %s", exc)
+
         if self._app.updater:
             await self._app.updater.start_polling()
         logger.info("TelegramConnector started polling updates.")
@@ -819,6 +957,7 @@ class TelegramConnector(ChatConnector):
         chat_id: str,
         text: str,
         reply_to_message_id: str | int | None = None,
+        message_thread_id: str | int | None = None,
         parse_mode: str = "HTML",
     ) -> SentMessage | None:
         """Send proactive text message to specific chat, group, or channel."""
@@ -829,6 +968,7 @@ class TelegramConnector(ChatConnector):
             return None
 
         msg_id = int(reply_to_message_id) if reply_to_message_id is not None else None
+        thread_id = int(message_thread_id) if message_thread_id is not None else None
 
         if parse_mode == "HTML":
             formatted = markdown_to_telegram_html(text)
@@ -838,6 +978,7 @@ class TelegramConnector(ChatConnector):
                     text=formatted,
                     parse_mode="HTML",
                     reply_to_message_id=msg_id,
+                    message_thread_id=thread_id,
                     allow_sending_without_reply=True,
                 )
                 return _to_sent_message(sent, str(target))
@@ -852,6 +993,7 @@ class TelegramConnector(ChatConnector):
                 text=text,
                 parse_mode=parse_mode if parse_mode != "HTML" else None,
                 reply_to_message_id=msg_id,
+                message_thread_id=thread_id,
                 allow_sending_without_reply=True,
             )
         except Exception:
@@ -859,6 +1001,7 @@ class TelegramConnector(ChatConnector):
                 chat_id=target,
                 text=text,
                 reply_to_message_id=msg_id,
+                message_thread_id=thread_id,
                 allow_sending_without_reply=True,
             )
         return _to_sent_message(sent, str(target))
@@ -913,13 +1056,17 @@ class TelegramConnector(ChatConnector):
             chat_id=str(target), message_id=str(msg_id)
         )
 
-    async def send_approval_request(self, request: ApprovalRequest) -> SentMessage | None:
+    async def send_approval_request(
+        self, request: ApprovalRequest, message_thread_id: str | int | None = None
+    ) -> SentMessage | None:
         """Send interactive approval prompt with inline action buttons to chat or channel."""
         if not self._app or not self._app.bot:
             return None
         target = request.chat_id or self.default_chat_id
         if not target:
             return None
+
+        thread_id = int(message_thread_id) if message_thread_id is not None else None
 
         buttons = []
         for act in request.actions:
@@ -930,12 +1077,19 @@ class TelegramConnector(ChatConnector):
         text = f"🚨 <b>[APPROVAL REQUIRED]</b>\n\n<b>{html.escape(request.title)}</b>\n\n{markdown_to_telegram_html(request.details)}"
         try:
             sent = await self._app.bot.send_message(
-                chat_id=target, text=text, reply_markup=keyboard, parse_mode="HTML"
+                chat_id=target,
+                text=text,
+                reply_markup=keyboard,
+                parse_mode="HTML",
+                message_thread_id=thread_id,
             )
         except Exception as exc:
             logger.warning("Failed to send approval request in HTML, falling back: %s", exc)
             plain_text = f"🚨 [APPROVAL REQUIRED]\n\n{request.title}\n\n{request.details}"
             sent = await self._app.bot.send_message(
-                chat_id=target, text=plain_text, reply_markup=keyboard
+                chat_id=target,
+                text=plain_text,
+                reply_markup=keyboard,
+                message_thread_id=thread_id,
             )
         return _to_sent_message(sent, str(target))
