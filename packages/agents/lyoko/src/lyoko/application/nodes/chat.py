@@ -34,6 +34,7 @@ def create_chat_node(
     async def chat_node(state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
         """Answer the operator. Coordinates through the multi-agent supervisor with ToolGate safety."""
         text = state.get("text", "")
+        history_context = state.get("history_context", "")
         if llm is None:
             return {"reply": _NO_LLM_REPLY.format(text=text)}
 
@@ -73,7 +74,7 @@ def create_chat_node(
             except Exception as exc:
                 logger.warning("Failed to query semantic memory in chat: %s", exc, exc_info=True)
 
-        prompt_with_memory = f"{text}{lessons_context}"
+        prompt_with_memory = f"{text}{lessons_context}{history_context}"
         gate = make_gate(
             state,
             GateMode.APPROVAL,

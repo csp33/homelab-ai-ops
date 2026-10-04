@@ -15,6 +15,8 @@ class IncomingMessage(BaseModel):
     user: ChatUser
     text: str
     reply_to_message_id: str | None = None
+    """Telegram message_thread_id when the message belongs to a forum topic / thread."""
+    message_thread_id: str | None = None
 
 
 class SentMessage(BaseModel):
