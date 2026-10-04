@@ -119,6 +119,22 @@ class AgentSettings(BaseSettings):
         ge=1,
         description="Maximum supervisor delegation iterations per phase",
     )
+    max_tool_calls_per_run: int = Field(
+        default=20,
+        ge=1,
+        description=(
+            "Maximum tool calls a single agent run may execute before it must summarize. "
+            "Bounds fan-out across large resource lists so one run cannot balloon the context."
+        ),
+    )
+    max_tool_output_chars: int = Field(
+        default=8000,
+        ge=100,
+        description=(
+            "Maximum characters of a single tool result kept in the agent context. Longer "
+            "results are truncated with a note to protect the token budget."
+        ),
+    )
 
     # Alert Storm Protection & Cascade Trace Prevention
     alert_debounce_seconds: float = Field(
@@ -156,6 +172,16 @@ class AgentSettings(BaseSettings):
         ge=0.0,
         le=1.0,
         description="Minimum cosine similarity required to inject memories into agent context",
+    )
+    chat_memory_similarity_threshold: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Higher similarity floor for injecting memories into interactive chat. Chat prompts "
+            "are short and generic, so a low threshold surfaces loosely related rules that can "
+            "hijack the operator's actual request."
+        ),
     )
 
     # General Environment

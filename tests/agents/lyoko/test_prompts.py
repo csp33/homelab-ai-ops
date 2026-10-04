@@ -43,3 +43,13 @@ def test_all_prompts_loaded_properly():
         "Grafana" in OBSERVABILITY_SPECIALIST_PROMPT
         or "Prometheus" in OBSERVABILITY_SPECIALIST_PROMPT
     )
+
+
+def test_supervisor_prompt_guards_against_hijack_and_domain_substitution():
+    assert "operator's latest message" in SUPERVISOR_SYSTEM_PROMPT.lower()
+    assert "Do not substitute a different domain" in SUPERVISOR_SYSTEM_PROMPT
+    assert "at most once" in SUPERVISOR_SYSTEM_PROMPT
+
+
+def test_smarthome_prompt_forbids_invented_tool_names():
+    assert "Never invent or guess a tool name" in SMARTHOME_SPECIALIST_PROMPT

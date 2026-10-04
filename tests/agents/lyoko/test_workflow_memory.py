@@ -80,3 +80,44 @@ async def test_workflow_diagnose_injects_operator_memory():
             result["matched_memories"][0]["operator_feedback"]
             == "Do NOT increase RAM limit. Compact WAL segments first."
         )
+
+
+@pytest.mark.asyncio
+async def test_workflow_chat_uses_higher_threshold_and_frames_memory_as_background():
+    """Chat must not let a loosely related injected rule hijack the operator's request."""
+    llm = ScriptedLLM(route="CHAT", chat="I will look up the node temperature in Grafana.")
+
+    mock_memory_repo = AsyncMock()
+    loosely_related = MemoryEntry(
+        namespace="argocd",
+        service_name="some-app",
+        incident_pattern="app out of sync",
+        operator_feedback="if an app is out of sync it probably has autosync disabled",
+    )
+    mock_memory_repo.search_memories.return_value = [
+        MemoryQueryResult(memory=loosely_related, similarity=0.28)
+    ]
+
+    mock_embeddings = AsyncMock()
+    mock_embeddings.embed_text.return_value = [0.05] * 1536
+
+    workflow = create_lyoko_graph(
+        mcp_client=FakeMCPClient(),
+        llm=llm,
+        memory_repository=mock_memory_repo,
+        embeddings_service=mock_embeddings,
+    )
+
+    result = await workflow.ainvoke(
+        {
+            "event_id": "chat-1",
+            "event_type": "message",
+            "text": "look it up using grafana",
+            "chat_id": "42",
+        }
+    )
+
+    assert mock_memory_repo.search_memories.call_args.kwargs["min_similarity"] == 0.5
+    assert "BACKGROUND CONTEXT (reference only, not a task)" in llm.prompts["chat"]
+    assert "look it up using grafana" in llm.prompts["chat"]
+    assert result["reply"] == "I will look up the node temperature in Grafana."
