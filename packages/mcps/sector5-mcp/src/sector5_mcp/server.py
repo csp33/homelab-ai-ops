@@ -2,10 +2,13 @@
 
 import logging
 
+import uvicorn
+
 from sector5_mcp.application.service import MCPGatewayService
 from sector5_mcp.config import settings
 from sector5_mcp.domain.models.upstream import UpstreamType
 from sector5_mcp.infrastructure.auth.google import GoogleAuthVerifier
+from sector5_mcp.infrastructure.mcp.host_router import build_host_router, host_from_base_url
 from sector5_mcp.infrastructure.mcp.server import create_gateway_mcp_server
 from sector5_mcp.infrastructure.telegram.client import TelegramClient
 from sector5_mcp.infrastructure.upstream.client import ProcessUpstreamClient
@@ -38,8 +41,8 @@ logging.getLogger("uvicorn.access").addFilter(HealthEndpointFilter())
 logger = logging.getLogger("sector5_mcp")
 
 
-def build_gateway_application() -> tuple[MCPGatewayService, any]:
-    """Assemble Clean Architecture gateway with upstream MCP servers."""
+def _build_upstreams() -> dict:
+    """Assemble the upstream MCP clients from settings."""
     upstreams = {}
 
     # 1. Home Assistant MCP (github.com/homeassistant-ai/ha-mcp)
@@ -133,14 +136,68 @@ def build_gateway_application() -> tuple[MCPGatewayService, any]:
         )
         upstreams[UpstreamType.TELEGRAM] = TelegramUpstreamClient(telegram_client)
 
-    auth_verifier = GoogleAuthVerifier()
-    gateway_service = MCPGatewayService(upstreams=upstreams, auth_port=auth_verifier)
-    mcp_app = create_gateway_mcp_server(gateway_service)
+    return upstreams
 
+
+def build_gateway_application() -> tuple[MCPGatewayService, any]:
+    """Assemble Clean Architecture gateway with upstream MCP servers."""
+    gateway_service = MCPGatewayService(
+        upstreams=_build_upstreams(), auth_port=GoogleAuthVerifier()
+    )
+    mcp_app = create_gateway_mcp_server(gateway_service, base_url=settings.base_url)
     return gateway_service, mcp_app
 
 
 service, mcp = build_gateway_application()
+
+
+def _allowed_hosts(base_urls: list[str]) -> list[str]:
+    """Hostnames (no port) derived from the configured public BASE_URLs."""
+    return sorted({host_from_base_url(url) for url in base_urls})
+
+
+def _serve_http_app(app) -> None:
+    config = uvicorn.Config(
+        app,
+        host=settings.mcp_host,
+        port=settings.mcp_port,
+        timeout_graceful_shutdown=2,
+        lifespan="on",
+        log_level="info",
+    )
+    uvicorn.Server(config).run()
+
+
+def run_http_gateway(
+    gateway_service: MCPGatewayService, canonical_mcp, base_urls: list[str]
+) -> None:
+    """Serve the gateway over HTTP, one OAuth-aware app per public BASE_URL.
+
+    A single BASE_URL (or disabled auth) keeps the stock FastMCP runner. With
+    several BASE_URLs, each host gets its own FastMCP app so OAuth discovery,
+    issuer, JWT audience, and the RFC 9728 resource_metadata URL match the exact
+    hostname the client used. A :class:`HostRouter` dispatches by Host header.
+    """
+    allowed = _allowed_hosts(base_urls)
+    if len(base_urls) <= 1 or not settings.auth_enabled:
+        canonical_mcp.run(
+            transport="http",
+            host=settings.mcp_host,
+            port=settings.mcp_port,
+        )
+        return
+
+    servers = {base_urls[0]: canonical_mcp}
+    for base_url in base_urls[1:]:
+        servers[base_url] = create_gateway_mcp_server(
+            gateway_service, base_url=base_url, prewarm=False
+        )
+    apps = {
+        base_url: server.http_app(path="/mcp", transport="http", allowed_hosts=allowed)
+        for base_url, server in servers.items()
+    }
+    logger.info(f"Serving gateway for {len(apps)} public BASE_URLs: {', '.join(base_urls)}")
+    _serve_http_app(build_host_router(apps, canonical_base_url=base_urls[0]))
 
 
 def main():
@@ -150,7 +207,7 @@ def main():
         f"host: {settings.mcp_host}:{settings.mcp_port})"
     )
     if settings.mcp_transport in ["http", "streamable-http"]:
-        mcp.run(transport="http", host=settings.mcp_host, port=settings.mcp_port)
+        run_http_gateway(service, mcp, settings.effective_base_urls)
     else:
         mcp.run(transport="stdio")
 

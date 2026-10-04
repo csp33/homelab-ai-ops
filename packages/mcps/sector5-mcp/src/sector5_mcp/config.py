@@ -33,7 +33,16 @@ class GatewaySettings(BaseSettings):
     )
     base_url: str = Field(
         default="http://localhost:8080",
-        description="Base URL of the MCP Gateway for OAuth/DCR metadata (e.g. https://mcp.internal.cspaez.org)",
+        description="Canonical Base URL of the MCP Gateway for OAuth/DCR metadata (e.g. https://mcp.cspaez.org)",
+    )
+    base_urls: list[str] | str = Field(
+        default_factory=list,
+        description=(
+            "Additional public Base URLs (hosts) the gateway is reachable at, e.g. "
+            "['https://mcp.internal.cspaez.org']. Each host gets its own OAuth issuer, "
+            "protected resource, and JWT audience. Register every URL's redirect_path "
+            "in Google Cloud Console."
+        ),
     )
     redirect_path: str = Field(
         default="/oauth/callback",
@@ -162,6 +171,7 @@ class GatewaySettings(BaseSettings):
         "blocked_namespaces",
         "github_allowed_repos",
         "github_blocked_repos",
+        "base_urls",
         mode="before",
     )
     @classmethod
@@ -175,6 +185,19 @@ class GatewaySettings(BaseSettings):
                     pass
             return [item.strip() for item in v.split(",") if item.strip()]
         return v or []
+
+    @property
+    def effective_base_urls(self) -> list[str]:
+        """Canonical base URL plus any additional base URLs, de-duplicated and normalized."""
+        candidates = [self.base_url, *self.base_urls]
+        seen: set[str] = set()
+        result: list[str] = []
+        for url in candidates:
+            normalized = url.strip().rstrip("/")
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                result.append(normalized)
+        return result
 
 
 settings = GatewaySettings()
