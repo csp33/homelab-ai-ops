@@ -151,23 +151,23 @@ async def test_gateway_fastmcp_tools_and_truncation(mock_auth):
     )
     mcp = create_gateway_mcp_server(gateway)
 
-    # 1. gateway_list_categories
-    cat_res = await mcp.call_tool("gateway_list_categories", {})
-    assert not cat_res.is_error
-    categories = cat_res.structured_content.get("result", cat_res.structured_content)
-    assert len(categories) == 2
-
-    # 2. gateway_list_tools with query
-    query_res = await mcp.call_tool("gateway_list_tools", {"query": "light"})
-    assert not query_res.is_error
-    tools_list = query_res.structured_content.get("result", query_res.structured_content)
-    assert len(tools_list) == 1
-    assert tools_list[0]["name"] == "ha_manage_lights"
-    assert "parameters" not in tools_list[0]  # Parameters omitted from concise listing
+    # 1. gateway_get_domain_tools returns a lean index for one domain
+    domain_res = await mcp.call_tool("gateway_get_domain_tools", {"domain": "homeassistant"})
+    assert not domain_res.is_error
+    index = domain_res.structured_content.get("result", domain_res.structured_content)
+    assert len(index) == 2
+    by_name = {t["name"]: t for t in index}
+    assert set(by_name) == {"ha_manage_lights", "ha_get_climate"}
+    assert "parameters" not in by_name["ha_manage_lights"]  # Lean index
     assert (
-        tools_list[0]["description"]
+        by_name["ha_manage_lights"]["description"]
         == "Turn on/off and configure lighting brightness and rgb colors."
     )
+
+    # 2. gateway_get_domain_tools for an empty/unknown domain returns an error entry
+    unknown_res = await mcp.call_tool("gateway_get_domain_tools", {"domain": "github"})
+    unknown = unknown_res.structured_content.get("result", unknown_res.structured_content)
+    assert isinstance(unknown, list) and "error" in unknown[0]
 
     # 3. gateway_get_tool_schema
     schema_res = await mcp.call_tool("gateway_get_tool_schema", {"tool_name": "ha_manage_lights"})
@@ -201,7 +201,7 @@ async def test_gateway_fastmcp_tools_and_truncation(mock_auth):
 
 
 @pytest.mark.asyncio
-async def test_gateway_search_tools_ranking_and_aliases(mock_auth):
+async def test_gateway_domain_tools_and_aliases(mock_auth):
     mock_unifi = MagicMock(spec=UpstreamMCPInterface)
     mock_unifi.list_tools = AsyncMock(
         return_value=[
@@ -243,35 +243,12 @@ async def test_gateway_search_tools_ranking_and_aliases(mock_auth):
         auth_port=mock_auth,
     )
 
-    # 1. Test alias mapping: 'network' -> 'unifi'
-    tools_alias = await gateway.search_tools(upstream="network")
-    assert len(tools_alias) == 4
-    assert all(t.upstream_type == UpstreamType.UNIFI for t in tools_alias)
+    # 1. Domain alias mapping: 'network' -> 'unifi'
+    network_tools = await gateway.get_domain_tools("network")
+    assert len(network_tools) == 4
+    assert all(t.upstream_type == UpstreamType.UNIFI for t in network_tools)
 
-    # 2. Test multi-token relevance scoring: 'top client traffic' should rank unifi_get_top_clients first
-    top_search = await gateway.search_tools(query="top client traffic", upstream="network")
-    assert len(top_search) > 0
-    assert top_search[0].name == "unifi_get_top_clients"
-
-    # 3. Test read vs mutation preference: searching 'client' should rank list/get tools above delete/create tools
-    client_search = await gateway.search_tools(query="client", upstream="unifi")
-    assert len(client_search) == 4
-    top_two_names = [t.name for t in client_search[:2]]
-    assert "unifi_get_top_clients" in top_two_names
-    assert "unifi_list_clients" in top_two_names
-    # Destructive/creation tools should rank lower
-    assert client_search[-1].name in ["unifi_delete_client_group", "unifi_create_client_group"]
-
-    # 4. Test explicit mutation query: searching 'delete client' should rank unifi_delete_client_group first
-    delete_search = await gateway.search_tools(query="delete client")
-    assert delete_search[0].name == "unifi_delete_client_group"
-
-    # 5. Test get_domain_tools
-    domain_tools = await gateway.get_domain_tools("network")
-    assert len(domain_tools) == 4
-    assert all(t.upstream_type == UpstreamType.UNIFI for t in domain_tools)
-
-    # 6. GitOps / Argo CD aliases resolve to the kubernetes domain
+    # 2. GitOps / Argo CD aliases resolve to the kubernetes domain
     gitops_tools = await gateway.get_domain_tools("gitops")
     assert [t.name for t in gitops_tools] == ["k8s_resources_get"]
     assert gitops_tools == await gateway.get_domain_tools("kubernetes")

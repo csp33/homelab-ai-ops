@@ -10,6 +10,29 @@ from lyoko.domain.interfaces.mcp import MCPClientInterface
 logger = logging.getLogger("lyoko.specialists")
 
 
+def _format_catalog(catalog: list[Any]) -> str:
+    """Render a domain tool index as a prompt section, or an empty string when unavailable."""
+    lines: list[str] = []
+    for entry in catalog:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        if not name:
+            continue
+        description = str(entry.get("description") or "").strip()
+        lines.append(f"- {name}: {description}" if description else f"- {name}")
+    if not lines:
+        return ""
+    body = "\n".join(lines)
+    return (
+        "--- AVAILABLE TOOLS IN YOUR DOMAIN ---\n"
+        "Call them by exact name with `gateway_call_tool`; use `gateway_get_tool_schema` for "
+        "their arguments.\n"
+        f"{body}\n"
+        "---------------------------------------"
+    )
+
+
 class DomainSpecialistAgent:
     """Specialist subagent focused on a single domain (e.g. unifi, kubernetes, homeassistant, grafana)."""
 
@@ -28,6 +51,7 @@ class DomainSpecialistAgent:
         self.llm = llm
         self.mcp_client = mcp_client
         self.tools = tools or []
+        self._cached_tool_index: str | None = None
 
     async def get_tools(self, authorizer: Any = None) -> list[Any]:
         """Resolve tools scoped to this specialist's domain."""
@@ -39,6 +63,33 @@ class DomainSpecialistAgent:
                 authorizer=authorizer,
             )
         return []
+
+    async def get_system_prompt(self) -> str:
+        """Return the base prompt with this domain's tool index injected dynamically.
+
+        The index makes the specialist aware of its tools without a discovery round-trip. It is
+        cached after the first fetch. A gateway failure is not fatal: the tools themselves
+        surface the error when called, so the prompt just omits the index.
+        """
+        index = await self._domain_tool_index()
+        if not index:
+            return self.system_prompt
+        return f"{self.system_prompt}\n\n{index}"
+
+    async def _domain_tool_index(self) -> str:
+        if self._cached_tool_index is not None:
+            return self._cached_tool_index
+        if self.mcp_client is None or not hasattr(self.mcp_client, "get_domain_catalog"):
+            self._cached_tool_index = ""
+            return ""
+        try:
+            catalog = await self.mcp_client.get_domain_catalog(self.domain)
+        except Exception as exc:  # noqa: BLE001 - degrade gracefully, tools surface the real error
+            logger.warning("Could not load tool catalog for domain '%s': %s", self.domain, exc)
+            self._cached_tool_index = ""
+            return ""
+        self._cached_tool_index = _format_catalog(catalog)
+        return self._cached_tool_index
 
     async def run(
         self,
@@ -59,10 +110,11 @@ class DomainSpecialistAgent:
         specialist_tags.extend(["specialist", f"specialist:{self.domain}"])
 
         tools = await self.get_tools(authorizer=authorizer)
+        system_prompt = await self.get_system_prompt()
 
         return await self.llm.chat(
             prompt=prompt,
-            system_prompt=self.system_prompt,
+            system_prompt=system_prompt,
             tools=tools if tools else None,
             session_id=session_id,
             user_id=user_id,

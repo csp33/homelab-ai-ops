@@ -33,8 +33,18 @@ class MCPClientInterface(ABC):
     ) -> list[Any]:
         """Return LangChain tools scoped to one upstream domain for a specialist agent.
 
-        Small domains are bound as direct callable tools (no tool search). Large domains keep
-        a domain-scoped discovery trio so the specialist cannot leave its upstream.
+        Every specialist gets the same domain-locked discovery trio (discover the domain
+        catalog, read one tool schema, execute through the guarded call tool), so it can never
+        reach another upstream.
+        """
+
+    @abstractmethod
+    async def get_domain_catalog(self, domain: str) -> list[Any]:
+        """Return the lean tool index (name, description, upstream) for one upstream domain.
+
+        Used to inject the domain's tool list into a specialist prompt. Raises on gateway
+        failure instead of returning an empty list, so a broken gateway is never mistaken for
+        an empty domain.
         """
 
     @abstractmethod

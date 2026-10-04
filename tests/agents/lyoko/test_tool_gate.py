@@ -34,7 +34,7 @@ def _gate(mode: GateMode = GateMode.READ_ONLY, **kwargs) -> ToolGate:
         "ha_get_overview",
         "unifi_tool_index",
         "unifi_get_support_bundle",
-        "gateway_list_tools",
+        "gateway_get_domain_tools",
         "get_file_contents",
         "list_commits",
     ],

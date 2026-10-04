@@ -1,4 +1,4 @@
-"""Tests for FastMCP Telegram tools integration."""
+"""Tests for the Telegram in-process domain provider and its gateway wiring."""
 
 from unittest.mock import AsyncMock, patch
 
@@ -7,49 +7,42 @@ from homelab_mcp.domain.interfaces.telegram import TelegramClientInterface
 from homelab_mcp.domain.models.telegram import (
     TelegramAlertRequest,
     TelegramMessageRequest,
+    TelegramReactionRequest,
     TelegramSeverity,
 )
-from homelab_mcp.infrastructure.mcp.server import create_gateway_mcp_server
+from homelab_mcp.domain.models.upstream import UpstreamType
+from homelab_mcp.infrastructure.upstream.telegram import TelegramUpstreamClient
 from homelab_mcp.server import build_gateway_application
 from pydantic import SecretStr
 
 
-@pytest.mark.asyncio
-async def test_gateway_exposes_telegram_tools():
-    mock_service = AsyncMock()
-    mock_telegram = AsyncMock(spec=TelegramClientInterface)
-    mock_telegram.send_message.return_value = {"ok": True, "result": {"message_id": 1}}
-    mock_telegram.send_alert.return_value = {"ok": True, "result": {"message_id": 2}}
-    mock_telegram.set_reaction.return_value = {"ok": True}
-
-    mcp = create_gateway_mcp_server(mock_service, telegram_client=mock_telegram)
-    tool_names = [t.name for t in await mcp.list_tools()]
-
-    assert "telegram_send_message" in tool_names
-    assert "telegram_send_alert" in tool_names
-    assert "telegram_set_reaction" in tool_names
+def _mock_client() -> AsyncMock:
+    mock = AsyncMock(spec=TelegramClientInterface)
+    mock.send_message.return_value = {"ok": True, "result": {"message_id": 1}}
+    mock.send_alert.return_value = {"ok": True, "result": {"message_id": 2}}
+    mock.set_reaction.return_value = {"ok": True}
+    return mock
 
 
 @pytest.mark.asyncio
-async def test_gateway_omits_telegram_tools_when_no_client():
-    mock_service = AsyncMock()
+async def test_telegram_provider_lists_domain_tools():
+    provider = TelegramUpstreamClient(_mock_client())
+    tools = await provider.list_tools()
 
-    mcp = create_gateway_mcp_server(mock_service, telegram_client=None)
-    tool_names = [t.name for t in await mcp.list_tools()]
-
-    assert "telegram_send_message" not in tool_names
-    assert "telegram_send_alert" not in tool_names
-    assert "telegram_set_reaction" not in tool_names
+    assert {t.name for t in tools} == {
+        "telegram_send_message",
+        "telegram_send_alert",
+        "telegram_set_reaction",
+    }
+    assert all(t.upstream_type == UpstreamType.TELEGRAM for t in tools)
 
 
 @pytest.mark.asyncio
-async def test_gateway_calls_telegram_send_message_tool():
-    mock_service = AsyncMock()
-    mock_telegram = AsyncMock(spec=TelegramClientInterface)
-    mock_telegram.send_message.return_value = {"ok": True, "result": {"message_id": 100}}
+async def test_telegram_provider_dispatches_send_message():
+    client = _mock_client()
+    provider = TelegramUpstreamClient(client)
 
-    mcp = create_gateway_mcp_server(mock_service, telegram_client=mock_telegram)
-    res = await mcp.call_tool(
+    result = await provider.call_tool(
         "telegram_send_message",
         {
             "text": "Service restored",
@@ -59,9 +52,9 @@ async def test_gateway_calls_telegram_send_message_tool():
         },
     )
 
-    assert not res.is_error
-    assert res.structured_content == {"ok": True, "result": {"message_id": 100}}
-    mock_telegram.send_message.assert_awaited_once_with(
+    assert not result.is_error
+    assert result.content == {"ok": True, "result": {"message_id": 1}}
+    client.send_message.assert_awaited_once_with(
         TelegramMessageRequest(
             text="Service restored",
             chat_id="-10012345",
@@ -72,38 +65,11 @@ async def test_gateway_calls_telegram_send_message_tool():
 
 
 @pytest.mark.asyncio
-async def test_gateway_calls_telegram_set_reaction_tool():
-    from homelab_mcp.domain.models.telegram import TelegramReactionRequest
+async def test_telegram_provider_dispatches_alert_with_severity():
+    client = _mock_client()
+    provider = TelegramUpstreamClient(client)
 
-    mock_service = AsyncMock()
-    mock_telegram = AsyncMock(spec=TelegramClientInterface)
-    mock_telegram.set_reaction.return_value = {"ok": True}
-
-    mcp = create_gateway_mcp_server(mock_service, telegram_client=mock_telegram)
-    res = await mcp.call_tool(
-        "telegram_set_reaction",
-        {"message_id": 42, "emoji": "⚡", "chat_id": "-10012345"},
-    )
-
-    assert not res.is_error
-    assert res.structured_content == {"ok": True}
-    mock_telegram.set_reaction.assert_awaited_once_with(
-        TelegramReactionRequest(
-            message_id=42,
-            emoji="⚡",
-            chat_id="-10012345",
-        )
-    )
-
-
-@pytest.mark.asyncio
-async def test_gateway_calls_telegram_send_alert_tool():
-    mock_service = AsyncMock()
-    mock_telegram = AsyncMock(spec=TelegramClientInterface)
-    mock_telegram.send_alert.return_value = {"ok": True, "result": {"message_id": 101}}
-
-    mcp = create_gateway_mcp_server(mock_service, telegram_client=mock_telegram)
-    res = await mcp.call_tool(
+    await provider.call_tool(
         "telegram_send_alert",
         {
             "title": "High Memory Usage",
@@ -113,9 +79,7 @@ async def test_gateway_calls_telegram_send_alert_tool():
         },
     )
 
-    assert not res.is_error
-    assert res.structured_content == {"ok": True, "result": {"message_id": 101}}
-    mock_telegram.send_alert.assert_awaited_once_with(
+    client.send_alert.assert_awaited_once_with(
         TelegramAlertRequest(
             title="High Memory Usage",
             message="Node memory exceeds 90%",
@@ -126,38 +90,76 @@ async def test_gateway_calls_telegram_send_alert_tool():
 
 
 @pytest.mark.asyncio
-async def test_build_gateway_application_wires_telegram_client_when_configured():
+async def test_telegram_provider_defaults_unknown_severity_to_warning():
+    client = _mock_client()
+    provider = TelegramUpstreamClient(client)
+
+    await provider.call_tool(
+        "telegram_send_alert",
+        {"title": "t", "message": "m", "severity": "nonsense"},
+    )
+
+    request = client.send_alert.await_args.args[0]
+    assert request.severity == TelegramSeverity.WARNING
+
+
+@pytest.mark.asyncio
+async def test_telegram_provider_dispatches_reaction():
+    client = _mock_client()
+    provider = TelegramUpstreamClient(client)
+
+    await provider.call_tool(
+        "telegram_set_reaction",
+        {"message_id": 42, "emoji": "⚡", "chat_id": "-10012345"},
+    )
+
+    client.set_reaction.assert_awaited_once_with(
+        TelegramReactionRequest(message_id=42, emoji="⚡", chat_id="-10012345")
+    )
+
+
+@pytest.mark.asyncio
+async def test_telegram_provider_unknown_tool_is_error():
+    provider = TelegramUpstreamClient(_mock_client())
+    result = await provider.call_tool("telegram_nope", {})
+    assert result.is_error
+
+
+@pytest.mark.asyncio
+async def test_build_gateway_application_registers_telegram_domain_when_configured():
     with patch("homelab_mcp.server.settings") as mock_settings:
         mock_settings.ha_enabled = False
         mock_settings.unifi_enabled = False
         mock_settings.k8s_enabled = False
+        mock_settings.grafana_enabled = False
+        mock_settings.github_enabled = False
         mock_settings.telegram_enabled = True
         mock_settings.telegram_bot_token = SecretStr("123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11")
         mock_settings.telegram_default_chat_id = "12345678"
         mock_settings.auth_enabled = False
 
-        service, mcp_app = build_gateway_application()
-        tool_names = [t.name for t in await mcp_app.list_tools()]
+        service, _mcp_app = build_gateway_application()
+        tools = await service.discover_tools()
 
-        assert "telegram_send_message" in tool_names
-        assert "telegram_send_alert" in tool_names
-        assert "telegram_set_reaction" in tool_names
+        names = {t.name for t in tools}
+        assert {"telegram_send_message", "telegram_send_alert", "telegram_set_reaction"} <= names
+        assert any(t.upstream_type == UpstreamType.TELEGRAM for t in tools)
 
 
 @pytest.mark.asyncio
-async def test_build_gateway_application_skips_telegram_client_when_disabled():
+async def test_build_gateway_application_skips_telegram_domain_when_disabled():
     with patch("homelab_mcp.server.settings") as mock_settings:
         mock_settings.ha_enabled = False
         mock_settings.unifi_enabled = False
         mock_settings.k8s_enabled = False
+        mock_settings.grafana_enabled = False
+        mock_settings.github_enabled = False
         mock_settings.telegram_enabled = False
         mock_settings.telegram_bot_token = None
         mock_settings.telegram_default_chat_id = None
         mock_settings.auth_enabled = False
 
-        service, mcp_app = build_gateway_application()
-        tool_names = [t.name for t in await mcp_app.list_tools()]
+        service, _mcp_app = build_gateway_application()
+        tools = await service.discover_tools()
 
-        assert "telegram_send_message" not in tool_names
-        assert "telegram_send_alert" not in tool_names
-        assert "telegram_set_reaction" not in tool_names
+        assert "telegram_send_message" not in {t.name for t in tools}

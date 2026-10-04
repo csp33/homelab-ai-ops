@@ -4,7 +4,7 @@
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**`homelab-mcp`** is a unified **Model Context Protocol (MCP)** tool gateway and security harness. It aggregates upstream MCP servers for Kubernetes, Home Assistant, UniFi Network, Grafana, and GitHub into a single, authenticated, guardrail-protected endpoint accessible over **Streamable HTTP** (`/mcp`) and **stdio**.
+**`homelab-mcp`** is a unified **Model Context Protocol (MCP)** tool gateway and security harness. It aggregates upstream MCP servers for Kubernetes, Home Assistant, UniFi Network, Grafana, and GitHub, plus a built-in Telegram domain, into a single, authenticated, guardrail-protected endpoint accessible over **Streamable HTTP** (`/mcp`) and **stdio**.
 
 ## Architecture
 
@@ -12,11 +12,11 @@
   <img src="../../../docs/assets/homelab-mcp-architecture.png" alt="homelab-mcp Gateway Architecture" width="100%" />
 </p>
 
-`homelab-mcp` provides **Scoped Tool Search** with **Multi-Token Relevance Scoring**:
-- **Domain Scoping**: Clients can search within specific domains (e.g. `upstream="unifi"`, `upstream="kubernetes"`) with automatic category alias resolution (`network` ➔ `unifi`, `k8s` ➔ `kubernetes`, `iot` ➔ `homeassistant`, `metrics` ➔ `grafana`, `gitops` / `argocd` ➔ `kubernetes`).
-- **Domain Catalogs**: `gateway_get_domain_tools(domain)` returns the full allowed tool list for one upstream, including parameter schemas. LYOKO specialists use this to bind a scoped toolset.
-- **Relevance Weighting**: Matches on tool `name` and `description` are scored with multi-token full-match bonuses, ensuring high-intent tools (e.g. `unifi_get_top_clients` for "top client traffic") reliably rank at position #1.
-- **Read vs Mutation Intent Bias**: Read-only tools (`get_*`, `list_*`, `top_*`) are prioritized unless explicit mutation keywords (`create`, `delete`, `restart`, `block`) are searched.
+`homelab-mcp` exposes a small, uniform tool surface so an agent never has to load the whole catalog into context:
+- **Domain Discovery**: `gateway_get_domain_tools(domain)` returns a lean index (name + one-line description) of every allowed tool in one domain. Domain aliases resolve automatically (`network` ➔ `unifi`, `k8s` / `gitops` / `argocd` ➔ `kubernetes`, `iot` ➔ `homeassistant`, `metrics` / `prometheus` ➔ `grafana`).
+- **On-Demand Schema**: `gateway_get_tool_schema(tool_name)` returns the full parameter schema of a single tool, fetched only right before it is called.
+- **Single Execution Choke Point**: `gateway_call_tool(tool_name, arguments)` runs any upstream tool, but only after the guardrail engine approves it.
+- **Domains**: `kubernetes`, `unifi`, `homeassistant`, `grafana`, `github`, and `telegram` (provided in-process by the gateway).
 
 
 ## Guardrails
@@ -34,15 +34,15 @@ Every tool call is evaluated by the `GuardrailEngine` before it is dispatched up
 
 ## Tool domains
 
-Tool names come straight from each upstream server. Run `gateway_list_tools` (optionally with `upstream="grafana"`, `query="pod"`, and so on) to search, or `gateway_get_domain_tools(domain="kubernetes")` to fetch a full domain catalog with parameter schemas.
+Tool names come straight from each upstream server. Call `gateway_get_domain_tools(domain="kubernetes")` to list a domain's tools (lean index), then `gateway_get_tool_schema(tool_name=...)` and `gateway_call_tool(tool_name=..., arguments={...})` to inspect and run one.
 
 | Domain | Upstream MCP provider | Capabilities | Example tools |
 | :--- | :--- | :--- | :--- |
 | **Kubernetes** | [`kubernetes-mcp-server`](https://github.com/containers/kubernetes-mcp-server) | Pod and resource inspection, logs, events, node and pod metrics, scaling, applying manifests, exec. Argo CD Applications are inspected as CRDs. | `k8s_pods_get`<br/>`k8s_pods_log`<br/>`k8s_resources_scale`<br/>`k8s_resources_create_or_update` |
 | **Home Assistant** | [`homeassistant-ai/ha-mcp`](https://github.com/homeassistant-ai/ha-mcp) | Entity state inspection, service calls, automations, areas, helpers, add-ons, configuration. | `ha_get_state`<br/>`ha_call_service`<br/>`ha_set_entity` |
 | **UniFi Network** | [`sirkirby/unifi-mcp`](https://github.com/sirkirby/unifi-mcp) | Network topology, clients, devices, switches, APs, firewall, VPN, routing, statistics, support bundles. | `unifi_tool_index`<br/>`unifi_execute`<br/>`unifi_get_support_bundle` |
-| **Grafana** | [`grafana/mcp-grafana`](https://github.com/grafana/mcp-grafana) | Dashboards, datasources, and queries against your Grafana instance. | Discover with `gateway_list_tools` |
-| **GitHub** | [`github/github-mcp-server`](https://github.com/github/github-mcp-server) | Repository inspection and GitOps pull requests, restricted by an allowlist and denylist of repositories. | Discover with `gateway_list_tools` |
+| **Grafana** | [`grafana/mcp-grafana`](https://github.com/grafana/mcp-grafana) | Dashboards, datasources, and queries against your Grafana instance. | Discover with `gateway_get_domain_tools` |
+| **GitHub** | [`github/github-mcp-server`](https://github.com/github/github-mcp-server) | Repository inspection and GitOps pull requests, restricted by an allowlist and denylist of repositories. | Discover with `gateway_get_domain_tools` |
 | **Telegram** | Built into the gateway | Send messages and alerts, and set message reactions. | `telegram_send_message`<br/>`telegram_send_alert`<br/>`telegram_set_reaction` |
 
 ## Configuration

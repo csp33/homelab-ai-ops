@@ -11,16 +11,20 @@ from fastmcp.server.auth.oidc_proxy import OIDCProxy
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 from homelab_mcp.application.service import MCPGatewayService
 from homelab_mcp.config import settings
-from homelab_mcp.domain.interfaces.telegram import TelegramClientInterface
-from homelab_mcp.domain.models.telegram import (
-    TelegramAlertRequest,
-    TelegramMessageRequest,
-    TelegramReactionRequest,
-    TelegramSeverity,
-)
+from homelab_mcp.domain.models.upstream import UpstreamType
 from homelab_mcp.infrastructure.auth.google import GoogleJWTVerifier
 
 logger = logging.getLogger("homelab_mcp.gateway_server")
+
+_GATEWAY_INSTRUCTIONS = (
+    "Homelab Tool Gateway. The catalog is grouped into domains. "
+    "Discover the tools of one domain with gateway_get_domain_tools(domain), read the exact "
+    "arguments of a tool with gateway_get_tool_schema(tool_name), then execute it with "
+    "gateway_call_tool(tool_name, arguments). "
+    "Available domains: kubernetes, unifi, homeassistant, grafana, github, telegram. "
+    "Tools that only read state run immediately; any tool that may change state is subject to "
+    "the operator's safety policy."
+)
 
 
 class GatewayTokenVerifier(TokenVerifier):
@@ -46,10 +50,7 @@ class GatewayTokenVerifier(TokenVerifier):
         return None
 
 
-def create_gateway_mcp_server(
-    service: MCPGatewayService,
-    telegram_client: TelegramClientInterface | None = None,
-) -> FastMCP:
+def create_gateway_mcp_server(service: MCPGatewayService) -> FastMCP:
     """Create FastMCP Gateway server aggregating upstream tools."""
     auth_provider = None
     if settings.auth_enabled:
@@ -91,7 +92,12 @@ def create_gateway_mcp_server(
         asyncio.create_task(service.discover_tools())
         yield
 
-    mcp = FastMCP("homelab-mcp-gateway", auth=auth_provider, lifespan=server_lifespan)
+    mcp = FastMCP(
+        "homelab-mcp-gateway",
+        instructions=_GATEWAY_INSTRUCTIONS,
+        auth=auth_provider,
+        lifespan=server_lifespan,
+    )
     mcp.add_middleware(
         ResponseCachingMiddleware(
             list_tools_settings={"enabled": True, "ttl": 300},
@@ -99,41 +105,8 @@ def create_gateway_mcp_server(
         )
     )
 
-    @mcp.tool()
-    async def gateway_list_categories() -> list[dict[str, Any]]:
-        """List all connected upstream MCP categories and their available tool counts."""
-        tools = await service.discover_tools()
-        counts: dict[str, int] = {}
-        for t in tools:
-            key = str(t.upstream_type)
-            counts[key] = counts.get(key, 0) + 1
-        return [{"upstream": k, "tool_count": v} for k, v in sorted(counts.items())]
-
-    @mcp.tool()
-    async def gateway_list_tools(
-        query: str | None = None,
-        upstream: str | None = None,
-        limit: int = 25,
-    ) -> list[dict[str, Any]]:
-        """List operational tools aggregated from connected upstream MCP servers with relevance scoring, multi-keyword search, and category alias filtering.
-
-        Args:
-            query: Optional keyword or intent to search tool names and descriptions (e.g. 'top client traffic', 'pod logs', 'turn off light', 'restart workload').
-            upstream: Optional upstream name or alias to filter tools by category (e.g. 'unifi' / 'network', 'homeassistant' / 'iot', 'kubernetes' / 'k8s', 'grafana' / 'metrics', 'github').
-            limit: Maximum number of tools to return (default: 25, max: 50).
-        """
-        tools = await service.search_tools(query=query, upstream=upstream, limit=limit)
-        if upstream and not tools:
-            categories = await service.discover_tools()
-            connected = sorted({str(t.upstream_type) for t in categories})
-            return [
-                {
-                    "error": (
-                        f"Unknown or empty upstream '{upstream}'. "
-                        f"Connected upstreams: {', '.join(connected) or '(none)'}."
-                    )
-                }
-            ]
+    def _lean_index(tools: list[Any]) -> list[dict[str, Any]]:
+        """Reduce tool definitions to a lean index for prompt/context efficiency."""
         results = []
         for t in tools:
             desc = (t.description or "").strip()
@@ -149,38 +122,28 @@ def create_gateway_mcp_server(
         return results
 
     @mcp.tool()
-    async def gateway_get_domain_tools(domain: str) -> list[dict[str, Any]]:
-        """Return every allowed tool for one upstream domain, including parameter schemas.
+    async def gateway_get_domain_tools(domain: UpstreamType) -> list[dict[str, Any]]:
+        """Return the tool index for one upstream domain.
 
-        Used by LYOKO domain specialists to bind their scoped toolset. Prefer this over
-        paginated ``gateway_list_tools`` when a specialist must see the full domain catalog.
+        Returns every allowed tool of that domain as a lean index (name, one-line description,
+        upstream). Use it to discover what exists in a domain, then call
+        gateway_get_tool_schema(tool_name) for the exact arguments before executing with
+        gateway_call_tool.
 
         Args:
-            domain: Upstream name or alias (e.g. 'kubernetes', 'k8s', 'unifi', 'network').
+            domain: Upstream domain (e.g. kubernetes, unifi, homeassistant, grafana, github, telegram).
         """
         tools = await service.get_domain_tools(domain)
         if not tools:
-            categories = await service.discover_tools()
-            connected = sorted({str(t.upstream_type) for t in categories})
             return [
                 {
                     "error": (
-                        f"No tools for domain '{domain}'. "
-                        f"Connected upstreams: {', '.join(connected) or '(none)'}."
+                        f"No tools for domain '{str(domain)}'. "
+                        "It may be disabled, empty, or not configured."
                     )
                 }
             ]
-        results = []
-        for t in tools:
-            results.append(
-                {
-                    "name": t.name,
-                    "description": t.description,
-                    "upstream": str(t.upstream_type),
-                    "parameters": t.parameters or {},
-                }
-            )
-        return results
+        return _lean_index(tools)
 
     @mcp.tool()
     async def gateway_get_tool_schema(tool_name: str) -> dict[str, Any]:
@@ -232,83 +195,5 @@ def create_gateway_mcp_server(
             "content": content,
             "is_error": result.is_error,
         }
-
-    if telegram_client is not None:
-
-        @mcp.tool()
-        async def telegram_send_message(
-            text: str,
-            chat_id: str | None = None,
-            parse_mode: str = "Markdown",
-            reply_to_message_id: int | str | None = None,
-        ) -> dict[str, Any]:
-            """Send a text message to Telegram via the configured bot.
-
-            Args:
-                text: Message text to send.
-                chat_id: Optional target Telegram chat ID (falls back to default if not set).
-                parse_mode: Text format parsing mode (e.g. 'Markdown', 'HTML').
-                reply_to_message_id: Optional message ID to reply to directly.
-            """
-            request = TelegramMessageRequest(
-                text=text,
-                chat_id=chat_id,
-                parse_mode=parse_mode,
-                reply_to_message_id=reply_to_message_id,
-            )
-            return await telegram_client.send_message(request)
-
-        @mcp.tool()
-        async def telegram_set_reaction(
-            message_id: int,
-            emoji: str = "👀",
-            chat_id: str | None = None,
-        ) -> dict[str, Any]:
-            """Set an emoji reaction on a message in Telegram.
-
-            Args:
-                message_id: The ID of the Telegram message to react to.
-                emoji: Emoji string to react with (e.g. '👀', '⚡', '👍', '🔥', '🎉').
-                chat_id: Optional target Telegram chat ID (falls back to default if not set).
-            """
-            request = TelegramReactionRequest(
-                message_id=message_id,
-                emoji=emoji,
-                chat_id=chat_id,
-            )
-            return await telegram_client.set_reaction(request)
-
-        @mcp.tool()
-        async def telegram_send_alert(
-            title: str,
-            message: str,
-            severity: str = "warning",
-            chat_id: str | None = None,
-        ) -> dict[str, Any]:
-            """Send a formatted alert message with severity indicator to Telegram.
-
-            Args:
-                title: Alert title.
-                message: Alert description or message body.
-                severity: Severity level ('info', 'warning', 'critical', 'ok').
-                chat_id: Optional target Telegram chat ID (falls back to default if not set).
-            """
-            if isinstance(severity, TelegramSeverity):
-                parsed_severity = severity
-            elif isinstance(severity, str):
-                try:
-                    parsed_severity = TelegramSeverity(severity.lower())
-                except ValueError:
-                    parsed_severity = TelegramSeverity.WARNING
-            else:
-                parsed_severity = TelegramSeverity.WARNING
-
-            request = TelegramAlertRequest(
-                title=title,
-                message=message,
-                severity=parsed_severity,
-                chat_id=chat_id,
-            )
-            return await telegram_client.send_alert(request)
 
     return mcp
