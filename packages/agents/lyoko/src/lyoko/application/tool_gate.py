@@ -3,7 +3,7 @@
 import fnmatch
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -15,6 +15,9 @@ from lyoko.domain.models.chat import ApprovalAction, ApprovalRequest
 logger = logging.getLogger("lyoko.tool_gate")
 
 _MAX_ARGUMENTS_CHARS = 1500
+
+ReadOnlyLookup = Callable[[str], bool | None]
+"""Returns an upstream's explicit read-only hint for a tool, or ``None`` when it declared none."""
 
 
 class GateMode(StrEnum):
@@ -71,10 +74,15 @@ class ToolGate:
 
     Policy, evaluated in order:
 
-    1. A tool matching ``read_only_patterns`` always runs and is not recorded.
-    2. In ``APPROVAL`` mode, a tool matching ``auto_approved_patterns`` runs and is recorded.
-    3. Anything else needs the operator: in ``APPROVAL`` mode they are asked through the chat
+    1. If the upstream declared the tool read-only, it always runs and is not recorded.
+    2. A tool matching ``read_only_patterns`` always runs and is not recorded.
+    3. In ``APPROVAL`` mode, a tool matching ``auto_approved_patterns`` runs and is recorded.
+    4. Anything else needs the operator: in ``APPROVAL`` mode they are asked through the chat
        connectors and the call waits for their answer; in ``READ_ONLY`` mode the call is refused.
+
+    The upstream hint wins over the name patterns: an explicit "not read-only" is never rescued by
+    a matching name, so a declared state-changing tool cannot slip through a heuristic. When the
+    upstream declared nothing the name patterns decide, as before.
 
     Refusals are returned as text so the agent can adapt instead of crashing. When no approval
     channel is available the gate refuses rather than guessing, so a missing channel can never
@@ -95,6 +103,7 @@ class ToolGate:
         plan: str = "",
         approval_manager: ApprovalManager | None = None,
         chat_manager: ChatManager | None = None,
+        readonly_lookup: ReadOnlyLookup | None = None,
     ) -> None:
         self.mode = mode
         self.records: list[ToolCallRecord] = []
@@ -108,11 +117,18 @@ class ToolGate:
         self._plan = plan
         self._approval_manager = approval_manager
         self._chat_manager = chat_manager
+        self._readonly_lookup = readonly_lookup
         self._approval_count = 0
 
     async def authorize(self, tool_name: str, arguments: dict[str, Any]) -> str | None:
         """Return ``None`` to allow the call, or a refusal message for the agent."""
-        if matches_any(tool_name, self._read_only_patterns):
+        declared = self._readonly_lookup(tool_name) if self._readonly_lookup is not None else None
+        if declared is True:
+            return None
+
+        # An explicit "not read-only" from the upstream beats the name heuristic; only when the
+        # upstream said nothing (None) do the patterns get to decide.
+        if declared is None and matches_any(tool_name, self._read_only_patterns):
             return None
 
         if self.mode is GateMode.READ_ONLY:

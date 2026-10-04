@@ -22,14 +22,18 @@ def tool_index(tools: list[Any]) -> list[dict[str, Any]]:
             if len(first_line) > _MAX_DESCRIPTION
             else first_line
         )
-        results.append(
-            {
-                "name": t.name,
-                "description": short_desc,
-                "upstream": str(t.upstream_type),
-                "parameters": t.parameters or {"type": "object", "properties": {}},
-            }
-        )
+        entry: dict[str, Any] = {
+            "name": t.name,
+            "description": short_desc,
+            "upstream": str(t.upstream_type),
+            "parameters": t.parameters or {"type": "object", "properties": {}},
+        }
+        # Only surface the hint when the upstream declared one, so a missing key means
+        # "unknown" rather than being mistaken for an explicit "not read-only".
+        read_only = getattr(t, "read_only", None)
+        if read_only is not None:
+            entry["read_only_hint"] = read_only
+        results.append(entry)
     return results
 
 

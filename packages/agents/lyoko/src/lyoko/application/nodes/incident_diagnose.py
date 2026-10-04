@@ -76,6 +76,7 @@ def create_diagnose_node(
             GateMode.READ_ONLY,
             approval_manager=approval_manager,
             chat_manager=chat_manager,
+            mcp_client=mcp_client,
         )
         try:
             prompt_content = f"Investigate this.\n\n{incident_context(state)}{lessons_context}"

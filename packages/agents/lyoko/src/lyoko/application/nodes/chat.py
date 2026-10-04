@@ -86,6 +86,7 @@ def create_chat_node(
             GateMode.APPROVAL,
             approval_manager=approval_manager,
             chat_manager=chat_manager,
+            mcp_client=mcp_client,
         )
         on_status = None
         if isinstance(config, dict):

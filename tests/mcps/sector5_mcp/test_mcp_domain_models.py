@@ -7,6 +7,7 @@ from sector5_mcp.domain.models.upstream import (
     ToolResult,
     UpstreamType,
 )
+from sector5_mcp.infrastructure.mcp.formatting import tool_index
 
 
 def test_auth_identity_model():
@@ -24,6 +25,33 @@ def test_tool_definition_model():
     )
     assert tool.name == "ha_get_state"
     assert tool.upstream_type == "homeassistant"
+
+
+def test_tool_definition_read_only_hint_is_tri_state():
+    assert ToolDefinition(name="x", description="d").read_only is None
+    assert (
+        ToolDefinition(name="x", description="d", annotations={"readOnlyHint": True}).read_only
+        is True
+    )
+    assert (
+        ToolDefinition(name="x", description="d", annotations={"readOnlyHint": False}).read_only
+        is False
+    )
+    # Snake-case key is accepted too, so a dict-shaped upstream annotation still works.
+    assert (
+        ToolDefinition(name="x", description="d", annotations={"read_only_hint": True}).read_only
+        is True
+    )
+
+
+def test_tool_index_surfaces_read_only_hint_only_when_declared():
+    declared = ToolDefinition(name="q", description="Query", annotations={"readOnlyHint": True})
+    silent = ToolDefinition(name="w", description="Write")
+
+    entries = {e["name"]: e for e in tool_index([declared, silent])}
+
+    assert entries["q"]["read_only_hint"] is True
+    assert "read_only_hint" not in entries["w"]
 
 
 def test_tool_result_model():

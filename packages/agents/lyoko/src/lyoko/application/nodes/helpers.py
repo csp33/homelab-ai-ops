@@ -5,7 +5,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 from lyoko.application.chat_manager import ChatManager
 from lyoko.application.hitl import ApprovalManager
-from lyoko.application.tool_gate import CallOutcome, GateMode, ToolGate
+from lyoko.application.tool_gate import CallOutcome, GateMode, ReadOnlyLookup, ToolGate
 from lyoko.config import settings
 from lyoko.domain.interfaces.llm import LLMClientInterface
 
@@ -78,9 +78,13 @@ def make_gate(
     approval_manager: ApprovalManager | None = None,
     chat_manager: ChatManager | None = None,
     plan: str = "",
+    mcp_client: Any = None,
 ) -> ToolGate:
     alert_name = state.get("alert_name") or "event"
     event_id = state.get("event_id") or f"incident-{alert_name}"
+    # The client exposes the upstream read-only hints it has cached; absent (e.g. in tests or a
+    # client without catalog support) the gate falls back to the name-based patterns.
+    readonly_lookup: ReadOnlyLookup | None = getattr(mcp_client, "is_read_only", None)
     return ToolGate(
         mode=mode,
         read_only_patterns=settings.read_only_tools,
@@ -93,6 +97,7 @@ def make_gate(
         plan=plan,
         approval_manager=approval_manager,
         chat_manager=chat_manager,
+        readonly_lookup=readonly_lookup,
     )
 
 

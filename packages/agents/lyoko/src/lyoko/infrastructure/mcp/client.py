@@ -65,6 +65,30 @@ class FastMCPClient(MCPClientInterface):
             if raw_token
             else ""
         )
+        # Upstream-declared read-only hints, keyed by tool name. Populated lazily as the agent
+        # discovers a domain catalog or reads a tool schema; the tool gate consults it so an
+        # upstream's explicit readOnlyHint can override the name-based pattern heuristic.
+        self._readonly_hints: dict[str, bool] = {}
+
+    def _remember_readonly_hints(self, tools: list[dict[str, Any]]) -> None:
+        """Cache the read-only hints of index entries that carry one."""
+        for tool in tools:
+            name = tool.get("name")
+            hint = tool.get("read_only_hint")
+            if name and isinstance(hint, bool):
+                self._readonly_hints[name] = hint
+
+    def is_read_only(self, tool_name: str) -> bool | None:
+        """Return the upstream's read-only hint for ``tool_name``, or ``None`` when unknown.
+
+        ``None`` (no catalog loaded yet, or the upstream declared nothing) leaves the decision to
+        the gate's name-based policy. An explicit ``False`` marks a tool the upstream says may
+        change state, and must not be overridden by a name pattern.
+        """
+        if tool_name in self._readonly_hints:
+            return self._readonly_hints[tool_name]
+        base_name = tool_name.split(".", 1)[1] if "." in tool_name else tool_name
+        return self._readonly_hints.get(base_name)
 
     # ------------------------------------------------------------------
     # Diagnostics
@@ -206,6 +230,7 @@ class FastMCPClient(MCPClientInterface):
             }
         raw_tools = data.get("tools") or []
         tools = [t for t in raw_tools if isinstance(t, dict) and t.get("name")]
+        self._remember_readonly_hints(tools)
         return {**data, "tools": tools}
 
     async def get_domain_catalog(
@@ -244,9 +269,20 @@ class FastMCPClient(MCPClientInterface):
                     {"tool_name": tool_name},
                     timeout=_CALL_TIMEOUT_SECONDS,
                 )
-                return res.data
+                data = res.data
         except Exception as exc:
             raise await self._to_gateway_error(f"get schema of '{tool_name}'", exc) from exc
+        self._remember_schema_hint(tool_name, data)
+        return data
+
+    def _remember_schema_hint(self, tool_name: str, data: Any) -> None:
+        """Cache the read-only hint carried by a tool schema response, when present."""
+        if not isinstance(data, dict):
+            return
+        annotations = data.get("annotations") or {}
+        hint = annotations.get("readOnlyHint", annotations.get("read_only_hint"))
+        if isinstance(hint, bool):
+            self._readonly_hints[data.get("name") or tool_name] = hint
 
     async def get_domain_langchain_tools(
         self,
