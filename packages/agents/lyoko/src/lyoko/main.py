@@ -175,10 +175,14 @@ def build_tracer() -> LangfuseTracer:
 
 def wire_chat_agent(app: FastAPI, chat_manager: ChatManager) -> None:
     """Send incoming chat messages to the graph stored in ``app.state.workflow_engine``."""
+    from lyoko.application.chat_agent import ChatHistoryTracker
+
+    history_tracker = ChatHistoryTracker()
     chat_agent = InteractiveChatAgent(
         lambda: app.state.workflow_engine,
         tracer=getattr(app.state, "tracer", None),
         session_tracker=chat_manager.session_tracker,
+        history_tracker=history_tracker,
     )
     chat_manager.register_message_handler(chat_agent.handle_message)
 

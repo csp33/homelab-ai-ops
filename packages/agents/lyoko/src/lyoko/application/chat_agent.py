@@ -5,6 +5,7 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
+from lyoko.application.chat_history import ChatHistoryTracker
 from lyoko.application.chat_sessions import (
     DEFAULT_SESSION_IDLE_TIMEOUT_SECONDS,
     ChatSessionTracker,
@@ -30,7 +31,7 @@ class InteractiveChatAgent:
 
     The graph decides what the message is (a conversation or an incident to work through) and
     answers it. This class only handles what is specific to chat: sessions, the ``/new``
-    command, and the trace each message starts.
+    command, conversation history context, and the trace each message starts.
 
     ``graph_provider`` returns the compiled graph. It is a callable because the composition root
     replaces the graph at startup, once the database checkpointer is available.
@@ -42,10 +43,12 @@ class InteractiveChatAgent:
         tracer: TracerInterface | None = None,
         session_idle_timeout_seconds: float = DEFAULT_SESSION_IDLE_TIMEOUT_SECONDS,
         session_tracker: ChatSessionTracker | None = None,
+        history_tracker: ChatHistoryTracker | None = None,
     ) -> None:
         self._graph_provider = graph_provider
         self.tracer = tracer
         self.session_tracker = session_tracker or ChatSessionTracker(session_idle_timeout_seconds)
+        self.history_tracker = history_tracker or ChatHistoryTracker()
 
     async def handle_message(
         self,
@@ -56,13 +59,16 @@ class InteractiveChatAgent:
         logger.info("Processing chat message from user %s: %s", message.user.user_id, message.text)
         if is_new_session_command(message.text):
             session_id = self.session_tracker.start_new(message.chat_id)
+            self.history_tracker.clear(message.chat_id, message.message_thread_id)
             logger.info("Started new session %s for chat %s", session_id, message.chat_id)
             return "🆕 Started a new session. Previous context will not be grouped with this one."
 
         session_id = self.session_tracker.get_session_id(
             message.chat_id, reply_to_message_id=message.reply_to_message_id
         )
-        # Short on purpose: the id prefixes approval ids, which Telegram limits to 64 bytes.
+        history_context = self.history_tracker.get_history_context(
+            message.chat_id, message.message_thread_id
+        )
         event_id = f"chat-{uuid.uuid4().hex[:8]}"
 
         state = {
@@ -71,6 +77,7 @@ class InteractiveChatAgent:
             "session_id": session_id,
             "chat_id": message.chat_id,
             "text": message.text,
+            "history_context": history_context,
             "labels": {},
             "annotations": {},
         }
@@ -81,8 +88,14 @@ class InteractiveChatAgent:
 
         try:
             result = await self._graph_provider().ainvoke(state, config=config)
+            self.history_tracker.record_turn(
+                message.chat_id, message.text, result.get("reply", ""), message.message_thread_id
+            )
         except Exception as exc:
             logger.error("Failed to process chat message: %s", exc, exc_info=True)
+            self.history_tracker.record_turn(
+                message.chat_id, message.text, f"Error: {exc}", message.message_thread_id
+            )
             return f"⚠️ Error processing your question: {exc}"
         return str(result.get("reply") or "")
 

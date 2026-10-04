@@ -59,6 +59,8 @@ class LyokoState(TypedDict, total=False):
     chat_id: str
     text: str
     """The operator's message, for ``event_type == "message"``."""
+    history_context: str
+    """Recent conversation context injected into the chat prompt for short-term memory."""
     alert_name: str
     labels: dict[str, str]
     annotations: dict[str, str]

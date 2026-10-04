@@ -590,6 +590,7 @@ class TelegramConnector(ChatConnector):
                 ),
                 text=text,
                 reply_to_message_id=reply_to_message_id,
+                message_thread_id=str(message_thread_id) if message_thread_id is not None else None,
             )
 
             for handler in self._message_handlers:
@@ -614,31 +615,28 @@ class TelegramConnector(ChatConnector):
                         target_reply_id = msg.message_id
                         target_thread_id = message_thread_id
 
-                        # If this message was posted directly in a broadcast channel and a discussion
-                        # group is available, send the reply as a comment in the discussion group thread
-                        # instead of creating a new opener post in the channel.
+                        # If this message was posted in a broadcast channel and a discussion group
+                        # is available, send the reply as a comment in the discussion group thread
+                        # instead of creating a new opener post in the channel. The channel post's
+                        # message_thread_id is the topic ID that identifies the thread in the
+                        # discussion group, so it is the correct thread target.
                         if chat_type == "channel" and self.discussion_group_id:
                             disc_msg_id = self._channel_to_discussion.get(
                                 (str(chat_id), msg.message_id)
                             )
-                            logger.info(
-                                "Channel post %s in chat %s: get_discussion_message_id returned %s",
-                                msg.message_id,
-                                chat_id,
-                                disc_msg_id,
+                            target_chat_id = self.discussion_group_id
+                            target_thread_id = (
+                                message_thread_id if message_thread_id is not None else disc_msg_id
                             )
-                            if disc_msg_id:
-                                target_chat_id = self.discussion_group_id
-                                target_reply_id = disc_msg_id
-                                target_thread_id = disc_msg_id
-                                logger.info(
-                                    "Redirecting reply for channel post %s to discussion group %s "
-                                    "with reply_to=%s, thread=%s",
-                                    msg.message_id,
-                                    self.discussion_group_id,
-                                    target_reply_id,
-                                    target_thread_id,
-                                )
+                            target_reply_id = disc_msg_id if disc_msg_id else msg.message_id
+                            logger.info(
+                                "Redirecting reply for channel post %s to discussion group %s "
+                                "with reply_to=%s, thread=%s",
+                                msg.message_id,
+                                self.discussion_group_id,
+                                target_reply_id,
+                                target_thread_id,
+                            )
 
                         if target_chat_id != chat_id:
                             try:
