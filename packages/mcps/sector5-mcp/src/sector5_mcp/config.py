@@ -38,8 +38,7 @@ class GatewaySettings(BaseSettings):
             "Public Base URLs of the gateway; the first entry is canonical. Each host gets "
             "its own OAuth issuer, protected resource and JWT audience. Accepts a JSON list "
             "or comma-separated values. The legacy BASE_URL env var is still read when "
-            "BASE_URLS is unset. Register every URL's redirect_path in Google Cloud Console "
-            "(e.g. https://mcp.cspaez.org,https://mcp.internal.cspaez.org)."
+            "BASE_URLS is unset. Register every URL's redirect_path in your identity provider."
         ),
     )
     redirect_path: str = Field(

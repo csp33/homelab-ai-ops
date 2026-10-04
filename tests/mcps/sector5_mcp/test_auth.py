@@ -360,7 +360,7 @@ def test_build_auth_provider_requests_google_offline_refresh_token():
     settings.google_client_id = "client-id.apps.googleusercontent.com"
     settings.google_client_secret = "client-secret-xyz"
     settings.allowed_google_emails = ["admin@cspaez.org"]
-    settings.canonical_base_url = "https://mcp.cspaez.org"
+    settings.canonical_base_url = "https://mcp.example.com"
     settings.redirect_path = "/oauth/callback"
 
     with (

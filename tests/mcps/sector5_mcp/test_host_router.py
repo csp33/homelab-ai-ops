@@ -19,21 +19,21 @@ def _make_app(label: str) -> Starlette:
 
 
 def test_host_from_base_url_strips_scheme_path_and_port():
-    assert host_from_base_url("https://mcp.cspaez.org/") == "mcp.cspaez.org"
+    assert host_from_base_url("https://mcp.example.com/") == "mcp.example.com"
     assert host_from_base_url("http://localhost:8080") == "localhost"
-    assert host_from_base_url("https://MCP.Internal.Cspaez.org:8443/mcp") == (
-        "mcp.internal.cspaez.org"
+    assert host_from_base_url("https://MCP.Internal.example.com:8443/mcp") == (
+        "mcp.internal.example.com"
     )
 
 
 def test_host_router_dispatches_by_host_header():
     internal = _make_app("internal")
     public = _make_app("public")
-    router = HostRouter(apps={"mcp.internal.cspaez.org": internal}, default=public)
+    router = HostRouter(apps={"mcp.internal.example.com": internal}, default=public)
 
     with TestClient(router) as client:
-        assert client.get("/", headers={"host": "mcp.internal.cspaez.org"}).text == "internal"
-        assert client.get("/", headers={"host": "mcp.cspaez.org"}).text == "public"
+        assert client.get("/", headers={"host": "mcp.internal.example.com"}).text == "internal"
+        assert client.get("/", headers={"host": "mcp.example.com"}).text == "public"
 
 
 def test_host_router_falls_back_to_canonical_for_unknown_host():
@@ -49,12 +49,12 @@ def test_build_host_router_maps_each_base_url():
     public = _make_app("public")
     router = build_host_router(
         {
-            "https://mcp.cspaez.org": public,
-            "https://mcp.internal.cspaez.org": internal,
+            "https://mcp.example.com": public,
+            "https://mcp.internal.example.com": internal,
         },
-        canonical_base_url="https://mcp.cspaez.org",
+        canonical_base_url="https://mcp.example.com",
     )
 
-    assert set(router.apps) == {"mcp.cspaez.org", "mcp.internal.cspaez.org"}
+    assert set(router.apps) == {"mcp.example.com", "mcp.internal.example.com"}
     with TestClient(router) as client:
-        assert client.get("/", headers={"host": "mcp.internal.cspaez.org"}).text == "internal"
+        assert client.get("/", headers={"host": "mcp.internal.example.com"}).text == "internal"
