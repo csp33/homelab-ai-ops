@@ -6,7 +6,7 @@ This guide walks you through setting up and running `lyoko-ai-ops`.
 
 ## Prerequisites
 
-- **[Docker](https://docs.docker.com/get-docker/) & Docker Compose**: Recommended for running the complete stack (PostgreSQL + pgvector, homelab-mcp, LYOKO).
+- **[Docker](https://docs.docker.com/get-docker/) & Docker Compose**: Recommended for running the complete stack (PostgreSQL + pgvector, sector5-mcp, LYOKO).
 - **[Python 3.13+](https://www.python.org/downloads/) & [`uv`](https://docs.astral.sh/uv/)**: Required only if developing or running locally without Docker.
 - **OpenAI API Key**: For LLM reasoning and dense vector embeddings (`text-embedding-3-small`).
 - **`kubectl`**: Configured with a valid cluster context (or in-cluster `ServiceAccount`).
@@ -15,7 +15,7 @@ This guide walks you through setting up and running `lyoko-ai-ops`.
 
 ## Method 1: Docker Compose (Recommended)
 
-The easiest way to run the full platform is with Docker Compose. This automatically spins up PostgreSQL (with pgvector), the `homelab-mcp` gateway, and the `lyoko` remediation agent.
+The easiest way to run the full platform is with Docker Compose. This automatically spins up PostgreSQL (with pgvector), the `sector5-mcp` gateway, and the `lyoko` remediation agent.
 
 ### 1. Clone & Configure
 
@@ -44,7 +44,7 @@ docker compose up -d
 
 This launches:
 - **`postgres`**: PostgreSQL database with `pgvector` extension on port `5432`.
-- **`homelab-mcp`**: Tool Gateway on `http://localhost:8000/mcp`.
+- **`sector5-mcp`**: Tool Gateway on `http://localhost:8000/mcp`.
 - **`lyoko`**: Autonomous Remediation Agent on `http://localhost:9000`.
 
 ### 3. Verify Health
@@ -89,7 +89,7 @@ In separate terminal windows:
 
 ```bash
 # Terminal 1: Tool Gateway
-uv run --package homelab-mcp python -m homelab_mcp.server
+uv run --package sector5-mcp python -m sector5_mcp.server
 
 # Terminal 2: Remediation Agent
 uv run --package lyoko python -m lyoko.main
@@ -131,5 +131,5 @@ Key environment variables in `.env`:
 
 - [System Architecture & Incident Lifecycle](architecture.md)
 - [Security & Guardrails](security-guardrails.md)
-- [`homelab-mcp` Gateway Documentation](../packages/mcps/homelab-mcp/README.md)
+- [`sector5-mcp` Gateway Documentation](../packages/mcps/sector5-mcp/README.md)
 - [`lyoko` Agent Documentation](../packages/agents/lyoko/README.md)

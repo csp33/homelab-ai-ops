@@ -8,7 +8,7 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "homelab-mcp",
+    "sector5-mcp",
     "lyoko",
     "lyoko-ai-ops",
 ]
@@ -914,9 +914,9 @@ wheels = [
 ]
 
 [[package]]
-name = "homelab-mcp"
+name = "sector5-mcp"
 version = "0.1.0"
-source = { editable = "packages/mcps/homelab-mcp" }
+source = { editable = "packages/mcps/sector5-mcp" }
 dependencies = [
     { name = "fastmcp" },
     { name = "google-auth" },
@@ -1554,7 +1554,7 @@ name = "lyoko-ai-ops"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "homelab-mcp" },
+    { name = "sector5-mcp" },
     { name = "lyoko" },
 ]
 
@@ -1569,7 +1569,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "homelab-mcp", editable = "packages/mcps/homelab-mcp" },
+    { name = "sector5-mcp", editable = "packages/mcps/sector5-mcp" },
     { name = "lyoko", editable = "packages/agents/lyoko" },
 ]
 

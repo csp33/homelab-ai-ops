@@ -6,7 +6,7 @@
 [![Langfuse](https://img.shields.io/badge/Langfuse-Observability-black.svg?style=flat)](https://langfuse.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**LYOKO** (**L**ive **Y**aml **O**ptimization & **K**8s **O**rchestration) is an event-driven AI operator for the homelab, built with **LangGraph**, **FastAPI**, and **python-telegram-bot**. It acts through the `homelab-mcp` gateway, so it can work on anything the gateway exposes: Kubernetes, UniFi, Home Assistant, Grafana, and GitHub.
+**LYOKO** (**L**ive **Y**aml **O**ptimization & **K**8s **O**rchestration) is an event-driven AI operator for the homelab, built with **LangGraph**, **FastAPI**, and **python-telegram-bot**. It acts through the `sector5-mcp` gateway, so it can work on anything the gateway exposes: Kubernetes, UniFi, Home Assistant, Grafana, and GitHub.
 
 It serves two roles:
 1. **Autonomous incident remediation**: receives an alert (Prometheus Alertmanager webhook), diagnoses the root cause, proposes a fix, asks a human for approval unless the action is trusted, applies it, and verifies recovery.
@@ -88,8 +88,8 @@ Configure LYOKO using environment variables (in `.env` or Kubernetes ConfigMap/S
 | `LYOKO_PORT` | `9000` | Webhook receiver bind port. |
 | `OPENAI_API_KEY` | `""` | OpenAI API key for LLM diagnosis, chat, and embeddings. |
 | `OPENAI_MODEL` | `gpt-4o-mini` | LLM model used for chat and remediation reasoning. |
-| `MCP_SERVER_URL` | `http://localhost:8000/mcp` | URL of the `homelab-mcp` gateway endpoint. |
-| `SERVICE_TOKEN` | `""` | Bearer token for authenticating against `homelab-mcp`. Required when the gateway runs with `AUTH_ENABLED=true`. |
+| `MCP_SERVER_URL` | `http://localhost:8000/mcp` | URL of the `sector5-mcp` gateway endpoint. |
+| `SERVICE_TOKEN` | `""` | Bearer token for authenticating against `sector5-mcp`. Required when the gateway runs with `AUTH_ENABLED=true`. |
 | `MCP_FAIL_FAST` | `true` | Abort startup if the gateway rejects credentials (401/403) or the URL is not an MCP endpoint (404). |
 | `READ_ONLY_TOOLS` | inspection patterns (`get_*`, `*_list`, `*_log`, ...) | Glob patterns of tools the incident agent may call freely. Comma-separated or JSON list. |
 | `AUTO_APPROVED_TOOLS` | `[]` | Glob patterns of state-changing tools that run during remediation without approval (e.g. `k8s_resources_scale`). |

@@ -10,7 +10,7 @@ Project context, architectural standards, and operating rules for AI coding agen
 
 The platform consists of two primary systems within a Python `uv` monorepo:
 
-1. **`homelab-mcp` (Tool Gateway & Safety Harness)**:
+1. **`sector5-mcp` (Tool Gateway & Safety Harness)**:
    - Built on **FastMCP** (Model Context Protocol).
    - Serves as a unified tool aggregator providing structured, typed, and RBAC-controlled tools for:
      - Kubernetes inspection and safe patching (pod diagnostics, logs, resource bump, rollout restart).
@@ -30,7 +30,7 @@ The platform consists of two primary systems within a Python `uv` monorepo:
        2. **Remediate**: Executes the plan via specialists.
        3. **Verify**: Re-checks via specialists after a stabilization delay.
        4. **Notify**: Builds a structured report from the tool calls the gate actually allowed. Alerts post it to Telegram. For a message, it is the reply.
-   - **Domain specialists** receive a scoped upstream toolset from `homelab-mcp` (`gateway_get_domain_tools`). Small domains bind every tool directly. Large domains keep discovery locked to that upstream. They do not search the whole gateway catalog.
+   - **Domain specialists** receive a scoped upstream toolset from `sector5-mcp` (`gateway_get_domain_tools`). Small domains bind every tool directly. Large domains keep discovery locked to that upstream. They do not search the whole gateway catalog.
    - Both branches share one `ToolGate` policy: read-only tools run, `AUTO_APPROVED_TOOLS` run unattended, and everything else waits for approval via Telegram inline buttons. Diagnose and Verify are strictly read-only. Without an approval channel, changes are refused.
    - One event is one Langfuse trace. Agent runs must receive the run config of the graph node that starts them (`parent_config`), so they nest as named child spans instead of starting traces of their own.
 
@@ -44,7 +44,7 @@ The platform consists of two primary systems within a Python `uv` monorepo:
 ### Security & Zero-Leak Policy (Public Repository)
 - This repository is **public**. Under no circumstances should secrets, real API keys, bearer tokens, Telegram bot tokens, WireGuard keys, internal production domains, or private network identifiers be committed.
 - All secrets must be loaded via environment variables using `.env` (ignored by git) and documented through `.env.example`.
-- All Kubernetes operations in `homelab-mcp` must validate inputs using Pydantic models and enforce namespace allowlists / denylists (e.g., blocking mutations in `kube-system` unless explicitly configured).
+- All Kubernetes operations in `sector5-mcp` must validate inputs using Pydantic models and enforce namespace allowlists / denylists (e.g., blocking mutations in `kube-system` unless explicitly configured).
 
 ### Monorepo Structure (`uv` Workspace & Clean Architecture)
 
@@ -55,11 +55,11 @@ lyoko-ai-ops/
 ├── .env.example                # Documented configuration template
 ├── packages/
 │   ├── mcps/                   # MCP Server packages (Capabilities & Tool Hubs)
-│   │   └── homelab-mcp/        # FastMCP Gateway package
+│   │   └── sector5-mcp/        # FastMCP Gateway package
 │   │       ├── pyproject.toml
 │   │       ├── Dockerfile
 │   │       └── src/
-│   │           └── homelab_mcp/
+│   │           └── sector5_mcp/
 │   │               ├── domain/
 │   │               │   ├── models/     # k8s.py, homeassistant.py, unifi.py, auth.py, guardrail.py
 │   │               │   ├── exceptions/ # base.py, auth.py, upstream.py, tool.py, guardrail.py
@@ -86,7 +86,7 @@ lyoko-ai-ops/
 │
 └── tests/                      # Automated test suite
     ├── agents/lyoko/           # Tests for LYOKO agent (LangGraph, webhooks, models)
-    └── mcps/homelab_mcp/       # Tests for MCP gateway (routing, auth, guardrails)
+    └── mcps/sector5_mcp/       # Tests for MCP gateway (routing, auth, guardrails)
 ```
 
 ### Clean Architecture & Layer Boundary Governance (Strict Rule)

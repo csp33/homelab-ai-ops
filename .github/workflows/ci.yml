@@ -98,8 +98,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: homelab-mcp
-            dockerfile: packages/mcps/homelab-mcp/Dockerfile
+          - name: sector5-mcp
+            dockerfile: packages/mcps/sector5-mcp/Dockerfile
             tags_key: mcp_tags
           - name: lyoko
             dockerfile: packages/agents/lyoko/Dockerfile

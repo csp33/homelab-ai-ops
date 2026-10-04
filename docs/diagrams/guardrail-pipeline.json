@@ -2,7 +2,7 @@
   "schema_version": 2,
   "diagram_type": "workflow",
   "meta": {
-    "title": "homelab-mcp Guardrail Engine Pipeline",
+    "title": "sector5-mcp Guardrail Engine Pipeline",
     "quality_profile": "showcase",
     "views": [
       {

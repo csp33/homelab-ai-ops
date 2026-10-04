@@ -4,7 +4,7 @@ from lyoko.domain.exceptions.base import LyokoError
 
 
 class MCPGatewayError(LyokoError):
-    """Base error for any failure talking to the homelab-mcp gateway."""
+    """Base error for any failure talking to the sector5-mcp gateway."""
 
     #: True when retrying cannot help because the configuration itself is wrong.
     is_configuration_error: bool = False
