@@ -211,6 +211,22 @@ async def test_authorizer_allowing_the_call_lets_it_through():
 
 
 @pytest.mark.asyncio
+async def test_call_tool_merges_arguments_flattened_to_the_top_level():
+    """Models often flatten the target args; the wrapper must still execute the call."""
+    client = FastMCPClient(server_url="http://x/mcp", token="")
+    client.call_tool = AsyncMock(return_value={"ok": True})
+    tools = {t.name: t for t in client.get_langchain_tools()}
+
+    await tools["gateway_call_tool"].ainvoke(
+        {"tool_name": "unifi_list_wlans", "enabled_only": True, "limit": 25}
+    )
+
+    client.call_tool.assert_awaited_once_with(
+        "unifi_list_wlans", {"enabled_only": True, "limit": 25}
+    )
+
+
+@pytest.mark.asyncio
 async def test_domain_discovery_tool_is_never_gated():
     client = FastMCPClient(server_url="http://x/mcp", token="")
     client.get_domain_tools_page = AsyncMock(
