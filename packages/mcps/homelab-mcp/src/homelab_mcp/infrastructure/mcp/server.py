@@ -7,12 +7,10 @@ from contextlib import asynccontextmanager
 from fastmcp import FastMCP
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 from homelab_mcp.application.service import MCPGatewayService
-from homelab_mcp.infrastructure.mcp.auth import GatewayTokenVerifier, build_auth_provider
+from homelab_mcp.infrastructure.mcp.auth import build_auth_provider
 from homelab_mcp.infrastructure.mcp.tools import register_gateway_tools
 
 logger = logging.getLogger("homelab_mcp.gateway_server")
-
-__all__ = ["GatewayTokenVerifier", "create_gateway_mcp_server"]
 
 _GATEWAY_INSTRUCTIONS = (
     "Homelab Tool Gateway. The catalog is grouped into domains. "

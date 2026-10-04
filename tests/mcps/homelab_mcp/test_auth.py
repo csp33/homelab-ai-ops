@@ -324,7 +324,7 @@ async def test_gateway_token_verifier_with_hs256_token():
 
     import jwt
     from homelab_mcp.application.service import MCPGatewayService
-    from homelab_mcp.infrastructure.mcp.server import GatewayTokenVerifier
+    from homelab_mcp.infrastructure.mcp.auth import GatewayTokenVerifier
 
     secret = "mcp-shared-secret-key-1234567890-at-least-32-chars"
     token = jwt.encode(
