@@ -341,3 +341,41 @@ async def test_empty_tool_result_is_formatted_clearly():
         {"tool_name": "k8s_pods_list", "arguments": {"namespace": "default"}}
     )
     assert "No resources found or empty result." in output
+
+
+class _ResultForTimeout:
+    def __init__(self, data: object) -> None:
+        self.data = data
+
+
+class _RecordingClient:
+    """Stand-in for fastmcp.Client that records the timeout it was given."""
+
+    seen: dict[str, object] = {}
+
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        pass
+
+    async def __aenter__(self) -> "_RecordingClient":
+        return self
+
+    async def __aexit__(self, *_exc: object) -> bool:
+        return False
+
+    async def call_tool(self, name: str, arguments: dict, *, timeout: object = None) -> object:
+        _RecordingClient.seen = {"name": name, "timeout": timeout}
+        return _ResultForTimeout({"status": "success", "content": "ok"})
+
+
+@pytest.mark.asyncio
+async def test_call_tool_bounds_the_gateway_call_with_a_timeout():
+    """Regression: a dropped session must not let a tool call wait forever."""
+    client = FastMCPClient(server_url="http://x/mcp", token="")
+    with (
+        patch("lyoko.infrastructure.mcp.client.Client", _RecordingClient),
+        patch("lyoko.infrastructure.mcp.client._CALL_TIMEOUT_SECONDS", 12.0),
+    ):
+        await client.call_tool("k8s_pods_list", {})
+
+    assert _RecordingClient.seen["name"] == "gateway_call_tool"
+    assert _RecordingClient.seen["timeout"] == 12.0

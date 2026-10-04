@@ -43,6 +43,9 @@ _GATEWAY_META_TOOLS = (
 # Domain catalog paging: the gateway caps a page at 100 entries; cap the full fetch too.
 _DOMAIN_PAGE_SIZE = 100
 _MAX_DOMAIN_PAGES = 20
+# Hard ceiling for a single gateway tool call: a dropped Streamable HTTP session would otherwise
+# leave the client waiting forever for a reply that never arrives and hang the agent request.
+_CALL_TIMEOUT_SECONDS = 60.0
 
 
 def _root_cause(exc: BaseException) -> BaseException:
@@ -152,11 +155,13 @@ class FastMCPClient(MCPClientInterface):
         try:
             async with Client(self.server_url, auth=auth_token) as client:
                 if name in _GATEWAY_META_TOOLS:
-                    res = await client.call_tool(name, arguments)
-                    return res.data
-                res = await client.call_tool(
-                    "gateway_call_tool", {"tool_name": name, "arguments": arguments}
-                )
+                    res = await client.call_tool(name, arguments, timeout=_CALL_TIMEOUT_SECONDS)
+                else:
+                    res = await client.call_tool(
+                        "gateway_call_tool",
+                        {"tool_name": name, "arguments": arguments},
+                        timeout=_CALL_TIMEOUT_SECONDS,
+                    )
                 return res.data
         except Exception as exc:
             error = await self._to_gateway_error(f"tool call '{name}'", exc)
@@ -183,6 +188,7 @@ class FastMCPClient(MCPClientInterface):
                 res = await client.call_tool(
                     "gateway_get_domain_tools",
                     {"domain": domain, "limit": limit, "offset": offset},
+                    timeout=_CALL_TIMEOUT_SECONDS,
                 )
                 data = res.data
         except Exception as exc:
@@ -234,7 +240,11 @@ class FastMCPClient(MCPClientInterface):
         auth_token = self.token if self.token else None
         try:
             async with Client(self.server_url, auth=auth_token) as client:
-                res = await client.call_tool("gateway_get_tool_schema", {"tool_name": tool_name})
+                res = await client.call_tool(
+                    "gateway_get_tool_schema",
+                    {"tool_name": tool_name},
+                    timeout=_CALL_TIMEOUT_SECONDS,
+                )
                 return res.data
         except Exception as exc:
             raise await self._to_gateway_error(f"get schema of '{tool_name}'", exc) from exc
