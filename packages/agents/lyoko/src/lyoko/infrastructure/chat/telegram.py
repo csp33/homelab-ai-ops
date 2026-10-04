@@ -12,15 +12,13 @@ from lyoko.infrastructure.chat.feedback import TelegramFeedbackMixin
 from lyoko.infrastructure.chat.inbound import TelegramInboundMixin
 from lyoko.infrastructure.chat.outbound import TelegramOutboundMixin
 from lyoko.infrastructure.chat.replies import TelegramReplyMixin
-from lyoko.infrastructure.chat.streamer import TelegramDraftStreamer
+from lyoko.infrastructure.chat.streamer import TelegramStreamingReply
 from pydantic import SecretStr
-from telegram import Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
     CommandHandler,
     MessageHandler,
-    TypeHandler,
     filters,
 )
 
@@ -94,7 +92,7 @@ class TelegramConnector(
         self._channel_to_discussion: dict[tuple[str, int], int] = {}
         self._message_handlers: list[Callable[[IncomingMessage], Awaitable[str | None]]] = []
         self._approval_handlers: list[Callable[[ApprovalResponse], Awaitable[None]]] = []
-        self._active_streamers: dict[tuple[str, int], TelegramDraftStreamer] = {}
+        self._active_streamers: dict[tuple[str, int], TelegramStreamingReply] = {}
         self._app: Application | None = None
 
     def is_user_authorized(self, user_id: str | int | None) -> bool:
@@ -131,7 +129,6 @@ class TelegramConnector(
         # approval would then block the very button click that grants it, so handle them
         # concurrently.
         self._app = Application.builder().token(self.bot_token).concurrent_updates(True).build()
-        self._app.add_handler(TypeHandler(Update, self._handle_stopped_generation), group=-1)
         self._app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_telegram_message)
         )

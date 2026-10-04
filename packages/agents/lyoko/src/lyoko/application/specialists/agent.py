@@ -116,6 +116,7 @@ class DomainSpecialistAgent:
         metadata: dict[str, Any] | None = None,
         authorizer: Any = None,
         parent_config: Any = None,
+        on_status: Any = None,
     ) -> str:
         """Execute a domain specialist query."""
         logger.info("Running specialist %s for query: %s", self.name, prompt)
@@ -139,4 +140,5 @@ class DomainSpecialistAgent:
             metadata=metadata or {},
             max_steps=settings.max_agent_steps,
             parent_config=parent_config,
+            on_status=on_status,
         )

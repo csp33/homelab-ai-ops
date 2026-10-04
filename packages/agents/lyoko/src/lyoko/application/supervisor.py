@@ -55,6 +55,7 @@ class SupervisorAgent:
         metadata: dict[str, Any] | None = None,
         authorizer: Any = None,
         parent_config: Any = None,
+        on_status: Any = None,
     ) -> str:
         """Delegate a task directly to a specific domain specialist."""
         specialist = self.get_specialist(domain)
@@ -69,6 +70,7 @@ class SupervisorAgent:
             metadata=metadata,
             authorizer=authorizer,
             parent_config=parent_config,
+            on_status=on_status,
         )
 
     def get_delegation_tools(
@@ -80,6 +82,7 @@ class SupervisorAgent:
         tags: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
         parent_config: Any = None,
+        on_status: Any = None,
     ) -> list[Any]:
         """Return one LangChain tool per registered specialist for supervisor delegation."""
         tools: list[Any] = []
@@ -102,6 +105,7 @@ class SupervisorAgent:
                     metadata=metadata,
                     authorizer=authorizer,
                     parent_config=parent_config,
+                    on_status=on_status,
                 )
 
             tools.append(
@@ -130,7 +134,7 @@ class SupervisorAgent:
         authorizer: Any = None,
         parent_config: Any = None,
         max_steps: int | None = None,
-        on_token: Any = None,
+        on_status: Any = None,
     ) -> str:
         """Coordinate multi-agent task execution by delegating to domain specialists."""
         logger.info("Supervisor coordinating request: %s", prompt)
@@ -149,6 +153,7 @@ class SupervisorAgent:
                 tags=supervisor_tags,
                 metadata=metadata,
                 parent_config=parent_config,
+                on_status=on_status,
             )
 
         return await self.llm.chat(
@@ -162,5 +167,5 @@ class SupervisorAgent:
             metadata=metadata or {},
             max_steps=max_steps or settings.max_supervisor_steps,
             parent_config=parent_config,
-            on_token=on_token,
+            on_status=on_status,
         )

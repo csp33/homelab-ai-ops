@@ -72,7 +72,6 @@ class ScriptedLLM(LLMClientInterface):
         metadata: dict[str, Any] | None = None,
         max_steps: int | None = None,
         parent_config: dict[str, Any] | None = None,
-        on_token: Any = None,
         **kwargs: Any,
     ) -> str:
         phase = next(t.split(":", 1)[1] for t in (tags or []) if t.startswith("phase:"))

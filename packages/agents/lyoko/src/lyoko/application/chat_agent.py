@@ -53,7 +53,7 @@ class InteractiveChatAgent:
     async def handle_message(
         self,
         message: IncomingMessage,
-        on_token: Any = None,
+        on_status: Any = None,
     ) -> str:
         """Process an incoming chat message and return the reply for the operator."""
         logger.info("Processing chat message from user %s: %s", message.user.user_id, message.text)
@@ -84,8 +84,8 @@ class InteractiveChatAgent:
         }
         config = self._trace_config(message, session_id)
         config.setdefault("configurable", {})["thread_id"] = event_id
-        if on_token is not None:
-            config["configurable"]["on_token"] = on_token
+        if on_status is not None:
+            config["configurable"]["on_status"] = on_status
 
         try:
             result = await self._graph_provider().ainvoke(state, config=config)

@@ -183,81 +183,57 @@ async def test_nested_call_works_when_the_parent_has_no_tracer(mock_get_config):
 
 
 @pytest.mark.asyncio
-async def test_openai_llm_adapter_streaming_direct_chat():
-    """Verify on_token callback is invoked for each streamed chunk."""
+async def test_openai_llm_adapter_direct_chat_uses_ainvoke():
+    """Verify the tool-less path answers with a single ainvoke call (no streaming)."""
     adapter = OpenAILLMAdapter(api_key="sk-test")
     mock_client = MagicMock()
-
-    chunk1 = MagicMock()
-    chunk1.content = "Hello "
-    chunk2 = MagicMock()
-    chunk2.content = "world!"
-    chunk3 = MagicMock()
-    chunk3.content = ""
-
-    async def mock_astream(*args, **kwargs):
-        for c in [chunk1, chunk2, chunk3]:
-            yield c
-
-    mock_client.astream = mock_astream
+    response = MagicMock()
+    response.content = "Hello world!"
+    mock_client.ainvoke = AsyncMock(return_value=response)
     adapter._client = mock_client
 
-    tokens: list[str] = []
-
-    async def on_token(token: str) -> None:
-        tokens.append(token)
-
-    result = await adapter.chat(
-        prompt="Greet",
-        on_token=on_token,
-    )
+    result = await adapter.chat(prompt="Greet")
 
     assert result == "Hello world!"
-    assert tokens == ["Hello ", "world!"]
+    mock_client.ainvoke.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_openai_llm_adapter_streaming_react_loop():
-    """Verify on_token callback receives chunks during tool-enabled ReAct agent run."""
+async def test_openai_llm_adapter_reports_tool_status():
+    """Verify on_status is invoked with the factual tool being called during the ReAct loop."""
+    tool_call_msg = MagicMock()
+    tool_call_msg.tool_calls = [{"name": "k8s_pods_list", "args": {}, "id": "call_1"}]
+    final_msg = MagicMock()
+    final_msg.tool_calls = []
+    final_msg.content = "done"
+
+    mock_bound_client = AsyncMock()
+    mock_bound_client.ainvoke.side_effect = [tool_call_msg, final_msg]
+
     adapter = OpenAILLMAdapter(api_key="sk-test")
     mock_client = MagicMock()
-
-    class MockChunk:
-        def __init__(self, content: str, tool_calls=None):
-            self.content = content
-            self.tool_calls = tool_calls or []
-
-        def __add__(self, other):
-            return MockChunk(
-                self.content + getattr(other, "content", ""),
-                self.tool_calls + getattr(other, "tool_calls", []),
-            )
-
-    async def mock_bound_astream(*args, **kwargs):
-        yield MockChunk("Cluster ")
-        yield MockChunk("is healthy.")
-
-    mock_bound = MagicMock()
-    mock_bound.astream = mock_bound_astream
-    mock_client.bind_tools.return_value = mock_bound
+    mock_client.bind_tools.return_value = mock_bound_client
     adapter._client = mock_client
 
-    tokens: list[str] = []
-
-    async def on_token(token: str) -> None:
-        tokens.append(token)
-
     mock_tool = MagicMock()
-    mock_tool.name = "k8s_tool"
+    mock_tool.name = "k8s_pods_list"
+    mock_tool.ainvoke = AsyncMock(return_value="ok")
+
+    statuses: list[str] = []
+
+    async def on_status(text: str) -> None:
+        statuses.append(text)
 
     result = await adapter.chat(
-        prompt="Status",
+        prompt="Find pods",
         tools=[mock_tool],
-        on_token=on_token,
+        max_steps=5,
+        on_status=on_status,
     )
 
-    assert result == "Cluster is healthy."
-    assert tokens == ["Cluster ", "is healthy."]
+    assert result == "done"
+    assert "🧠 Analyzing the request" in statuses
+    assert any("Calling <code>k8s_pods_list</code>" in status for status in statuses)
 
 
 @pytest.mark.asyncio

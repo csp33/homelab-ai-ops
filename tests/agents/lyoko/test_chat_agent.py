@@ -220,26 +220,26 @@ async def test_reply_to_linked_alert_message_uses_incident_session():
 
 
 @pytest.mark.asyncio
-async def test_on_token_is_in_config_not_in_state():
-    """on_token callback must be in config['configurable'] and NOT in state to prevent checkpointer serialization errors."""
+async def test_on_status_is_in_config_not_in_state():
+    """on_status callback must be in config['configurable'] and NOT in state to prevent checkpointer serialization errors."""
     graph = MagicMock()
     graph.ainvoke = AsyncMock(return_value={"reply": "ok"})
     agent = InteractiveChatAgent(lambda: graph)
 
-    async def dummy_on_token(token: str) -> None:
+    async def dummy_on_status(text: str) -> None:
         pass
 
-    await agent.handle_message(_msg("hello"), on_token=dummy_on_token)
+    await agent.handle_message(_msg("hello"), on_status=dummy_on_status)
 
     state = graph.ainvoke.call_args.args[0]
     config = graph.ainvoke.call_args.kwargs["config"]
-    assert "on_token" not in state
-    assert config["configurable"]["on_token"] is dummy_on_token
+    assert "on_status" not in state
+    assert config["configurable"]["on_status"] is dummy_on_status
 
 
 @pytest.mark.asyncio
-async def test_chat_with_checkpointer_and_on_token_serialization():
-    """Full workflow execution with checkpointer and on_token does not fail with msgpack TypeError."""
+async def test_chat_with_checkpointer_and_on_status_serialization():
+    """Full workflow execution with checkpointer and on_status does not fail with msgpack TypeError."""
     from langgraph.checkpoint.memory import MemorySaver
     from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
@@ -248,10 +248,8 @@ async def test_chat_with_checkpointer_and_on_token_serialization():
     graph = create_lyoko_graph(mcp_client=FakeMCPClient(), checkpointer=saver, llm=llm)
     agent = InteractiveChatAgent(lambda: graph)
 
-    streamed: list[str] = []
+    async def status_collector(_text: str) -> None:
+        pass
 
-    async def token_collector(t: str) -> None:
-        streamed.append(t)
-
-    reply = await agent.handle_message(_msg("Ping"), on_token=token_collector)
+    reply = await agent.handle_message(_msg("Ping"), on_status=status_collector)
     assert reply == "Pong"
