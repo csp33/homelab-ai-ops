@@ -11,6 +11,7 @@ class UpstreamType(StrEnum):
     KUBERNETES = "kubernetes"
     GRAFANA = "grafana"
     GITHUB = "github"
+    TELEGRAM = "telegram"
 
 
 @dataclass(frozen=True)

@@ -10,6 +10,7 @@ from homelab_mcp.infrastructure.mcp.server import create_gateway_mcp_server
 from homelab_mcp.infrastructure.telegram.client import TelegramClient
 from homelab_mcp.infrastructure.upstream.client import ProcessUpstreamClient
 from homelab_mcp.infrastructure.upstream.kubernetes import KubernetesUpstreamClient
+from homelab_mcp.infrastructure.upstream.telegram import TelegramUpstreamClient
 from homelab_mcp.infrastructure.upstream.unifi import UnifiUpstreamClient
 
 
@@ -122,17 +123,17 @@ def build_gateway_application() -> tuple[MCPGatewayService, any]:
             upstream_type=UpstreamType.GITHUB,
         )
 
-    # 6. Telegram Bot Client
-    telegram_client = None
+    # 6. Telegram Bot Client (in-process provider registered as the 'telegram' domain)
     if settings.telegram_enabled and settings.telegram_bot_token:
         telegram_client = TelegramClient(
             bot_token=settings.telegram_bot_token,
             default_chat_id=settings.telegram_default_chat_id,
         )
+        upstreams[UpstreamType.TELEGRAM] = TelegramUpstreamClient(telegram_client)
 
     auth_verifier = GoogleAuthVerifier()
     gateway_service = MCPGatewayService(upstreams=upstreams, auth_port=auth_verifier)
-    mcp_app = create_gateway_mcp_server(gateway_service, telegram_client=telegram_client)
+    mcp_app = create_gateway_mcp_server(gateway_service)
 
     return gateway_service, mcp_app
 

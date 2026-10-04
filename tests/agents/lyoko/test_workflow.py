@@ -189,8 +189,15 @@ async def test_report_lists_what_the_gate_allowed():
 
     await workflow.ainvoke(_state({"alertname": "UnifiApOffline", "device": "ap-living-room"}))
 
+    # The live status message is broadcast once, then edited as the incident advances; the final
+    # edit carries the incident report. Collect every delivered text so the assertion covers both
+    # the created progress message and the edited final report.
     chat.broadcast_message.assert_awaited_once()
-    text = chat.broadcast_message.await_args.kwargs["text"]
+    delivered = [call.kwargs["text"] for call in chat.broadcast_message.await_args_list]
+    if chat.edit_message.await_args is not None:
+        delivered.append(chat.edit_message.await_args.kwargs["text"])
+    text = "\n".join(delivered)
+
     assert "UnifiApOffline" in text
     assert "device=ap-living-room" in text
     assert "ESCALATED" in text

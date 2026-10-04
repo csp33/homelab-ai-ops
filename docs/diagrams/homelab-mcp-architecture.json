@@ -14,9 +14,9 @@
       },
       {
         "id": "gateway-pipeline",
-        "label": "Gateway Security & Search",
-        "focus": ["transports", "auth_engine", "search_engine", "guard_engine"],
-        "note": "Zero-trust pipeline verifies identity, searches tools by intent, and enforces safety guardrails."
+        "label": "Gateway Security & Discovery",
+        "focus": ["transports", "auth_engine", "catalog_engine", "guard_engine"],
+        "note": "Zero-trust pipeline verifies identity, discovers tools per domain, and enforces safety guardrails."
       },
       {
         "id": "upstream-integrations",
@@ -32,7 +32,7 @@
 
     { "id": "transports", "type": "security", "label": "Transport Layer", "sublabel": "Streamable HTTP & stdio", "pos": [360, 60], "size": [190, 56] },
     { "id": "auth_engine", "type": "security", "label": "Auth Verifier", "sublabel": "Google OIDC & Bearer", "pos": [360, 160], "size": [190, 56] },
-    { "id": "search_engine", "type": "backend", "label": "Scoped Tool Search", "sublabel": "Multi-Token Scoring", "pos": [360, 260], "size": [190, 56] },
+    { "id": "catalog_engine", "type": "backend", "label": "Domain Tool Catalog", "sublabel": "Paginated Discovery", "pos": [360, 260], "size": [190, 56] },
     { "id": "guard_engine", "type": "security", "label": "Guardrail Engine", "sublabel": "Namespace & Exec Policy", "pos": [360, 360], "size": [190, 62] },
 
     { "id": "k8s_upstream", "type": "cloud", "label": "Kubernetes MCP", "sublabel": "Pods, Logs & Apply", "pos": [740, 45], "size": [180, 52], "brand": "kubernetes" },
@@ -44,7 +44,7 @@
   ],
   "boundaries": [
     { "kind": "region", "label": "Inbound Clients", "wraps": ["lyoko_agents", "dev_clients"], "pad": 14 },
-    { "kind": "security-group", "label": "homelab-mcp Gateway Core", "wraps": ["transports", "auth_engine", "search_engine", "guard_engine"], "pad": 16 },
+    { "kind": "security-group", "label": "homelab-mcp Gateway Core", "wraps": ["transports", "auth_engine", "catalog_engine", "guard_engine"], "pad": 16 },
     { "kind": "region", "label": "Upstream Providers & Connectors", "wraps": ["k8s_upstream", "ha_upstream", "unifi_upstream", "graf_upstream", "gh_upstream", "tg_upstream"], "pad": 14 }
   ],
   "connections": [
@@ -52,8 +52,8 @@
     { "from": "dev_clients", "to": "transports", "variant": "dashed" },
 
     { "from": "transports", "to": "auth_engine", "route": "straight" },
-    { "from": "auth_engine", "to": "search_engine", "route": "straight" },
-    { "from": "search_engine", "to": "guard_engine", "route": "straight" },
+    { "from": "auth_engine", "to": "catalog_engine", "route": "straight" },
+    { "from": "catalog_engine", "to": "guard_engine", "route": "straight" },
 
     { "from": "guard_engine", "to": "k8s_upstream", "variant": "security" },
     { "from": "guard_engine", "to": "ha_upstream", "variant": "security" },
@@ -74,11 +74,11 @@
     },
     {
       "dot": "cyan",
-      "title": "Scoped Tool Search",
+      "title": "Domain Tool Catalog",
       "items": [
-        "Multi-token relevance scoring with domain alias resolution",
-        "Keyword weighting and full-match bonuses place exact tools at rank #1",
-        "Biases read-only tools by default unless mutation intent is detected"
+        "Paginated per-domain lean index keeps large domains out of context",
+        "On-demand schema lookup before any tool is executed",
+        "One guarded execution choke point for every upstream tool"
       ]
     },
     {

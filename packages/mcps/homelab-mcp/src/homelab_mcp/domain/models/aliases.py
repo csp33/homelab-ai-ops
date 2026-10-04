@@ -30,6 +30,10 @@ UPSTREAM_ALIASES: dict[str, str] = {
     "gh": "github",
     "git": "github",
     "repo": "github",
+    # Telegram notifications
+    "telegram": "telegram",
+    "notify": "telegram",
+    "notifications": "telegram",
     # Argo CD / GitOps live as Kubernetes CRDs (argoproj.io)
     "gitops": "kubernetes",
     "argocd": "kubernetes",

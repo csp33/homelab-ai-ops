@@ -5,20 +5,17 @@ from typing import Any
 
 from homelab_mcp.application.guardrail import GuardrailEngine
 from homelab_mcp.application.registry import ToolRegistry
-from homelab_mcp.application.scoring import score_tool
 from homelab_mcp.config import settings
 from homelab_mcp.domain.exceptions.tool import ToolNotFoundError
 from homelab_mcp.domain.interfaces.auth import AuthVerifierInterface
 from homelab_mcp.domain.interfaces.upstream import UpstreamMCPInterface
-from homelab_mcp.domain.models.aliases import UPSTREAM_ALIASES
 from homelab_mcp.domain.models.auth import AuthIdentity
 from homelab_mcp.domain.models.guardrail import GuardrailPolicy
 from homelab_mcp.domain.models.upstream import ToolDefinition, ToolResult
 
 logger = logging.getLogger("homelab_mcp.gateway_service")
 
-# Re-exported for backward compatibility
-__all__ = ["MCPGatewayService", "UPSTREAM_ALIASES"]
+__all__ = ["MCPGatewayService"]
 
 
 class MCPGatewayService:
@@ -56,20 +53,6 @@ class MCPGatewayService:
     async def discover_tools(self, force_refresh: bool = False) -> list[ToolDefinition]:
         """Discover tools across all upstream MCP servers."""
         return await self.registry.discover_tools(force_refresh=force_refresh)
-
-    @staticmethod
-    def _score_tool(tool: ToolDefinition, query_tokens: list[str], raw_query_clean: str) -> float:
-        """Delegate scoring to the application scoring engine."""
-        return score_tool(tool, query_tokens, raw_query_clean)
-
-    async def search_tools(
-        self,
-        query: str | None = None,
-        upstream: str | None = None,
-        limit: int = 25,
-    ) -> list[ToolDefinition]:
-        """Search and rank tools across upstreams using relevance scoring and alias resolution."""
-        return await self.registry.search_tools(query=query, upstream=upstream, limit=limit)
 
     async def get_domain_tools(self, domain: str) -> list[ToolDefinition]:
         """Retrieve all allowed tools belonging to a specific upstream domain."""

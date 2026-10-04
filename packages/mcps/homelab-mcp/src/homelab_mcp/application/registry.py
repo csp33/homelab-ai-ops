@@ -1,11 +1,9 @@
-"""Tool registry managing upstream tool discovery, catalog caching, and search ranking."""
+"""Tool registry managing upstream tool discovery, catalog caching, and domain lookup."""
 
 import asyncio
 import logging
-import re
 
 from homelab_mcp.application.guardrail import GuardrailEngine
-from homelab_mcp.application.scoring import score_tool
 from homelab_mcp.domain.interfaces.upstream import UpstreamMCPInterface
 from homelab_mcp.domain.models.aliases import resolve_canonical_domain
 from homelab_mcp.domain.models.upstream import ToolDefinition
@@ -71,48 +69,6 @@ class ToolRegistry:
             if base_name in self._tool_routing:
                 return self._tool_routing[base_name]
         return None
-
-    async def search_tools(
-        self,
-        query: str | None = None,
-        upstream: str | None = None,
-        limit: int = 25,
-    ) -> list[ToolDefinition]:
-        """Search and rank tools with multi-token relevance scoring and category alias resolution."""
-        tools = await self.discover_tools()
-
-        if upstream:
-            raw_target = upstream.strip().lower()
-            canonical_target = resolve_canonical_domain(raw_target)
-            tools = [
-                t
-                for t in tools
-                if canonical_target == str(t.upstream_type).lower()
-                or canonical_target in str(t.upstream_type).lower()
-                or raw_target == str(t.upstream_type).lower()
-                or raw_target in str(t.upstream_type).lower()
-                or canonical_target in t.name.lower()
-                or raw_target in t.name.lower()
-            ]
-
-        if query:
-            raw_query_clean = query.strip().lower()
-            query_tokens = [tok for tok in re.findall(r"\w+", raw_query_clean) if len(tok) > 1]
-            if not query_tokens and raw_query_clean:
-                query_tokens = [raw_query_clean]
-
-            scored_tools: list[tuple[float, ToolDefinition]] = []
-            for t in tools:
-                score = score_tool(t, query_tokens, raw_query_clean)
-                if score > 0:
-                    scored_tools.append((score, t))
-
-            # Sort by score desc, then by tool name asc
-            scored_tools.sort(key=lambda item: (-item[0], item[1].name))
-            tools = [t for _, t in scored_tools]
-
-        bounded_limit = max(1, min(limit, 50))
-        return tools[:bounded_limit]
 
     async def get_domain_tools(self, domain: str) -> list[ToolDefinition]:
         """Retrieve all allowed tools belonging to a specific upstream domain."""

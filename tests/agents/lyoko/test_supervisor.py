@@ -86,4 +86,4 @@ async def test_supervisor_builds_delegation_tools_and_uses_them_by_default():
     assert "specialist" in result.lower()
     call_kwargs = mock_llm.chat.await_args.kwargs
     assert call_kwargs["tools"][0].name == "ask_kubernetes_specialist"
-    assert "gateway_list_tools" not in [t.name for t in call_kwargs["tools"]]
+    assert "gateway_get_domain_tools" not in [t.name for t in call_kwargs["tools"]]

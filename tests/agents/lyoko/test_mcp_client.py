@@ -108,14 +108,12 @@ async def test_verify_connection_reports_other_http_errors(status_server):
 
 
 @pytest.mark.asyncio
-async def test_list_tools_raises_instead_of_returning_empty_list(status_server):
+async def test_domain_catalog_raises_instead_of_returning_empty_list(status_server):
     """Regression: a 401 used to be logged as a warning and swallowed as `[]`."""
     server = status_server(401)
     client = FastMCPClient(server_url=server.url, token="")
     with pytest.raises(MCPAuthenticationError):
-        await client.list_tools()
-    with pytest.raises(MCPAuthenticationError):
-        await client.list_categories()
+        await client.get_domain_catalog("kubernetes")
 
 
 @pytest.mark.asyncio
@@ -137,8 +135,8 @@ async def test_langchain_tools_surface_gateway_error_to_the_llm(status_server):
     tools = {t.name: t for t in client.get_langchain_tools()}
 
     for name, args in [
-        ("gateway_list_categories", {}),
-        ("gateway_list_tools", {}),
+        ("gateway_get_domain_tools", {"domain": "kubernetes"}),
+        ("gateway_get_tool_schema", {"tool_name": "k8s_get_pods"}),
         ("gateway_call_tool", {"tool_name": "k8s_get_pods", "arguments": {}}),
     ]:
         output = await tools[name].ainvoke(args)
@@ -170,16 +168,15 @@ async def test_startup_check_tolerates_unreachable_gateway():
 
 
 @pytest.mark.asyncio
-async def test_langchain_tools_expose_search_and_schema_discovery():
+async def test_langchain_tools_expose_domain_discovery_and_execution():
     tools = {t.name: t for t in FastMCPClient(server_url="http://x/mcp").get_langchain_tools()}
 
     assert set(tools) == {
-        "gateway_list_categories",
-        "gateway_list_tools",
+        "gateway_get_domain_tools",
         "gateway_get_tool_schema",
         "gateway_call_tool",
     }
-    assert {"upstream", "query", "limit"} <= set(tools["gateway_list_tools"].args)
+    assert "domain" in tools["gateway_get_domain_tools"].args
 
 
 @pytest.mark.asyncio
@@ -214,16 +211,55 @@ async def test_authorizer_allowing_the_call_lets_it_through():
 
 
 @pytest.mark.asyncio
-async def test_discovery_tools_are_never_gated():
+async def test_domain_discovery_tool_is_never_gated():
     client = FastMCPClient(server_url="http://x/mcp", token="")
-    client.list_categories = AsyncMock(return_value=[{"upstream": "kubernetes", "tool_count": 20}])
+    client.get_domain_tools_page = AsyncMock(
+        return_value={
+            "domain": "kubernetes",
+            "total": 1,
+            "limit": 50,
+            "offset": 0,
+            "has_more": False,
+            "tools": [{"name": "pods_list", "description": "List pods"}],
+        }
+    )
     authorizer = AsyncMock(return_value="Refused")
     tools = {t.name: t for t in client.get_langchain_tools(authorizer=authorizer)}
 
-    output = await tools["gateway_list_categories"].ainvoke({})
+    output = await tools["gateway_get_domain_tools"].ainvoke({"domain": "kubernetes"})
 
-    assert "kubernetes" in output
+    assert "pods_list" in output
     authorizer.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_domain_catalog_follows_pagination():
+    client = FastMCPClient(server_url="http://x/mcp", token="")
+    client.get_domain_tools_page = AsyncMock(
+        side_effect=[
+            {
+                "domain": "unifi",
+                "total": 3,
+                "limit": 2,
+                "offset": 0,
+                "has_more": True,
+                "tools": [{"name": "a"}, {"name": "b"}],
+            },
+            {
+                "domain": "unifi",
+                "total": 3,
+                "limit": 2,
+                "offset": 2,
+                "has_more": False,
+                "tools": [{"name": "c"}],
+            },
+        ]
+    )
+
+    catalog = await client.get_domain_catalog("unifi")
+
+    assert [t["name"] for t in catalog] == ["a", "b", "c"]
+    assert client.get_domain_tools_page.await_count == 2
 
 
 class _RunRecorder(BaseCallbackHandler):
