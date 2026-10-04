@@ -47,6 +47,24 @@ def _bound_tool_output(output: Any) -> str:
     return text[:limit] + "\n\n[System Note: Tool output truncated to fit the context budget.]"
 
 
+_ERROR_MARKERS = (
+    "'is_error': true",
+    '"is_error": true',
+    '"is_error":true',
+    "error executing tool",
+    "not found on any upstream",
+    "is forbidden:",
+    "permission denied",
+)
+_MAX_CONSECUTIVE_TOOL_ERRORS = 3
+
+
+def _is_tool_error(output: str) -> bool:
+    """Detect a failed tool result so the loop can nudge a fix instead of blind retries."""
+    lowered = output.lower()
+    return any(marker in lowered for marker in _ERROR_MARKERS)
+
+
 class OpenAILLMAdapter(LLMClientInterface):
     """LLM adapter implementing LLMClientInterface backed by ChatOpenAI and LangChain."""
 
@@ -123,6 +141,9 @@ class OpenAILLMAdapter(LLMClientInterface):
                     executed_tool_calls = 0
                     previous_tool_calls_sig: tuple[tuple[str, str], ...] | None = None
                     consecutive_repeat_count = 0
+                    consecutive_tool_errors = 0
+                    last_error_fingerprint: str | None = None
+                    repeated_error_count = 0
 
                     for step in range(max_iterations):
                         if on_token is not None:
@@ -225,6 +246,32 @@ class OpenAILLMAdapter(LLMClientInterface):
                                     "conclude that they do not exist instead of repeating identical queries.]"
                                 )
 
+                            if _is_tool_error(output_str):
+                                consecutive_tool_errors += 1
+                                fingerprint = f"{tool_name}|{output_str[:200]}"
+                                if fingerprint == last_error_fingerprint:
+                                    repeated_error_count += 1
+                                else:
+                                    repeated_error_count = 0
+                                last_error_fingerprint = fingerprint
+                                logger.warning(
+                                    "ReAct tool '%s' returned an error (%d consecutive).",
+                                    tool_name,
+                                    consecutive_tool_errors,
+                                )
+                                if repeated_error_count >= 1 or consecutive_tool_errors >= 2:
+                                    output_str += (
+                                        "\n\n[System Note: This tool keeps failing. Do not retry more "
+                                        "variants. Read its schema with gateway_get_tool_schema and supply "
+                                        "the missing or invalid argument, or switch to a different tool. "
+                                        "If the failure is a permissions error, report it instead of "
+                                        "retrying.]"
+                                    )
+                            else:
+                                consecutive_tool_errors = 0
+                                last_error_fingerprint = None
+                                repeated_error_count = 0
+
                             messages.append(
                                 ToolMessage(
                                     content=output_str,
@@ -234,6 +281,12 @@ class OpenAILLMAdapter(LLMClientInterface):
                             )
 
                         if budget_exceeded:
+                            break
+                        if consecutive_tool_errors >= _MAX_CONSECUTIVE_TOOL_ERRORS:
+                            logger.warning(
+                                "ReAct agent hit %d consecutive tool errors. Stopping for final summary.",
+                                consecutive_tool_errors,
+                            )
                             break
 
                     logger.warning(
