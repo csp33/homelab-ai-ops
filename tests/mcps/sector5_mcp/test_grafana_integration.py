@@ -37,7 +37,7 @@ def test_build_gateway_application_includes_grafana_when_configured():
         mock_settings.blocked_namespaces = ["kube-system"]
         mock_settings.google_client_id = ""
         mock_settings.google_client_secret = ""
-        mock_settings.canonical_base_url = "http://localhost:8080"
+        mock_settings.base_url = "http://localhost:8080"
         mock_settings.redirect_path = "/oauth/callback"
         mock_settings.allowed_google_emails = []
         mock_settings.service_token = ""
