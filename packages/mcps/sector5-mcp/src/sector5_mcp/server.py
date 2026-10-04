@@ -144,7 +144,7 @@ def build_gateway_application() -> tuple[MCPGatewayService, any]:
     gateway_service = MCPGatewayService(
         upstreams=_build_upstreams(), auth_port=GoogleAuthVerifier()
     )
-    mcp_app = create_gateway_mcp_server(gateway_service, base_url=settings.base_url)
+    mcp_app = create_gateway_mcp_server(gateway_service, base_url=settings.canonical_base_url)
     return gateway_service, mcp_app
 
 
@@ -207,7 +207,7 @@ def main():
         f"host: {settings.mcp_host}:{settings.mcp_port})"
     )
     if settings.mcp_transport in ["http", "streamable-http"]:
-        run_http_gateway(service, mcp, settings.effective_base_urls)
+        run_http_gateway(service, mcp, settings.public_base_urls)
     else:
         mcp.run(transport="stdio")
 

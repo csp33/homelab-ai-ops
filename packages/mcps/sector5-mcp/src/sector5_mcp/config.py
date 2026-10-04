@@ -3,7 +3,7 @@
 import json
 from typing import Any
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,17 +31,15 @@ class GatewaySettings(BaseSettings):
     google_client_secret: str = Field(
         default="", description="Google OAuth2 Client Secret for OIDC Proxy and DCR"
     )
-    base_url: str = Field(
-        default="http://localhost:8080",
-        description="Canonical Base URL of the MCP Gateway for OAuth/DCR metadata (e.g. https://mcp.cspaez.org)",
-    )
     base_urls: list[str] | str = Field(
-        default_factory=list,
+        default_factory=lambda: ["http://localhost:8080"],
+        validation_alias=AliasChoices("base_urls", "base_url"),
         description=(
-            "Additional public Base URLs (hosts) the gateway is reachable at, e.g. "
-            "['https://mcp.internal.cspaez.org']. Each host gets its own OAuth issuer, "
-            "protected resource, and JWT audience. Register every URL's redirect_path "
-            "in Google Cloud Console."
+            "Public Base URLs of the gateway; the first entry is canonical. Each host gets "
+            "its own OAuth issuer, protected resource and JWT audience. Accepts a JSON list "
+            "or comma-separated values. The legacy BASE_URL env var is still read when "
+            "BASE_URLS is unset. Register every URL's redirect_path in Google Cloud Console "
+            "(e.g. https://mcp.cspaez.org,https://mcp.internal.cspaez.org)."
         ),
     )
     redirect_path: str = Field(
@@ -187,17 +185,21 @@ class GatewaySettings(BaseSettings):
         return v or []
 
     @property
-    def effective_base_urls(self) -> list[str]:
-        """Canonical base URL plus any additional base URLs, de-duplicated and normalized."""
-        candidates = [self.base_url, *self.base_urls]
+    def public_base_urls(self) -> list[str]:
+        """Configured base URLs, de-duplicated and normalized (first is canonical)."""
         seen: set[str] = set()
         result: list[str] = []
-        for url in candidates:
+        for url in self.base_urls:
             normalized = url.strip().rstrip("/")
             if normalized and normalized not in seen:
                 seen.add(normalized)
                 result.append(normalized)
-        return result
+        return result or ["http://localhost:8080"]
+
+    @property
+    def canonical_base_url(self) -> str:
+        """The first configured base URL, used as the default host."""
+        return self.public_base_urls[0]
 
 
 settings = GatewaySettings()

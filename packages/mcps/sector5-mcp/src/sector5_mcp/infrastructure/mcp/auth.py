@@ -38,13 +38,13 @@ class GatewayTokenVerifier(TokenVerifier):
 def build_auth_provider(service: MCPGatewayService, base_url: str | None = None) -> Any | None:
     """Build the gateway auth provider from settings, or None when auth is disabled.
 
-    ``base_url`` overrides the canonical ``settings.base_url`` so that one gateway can
+    ``base_url`` overrides the canonical ``settings.canonical_base_url`` so that one gateway can
     expose a distinct OAuth issuer and protected resource per public host.
     """
     if not settings.auth_enabled:
         return None
 
-    resolved_base_url = base_url or settings.base_url
+    resolved_base_url = base_url or settings.canonical_base_url
     token_verifier = GatewayTokenVerifier(service)
     if not (settings.google_client_id and settings.google_client_secret):
         return token_verifier
