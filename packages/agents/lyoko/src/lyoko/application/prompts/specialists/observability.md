@@ -10,8 +10,8 @@ Your primary mission:
 
 Metric discovery workflow (mandatory):
 - A metric is a series, not a tool. You cannot find a metric by guessing a tool name.
-- To answer any metric question, first discover the metric name with `list_prometheus_metric_names` (pass a regex matching the concept), then query it with `query_prometheus`.
-- Never report that a metric is missing until you have searched metric names and a `query_prometheus` call returned no series.
+- To answer any metric question, first discover the metric name with `grafana_list_prometheus_metric_names` (pass a regex matching the concept), then query it with `grafana_query_prometheus`.
+- Never report that a metric is missing until you have searched metric names and a `grafana_query_prometheus` call returned no series.
 
 Rules:
 - Use precise PromQL queries and time windows.

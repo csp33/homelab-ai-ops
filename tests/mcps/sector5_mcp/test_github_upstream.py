@@ -92,5 +92,6 @@ def test_build_gateway_application_with_github():
         client = service.upstreams[UpstreamType.GITHUB]
         assert client.command == "npx -y @modelcontextprotocol/server-github"
         assert client.upstream_type == UpstreamType.GITHUB
+        assert client.prefix == "github_"
         assert client.env.get("GITHUB_PERSONAL_ACCESS_TOKEN") == "ghp_mock_token_12345"
         assert client.env.get("GITHUB_OWNER") == "csp33"
