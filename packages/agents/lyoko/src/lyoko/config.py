@@ -46,10 +46,10 @@ class AgentSettings(BaseSettings):
 
     # MCP Gateway connection
     mcp_server_url: str = Field(
-        default="http://localhost:8000/mcp", description="homelab-mcp Streamable HTTP URL"
+        default="http://localhost:8000/mcp", description="sector5-mcp Streamable HTTP URL"
     )
     service_token: str = Field(
-        default="", description="Bearer token to authenticate against homelab-mcp"
+        default="", description="Bearer token to authenticate against sector5-mcp"
     )
     mcp_fail_fast: bool = Field(
         default=True,

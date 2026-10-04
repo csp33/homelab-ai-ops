@@ -1,7 +1,7 @@
 services:
   postgres:
     image: pgvector/pgvector:pg17
-    container_name: homelab-aiops-postgres
+    container_name: lyoko-ai-ops-postgres
     restart: unless-stopped
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
@@ -20,11 +20,11 @@ services:
       - path: .env
         required: false
 
-  homelab-mcp:
+  sector5-mcp:
     build:
       context: .
-      dockerfile: packages/mcps/homelab-mcp/Dockerfile
-    container_name: homelab-aiops-mcp
+      dockerfile: packages/mcps/sector5-mcp/Dockerfile
+    container_name: lyoko-ai-ops-sector5
     restart: unless-stopped
     ports:
       - "${MCP_PORT:-8000}:8000"
@@ -35,13 +35,13 @@ services:
       - path: .env
         required: false
     volumes:
-      - ./packages/mcps/homelab-mcp/src:/app/packages/mcps/homelab-mcp/src:ro
+      - ./packages/mcps/sector5-mcp/src:/app/packages/mcps/sector5-mcp/src:ro
 
   migration:
     build:
       context: .
       dockerfile: packages/agents/lyoko/Dockerfile
-    container_name: homelab-aiops-migration
+    container_name: lyoko-ai-ops-migration
     restart: "no"
     command: ["alembic", "-c", "/app/packages/agents/lyoko/alembic.ini", "upgrade", "head"]
     depends_on:
@@ -58,21 +58,21 @@ services:
     build:
       context: .
       dockerfile: packages/agents/lyoko/Dockerfile
-    container_name: homelab-aiops-lyoko
+    container_name: lyoko-ai-ops-lyoko
     restart: unless-stopped
     ports:
       - "${LYOKO_PORT:-9000}:9000"
     depends_on:
       postgres:
         condition: service_healthy
-      homelab-mcp:
+      sector5-mcp:
         condition: service_started
       migration:
         condition: service_completed_successfully
     environment:
       LYOKO_HOST: "0.0.0.0"
       LYOKO_PORT: "9000"
-      MCP_SERVER_URL: "http://homelab-mcp:8000/mcp"
+      MCP_SERVER_URL: "http://sector5-mcp:8000/mcp"
       POSTGRES_HOST: "postgres"
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lyoko}
       PYTHONPATH: "/app/packages/agents/lyoko/src"

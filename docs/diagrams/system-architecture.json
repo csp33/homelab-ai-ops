@@ -2,7 +2,7 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Homelab AIOps Platform Architecture",
+    "title": "LYOKO AIOps Platform Architecture",
     "quality_profile": "showcase",
     "viewBox": [1270, 600],
     "views": [
@@ -42,7 +42,7 @@
     { "id": "ha_spec", "type": "backend", "label": "SmartHome Spec", "sublabel": "HASS Entities", "pos": [645, 195], "size": [160, 52] },
     { "id": "obs_spec", "type": "backend", "label": "Metrics Spec", "sublabel": "PromQL & Panels", "pos": [645, 270], "size": [160, 52], "brand": "grafana" },
 
-    { "id": "mcp_gw", "type": "security", "label": "homelab-mcp Gateway", "sublabel": "Auth · Guardrails", "pos": [855, 180], "size": [165, 66] },
+    { "id": "mcp_gw", "type": "security", "label": "sector5-mcp Gateway", "sublabel": "Auth · Guardrails", "pos": [855, 180], "size": [165, 66] },
 
     { "id": "k8s_cluster", "type": "cloud", "label": "Kubernetes Cluster", "sublabel": "k8s Workloads", "pos": [1070, 45], "size": [160, 52], "brand": "kubernetes" },
     { "id": "unifi_net", "type": "cloud", "label": "UniFi Network", "sublabel": "UDM-Pro & Switches", "pos": [1070, 120], "size": [160, 52] },

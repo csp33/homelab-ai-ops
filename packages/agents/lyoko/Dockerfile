@@ -13,7 +13,7 @@ WORKDIR /app
 
 # Copy root workspace and manifests + lockfile
 COPY pyproject.toml uv.lock README.md ./
-COPY packages/mcps/homelab-mcp/pyproject.toml packages/mcps/homelab-mcp/README.md packages/mcps/homelab-mcp/
+COPY packages/mcps/sector5-mcp/pyproject.toml packages/mcps/sector5-mcp/README.md packages/mcps/sector5-mcp/
 COPY packages/agents/lyoko/pyproject.toml packages/agents/lyoko/README.md packages/agents/lyoko/
 
 # Install dependencies into virtual environment

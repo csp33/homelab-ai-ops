@@ -2,15 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement a scalable hierarchical multi-agent architecture in `LYOKO` (Supervisor + Domain Specialist Subagents for Telegram & Alertmanager) while leveraging `homelab-mcp`'s relevance-scored Scoped Tool Search for both external IDEs (Claude Desktop/Cursor, $0 OpenAI API cost) and domain specialists.
+**Goal:** Implement a scalable hierarchical multi-agent architecture in `LYOKO` (Supervisor + Domain Specialist Subagents for Telegram & Alertmanager) while leveraging `sector5-mcp`'s relevance-scored Scoped Tool Search for both external IDEs (Claude Desktop/Cursor, $0 OpenAI API cost) and domain specialists.
 
 **Architecture:**
-- **`homelab-mcp` (Tool Hub & Scoped Search Engine)**:
+- **`sector5-mcp` (Tool Hub & Scoped Search Engine)**:
   - Serves operational tools across upstreams (`kubernetes`, `unifi`, `homeassistant`, `grafana`, `github`).
   - Provides multi-token relevance scoring, read/mutation intent weighting, and category aliases via `gateway_list_tools(query, upstream)`.
   - Enforces centralized safety guardrails and namespace protections.
 - **External IDEs (Claude Desktop / Cursor)**:
-  - Connects directly to `homelab-mcp` using Scoped Tool Search. Claude performs reasoning on its own subscription ($0 OpenAI API cost) with lean context windows (<2,000 tokens).
+  - Connects directly to `sector5-mcp` using Scoped Tool Search. Claude performs reasoning on its own subscription ($0 OpenAI API cost) with lean context windows (<2,000 tokens).
 - **`LYOKO` (Autonomous Incident Remediation & Telegram Multi-Agent Graph)**:
   - `SupervisorAgent` in LangGraph: Triages incoming events and coordinates cross-domain multi-step operations (e.g. scale K8s pod ➔ reload Home Assistant integration).
   - `DomainSpecialists` (`K8sSpecialist`, `NetworkSpecialist`, `SmartHomeSpecialist`, `ObservabilitySpecialist`): Focused domain subagents executing within their scoped toolset.
@@ -29,12 +29,12 @@
 
 ---
 
-### Task 1: Scoped Domain Search & Tool Pools in `homelab-mcp`
+### Task 1: Scoped Domain Search & Tool Pools in `sector5-mcp`
 
 **Files:**
-- Modify: `packages/mcps/homelab-mcp/src/homelab_mcp/application/service.py`
-- Modify: `packages/mcps/homelab-mcp/src/homelab_mcp/infrastructure/mcp/server.py`
-- Test: `tests/mcps/homelab_mcp/test_gateway_service.py`
+- Modify: `packages/mcps/sector5-mcp/src/sector5_mcp/application/service.py`
+- Modify: `packages/mcps/sector5-mcp/src/sector5_mcp/infrastructure/mcp/server.py`
+- Test: `tests/mcps/sector5_mcp/test_gateway_service.py`
 
 **Interfaces:**
 - Produces: `async def search_tools(self, query: str | None = None, upstream: str | None = None, limit: int = 25) -> list[ToolDefinition]` in `MCPGatewayService`
@@ -53,7 +53,7 @@ async def test_gateway_scoped_domain_search(mock_auth):
 
 - [ ] **Step 2: Run test to verify passes/fails**
 
-Run: `uv run pytest tests/mcps/homelab_mcp/test_gateway_service.py -v`
+Run: `uv run pytest tests/mcps/sector5_mcp/test_gateway_service.py -v`
 Expected: PASS
 
 - [ ] **Step 3: Commit verification**
@@ -181,22 +181,22 @@ git commit -m "feat(lyoko): implement multi-agent supervisor for cross-domain or
 
 **Files:**
 - Modify: `README.md`
-- Modify: `packages/mcps/homelab-mcp/README.md`
+- Modify: `packages/mcps/sector5-mcp/README.md`
 - Modify: `packages/agents/lyoko/README.md`
 
 **Objectives:**
 - Update root `README.md` architecture diagram to illustrate the multi-agent supervisor, domain specialists, and scoped tool search with clean, modern Mermaid styling (using clear subgraphs, distinct node classes, and clean layout).
-- Update `packages/mcps/homelab-mcp/README.md` to document Scoped Tool Search (`gateway_list_tools`), relevance scoring, and category aliases.
+- Update `packages/mcps/sector5-mcp/README.md` to document Scoped Tool Search (`gateway_list_tools`), relevance scoring, and category aliases.
 - Update `packages/agents/lyoko/README.md` to document the Multi-Agent Supervisor pattern, cross-domain coordination, and domain specialists with their respective tool scopes.
 
 - [ ] **Step 1: Update root `README.md` with new multi-agent architecture and clean diagrams**
-- [ ] **Step 2: Update `packages/mcps/homelab-mcp/README.md` with scoped tool search details**
+- [ ] **Step 2: Update `packages/mcps/sector5-mcp/README.md` with scoped tool search details**
 - [ ] **Step 3: Update `packages/agents/lyoko/README.md` with supervisor & specialists workflow diagrams**
 - [ ] **Step 4: Verify Markdown rendering and diagram syntax**
 - [ ] **Step 5: Commit documentation updates**
 
 ```bash
-git add README.md packages/mcps/homelab-mcp/README.md packages/agents/lyoko/README.md
+git add README.md packages/mcps/sector5-mcp/README.md packages/agents/lyoko/README.md
 git commit -m "docs: refresh READMEs and architecture diagrams for hierarchical multi-agent architecture"
 ```
 

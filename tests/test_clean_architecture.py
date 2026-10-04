@@ -37,8 +37,8 @@ def test_domain_layer_clean_architecture_isolation():
         "mcp",
         "lyoko.infrastructure",
         "lyoko.application",
-        "homelab_mcp.infrastructure",
-        "homelab_mcp.application",
+        "sector5_mcp.infrastructure",
+        "sector5_mcp.application",
     )
 
     domain_dirs = list(WORKSPACE_ROOT.glob("packages/**/domain"))
@@ -64,7 +64,7 @@ def test_application_layer_clean_architecture_isolation():
     """Ensure application layers never import concrete infrastructure adapters or vendor SDKs."""
     forbidden_app_prefixes = (
         "lyoko.infrastructure",
-        "homelab_mcp.infrastructure",
+        "sector5_mcp.infrastructure",
         "langchain_openai",
         "openai",
         "telegram",

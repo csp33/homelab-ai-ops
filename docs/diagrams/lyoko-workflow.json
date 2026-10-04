@@ -196,7 +196,7 @@
       "lane": "gate_lane",
       "col": 4,
       "type": "security",
-      "label": "homelab-mcp Gateway",
+      "label": "sector5-mcp Gateway",
       "sublabel": "FastMCP Tool Exec",
       "width": 140
     }

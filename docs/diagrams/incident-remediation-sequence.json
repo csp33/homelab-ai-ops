@@ -31,7 +31,7 @@
     { "id": "alertmanager", "type": "external", "label": "Alertmanager", "sublabel": "Prometheus Alerts", "brand": "prometheus" },
     { "id": "lyoko", "type": "backend", "label": "LYOKO Agent", "sublabel": "LangGraph Loop", "brand": "openai" },
     { "id": "postgres", "type": "database", "label": "Vector Memory", "sublabel": "PostgreSQL pgvector", "brand": "postgresql" },
-    { "id": "mcp_gw", "type": "security", "label": "homelab-mcp", "sublabel": "Tool Gate & Safety" },
+    { "id": "mcp_gw", "type": "security", "label": "sector5-mcp", "sublabel": "Tool Gate & Safety" },
     { "id": "operator_tg", "type": "frontend", "label": "Operator", "sublabel": "Telegram HITL", "brand": "telegram" },
     { "id": "k8s_cluster", "type": "cloud", "label": "Kubernetes", "sublabel": "Cluster Workloads", "brand": "kubernetes" }
   ],

@@ -98,8 +98,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: homelab-mcp
-            dockerfile: packages/mcps/homelab-mcp/Dockerfile
+          - name: sector5-mcp
+            dockerfile: packages/mcps/sector5-mcp/Dockerfile
             tags_key: mcp_tags
           - name: lyoko
             dockerfile: packages/agents/lyoko/Dockerfile
@@ -135,7 +135,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
   update-k8s-helm-values:
-    name: Bump homelab-aiops image tags in k8s-at-home
+    name: Bump lyoko-ai-ops image tags in k8s-at-home
     runs-on: ubuntu-latest
     needs: [publish-meta, publish-images]
     if: |
@@ -169,7 +169,7 @@ jobs:
           token: ${{ secrets.K8S_CHARTS_REPO_TOKEN }}
           path: k8s-charts
 
-      - name: Set image tags in homelab-aiops Helm values
+      - name: Set image tags in lyoko-ai-ops Helm values
         if: steps.check-token.outputs.has_token == 'true'
         working-directory: k8s-charts
         env:
@@ -203,5 +203,5 @@ jobs:
             echo "No change to values.yaml (tag already ${TAG})."
             exit 0
           fi
-          git commit -m "chore(homelab-aiops): bump image tags to ${TAG}"
+          git commit -m "chore(lyoko-ai-ops): bump image tags to ${TAG}"
           git push origin HEAD:master

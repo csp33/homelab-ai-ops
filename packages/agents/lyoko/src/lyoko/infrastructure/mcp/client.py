@@ -143,7 +143,7 @@ class FastMCPClient(MCPClientInterface):
     # ------------------------------------------------------------------
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
-        """Call a tool on homelab-mcp gateway, routing upstream tools through gateway_call_tool.
+        """Call a tool on sector5-mcp gateway, routing upstream tools through gateway_call_tool.
 
         Failures are returned as ``{"status": "failed", ...}`` so remediation workflows can
         branch on them without exception handling.

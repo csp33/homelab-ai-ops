@@ -1,18 +1,18 @@
 # System Architecture & Incident Lifecycle
 
-This document describes the end-to-end architecture, multi-agent orchestration, memory retrieval model, and incident remediation lifecycle of `homelab-aiops`.
+This document describes the end-to-end architecture, multi-agent orchestration, memory retrieval model, and incident remediation lifecycle of `lyoko-ai-ops`.
 
 ---
 
 ## High-Level System Architecture
 
-`homelab-aiops` decouples intelligence from execution through two primary subsystems:
+`lyoko-ai-ops` decouples intelligence from execution through two primary subsystems:
 
 1. **`LYOKO` (Autonomous Remediation Engine)**: Built on **LangGraph** and **FastAPI**, handling alert webhooks from Prometheus Alertmanager and operator chat sessions via Telegram.
-2. **`homelab-mcp` (Tool Gateway & Safety Harness)**: Built on **FastMCP**, aggregating upstream domain APIs (Kubernetes, UniFi, Home Assistant, Grafana, GitHub) behind strict guardrails and authentication.
+2. **`sector5-mcp` (Tool Gateway & Safety Harness)**: Built on **FastMCP**, aggregating upstream domain APIs (Kubernetes, UniFi, Home Assistant, Grafana, GitHub) behind strict guardrails and authentication.
 
 <p align="center">
-  <img src="assets/system-architecture.png" alt="Homelab AIOps Platform Architecture" width="100%" />
+  <img src="assets/system-architecture.png" alt="LYOKO AIOps Platform Architecture" width="100%" />
 </p>
 
 ---
@@ -22,7 +22,7 @@ This document describes the end-to-end architecture, multi-agent orchestration, 
 LYOKO organizes intelligence into a hierarchical delegation pattern:
 
 - **Supervisor & Planner**: Coordinates cross-domain analysis and synthesizes root-cause hypotheses without needing direct knowledge of every individual API schema.
-- **Domain Specialists**: Domain-focused subagents equipped with tailored upstream toolsets via `homelab-mcp`:
+- **Domain Specialists**: Domain-focused subagents equipped with tailored upstream toolsets via `sector5-mcp`:
   - **Kubernetes SRE**: Inspects pods, deployment manifests, events, logs, and Argo CD CRD applications.
   - **Network Specialist**: Manages UniFi controller client tables, port assignments, APs, and VLANs.
   - **Smart Home Specialist**: Interacts with Home Assistant entities, services, and automations.
@@ -59,6 +59,6 @@ To avoid repeating mistakes and allow continuous operator steering, LYOKO persis
 
 ## Related Documentation
 
-- [Security & Guardrails](file:///Users/spcarlos33/.gemini/antigravity/worktrees/homelab-aiops/split_root_readme/docs/security-guardrails.md)
-- [homelab-mcp Package Guide](file:///Users/spcarlos33/.gemini/antigravity/worktrees/homelab-aiops/split_root_readme/packages/mcps/homelab-mcp/README.md)
-- [LYOKO Agent Package Guide](file:///Users/spcarlos33/.gemini/antigravity/worktrees/homelab-aiops/split_root_readme/packages/agents/lyoko/README.md)
+- [Security & Guardrails](security-guardrails.md)
+- [sector5-mcp Package Guide](../packages/mcps/sector5-mcp/README.md)
+- [LYOKO Agent Package Guide](../packages/agents/lyoko/README.md)

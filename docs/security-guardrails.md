@@ -1,20 +1,20 @@
 # Security & Safety Guardrails
 
-`homelab-aiops` is designed to run against real physical infrastructure, Kubernetes clusters, network switches, and IoT controllers. Safety is enforced through a defense-in-depth model combining gateway-level guardrails, multi-tenant authentication, and human-in-the-loop (HITL) approval gating.
+`lyoko-ai-ops` is designed to run against real physical infrastructure, Kubernetes clusters, network switches, and IoT controllers. Safety is enforced through a defense-in-depth model combining gateway-level guardrails, multi-tenant authentication, and human-in-the-loop (HITL) approval gating.
 
 ---
 
 ## Defense in Depth Architecture
 
 <p align="center">
-  <img src="assets/guardrail-pipeline.png" alt="Homelab MCP Guardrail Pipeline" width="100%" />
+  <img src="assets/guardrail-pipeline.png" alt="Sector5 MCP Guardrail Pipeline" width="100%" />
 </p>
 
 ---
 
-## 1. Gateway Guardrail Engine (`homelab-mcp`)
+## 1. Gateway Guardrail Engine (`sector5-mcp`)
 
-Every tool call dispatched to `homelab-mcp` passes through the `GuardrailEngine` before hitting upstream providers.
+Every tool call dispatched to `sector5-mcp` passes through the `GuardrailEngine` before hitting upstream providers.
 
 ### Protected Namespaces
 - Critical system namespaces (e.g., `kube-system`, `cert-manager`, `ingress-nginx`) are protected by default.
@@ -57,7 +57,7 @@ Autonomous actions are governed by the agent's `ToolGate`:
 ## 3. Multi-Tenant Authentication & Identity
 
 - **Google OIDC Proxy**: Supports OAuth 2.0 / OIDC authentication with email domain and identity allowlisting.
-- **Service Tokens**: Inter-service communication between `LYOKO` and `homelab-mcp` utilizes bearer tokens (`SERVICE_TOKEN`).
+- **Service Tokens**: Inter-service communication between `LYOKO` and `sector5-mcp` utilizes bearer tokens (`SERVICE_TOKEN`).
 - **Telegram RBAC**: Chat messages and approval callbacks are verified against `TELEGRAM_ALLOWED_USER_IDS` and `TELEGRAM_ALLOWED_CHAT_IDS`.
 
 ---
@@ -81,6 +81,6 @@ This repository is strictly open source and public:
 
 ## Related Documentation
 
-- [System Architecture](file:///Users/spcarlos33/.gemini/antigravity/worktrees/homelab-aiops/split_root_readme/docs/architecture.md)
-- [homelab-mcp Package Guide](file:///Users/spcarlos33/.gemini/antigravity/worktrees/homelab-aiops/split_root_readme/packages/mcps/homelab-mcp/README.md)
-- [LYOKO Agent Package Guide](file:///Users/spcarlos33/.gemini/antigravity/worktrees/homelab-aiops/split_root_readme/packages/agents/lyoko/README.md)
+- [System Architecture](architecture.md)
+- [sector5-mcp Package Guide](../packages/mcps/sector5-mcp/README.md)
+- [LYOKO Agent Package Guide](../packages/agents/lyoko/README.md)

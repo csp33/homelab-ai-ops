@@ -21,7 +21,7 @@ from lyoko.application.supervisor import SUPERVISOR_SYSTEM_PROMPT
 def test_load_prompt_success():
     chat_prompt = load_prompt("chat.md")
     assert "LYOKO" in chat_prompt
-    assert "Homelab AIOps" in chat_prompt
+    assert "AIOps" in chat_prompt
 
 
 def test_load_prompt_missing_file():

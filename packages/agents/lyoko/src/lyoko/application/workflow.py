@@ -10,7 +10,7 @@ Every event enters at ``route`` and takes one of two branches::
   take it. A Telegram message takes it when the router decides the operator is reporting
   something broken, and takes ``chat`` otherwise.
 
-The agent runs use the homelab-mcp gateway through domain specialists. The supervisor
+The agent runs use the sector5-mcp gateway through domain specialists. The supervisor
 delegates to Kubernetes, UniFi, Home Assistant, and Grafana specialists so each phase
 operates with a scoped toolset instead of searching the whole catalog.
 

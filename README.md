@@ -1,6 +1,6 @@
 <div align="center">
 
-# Homelab AIOps
+# LYOKO AIOps
 
 ### Autonomous SRE & Self-Healing Platform for Homelabs
 
@@ -29,7 +29,7 @@
 
 ## Overview
 
-**Homelab AIOps** pairs an event-driven SRE multi-agent engine (**LYOKO**) with a unified, guardrail-protected tool gateway (**`homelab-mcp`**). 
+**LYOKO AIOps** is an event-driven, self-healing SRE platform built around a hierarchical multi-agent engine (**LYOKO**) and a unified, guardrail-protected tool gateway (**`sector5-mcp`**). 
 
 When incidents occur, the system diagnoses root causes using read-only specialists, retrieves prior lessons from persistent vector memory (**PostgreSQL + pgvector**), and requests human approval (HITL) via **Telegram** before applying any state modification.
 
@@ -54,7 +54,7 @@ When incidents occur, the system diagnoses root causes using read-only specialis
 ## Architecture
 
 <p align="center">
-  <img src="docs/assets/system-architecture.png" alt="Homelab AIOps Platform Architecture" width="100%" />
+  <img src="docs/assets/system-architecture.png" alt="LYOKO AIOps Platform Architecture" width="100%" />
 </p>
 
 ---
@@ -70,7 +70,7 @@ When incidents occur, the system diagnoses root causes using read-only specialis
 
 | Package | Role | Description |
 | :--- | :--- | :--- |
-| [`homelab-mcp`](packages/mcps/homelab-mcp) | Tool Gateway | FastMCP server aggregating upstream APIs with authentication, per-domain tool catalogs, and namespace guardrails. |
+| [`sector5-mcp`](packages/mcps/sector5-mcp) | Tool Gateway | FastMCP server aggregating upstream APIs with authentication, per-domain tool catalogs, and namespace guardrails. |
 | [`lyoko`](packages/agents/lyoko) | Multi-Agent Engine | LangGraph orchestrator with hierarchical domain specialists, Telegram approvals, and episodic vector memory. |
 
 ---
@@ -79,8 +79,8 @@ When incidents occur, the system diagnoses root causes using read-only specialis
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/csp33/homelab-aiops.git
-cd homelab-aiops
+git clone https://github.com/csp33/lyoko-ai-ops.git
+cd lyoko-ai-ops
 
 # 2. Configure environment (set OPENAI_API_KEY)
 cp .env.example .env
@@ -98,7 +98,7 @@ For environment variables, local `uv` development, and testing guides, see the [
 - [Quick Start Guide](docs/quickstart.md): Step-by-step installation, `.env` options, and verification.
 - [System Architecture](docs/architecture.md): Multi-agent design, sequence diagrams, and vector memory model.
 - [Security & Guardrails](docs/security-guardrails.md): Namespace protections, command execution filtering, and GitOps policies.
-- [`homelab-mcp` Gateway](packages/mcps/homelab-mcp/README.md): Available tools, scoped search, and IDE integration.
+- [`sector5-mcp` Gateway](packages/mcps/sector5-mcp/README.md): Available tools, scoped search, and IDE integration.
 - [`lyoko` Agent](packages/agents/lyoko/README.md): StateGraph workflows, Alertmanager integration, and Langfuse tracing.
 
 ---
