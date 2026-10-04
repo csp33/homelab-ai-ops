@@ -57,6 +57,8 @@ class LyokoState(TypedDict, total=False):
     session_id: str
     """Observability session the run belongs to (a chat session, or the incident)."""
     chat_id: str
+    message_thread_id: str | None
+    """Telegram forum topic / thread of the originating message, for threaded replies."""
     text: str
     """The operator's message, for ``event_type == "message"``."""
     history_context: str

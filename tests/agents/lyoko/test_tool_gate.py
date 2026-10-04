@@ -147,8 +147,49 @@ async def test_approval_mode_includes_action_summary_and_plan():
     assert res is None
 
 
+@pytest.mark.asyncio
+async def test_approval_request_is_sent_into_the_message_thread():
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from lyoko.application.hitl import ApprovalManager
+    from lyoko.domain.models.chat import ApprovalResponse
+
+    approval_manager = ApprovalManager()
+    chat_manager = AsyncMock()
+
+    gate = _gate(
+        GateMode.APPROVAL,
+        approval_manager=approval_manager,
+        chat_manager=chat_manager,
+        message_thread_id="321",
+    )
+
+    task = asyncio.create_task(gate.authorize("pods_delete", {"name": "x"}))
+    await asyncio.sleep(0.01)
+
+    assert chat_manager.broadcast_approval_request.call_args.kwargs["message_thread_id"] == "321"
+
+    req = chat_manager.broadcast_approval_request.call_args.args[0]
+    approval_manager.resolve_approval(
+        ApprovalResponse(incident_id=req.incident_id, approved=False, user_id="123")
+    )
+    await task
+
+
 def test_matching_is_case_sensitive_so_lookalikes_do_not_slip_through():
     assert not matches_any("PODS_GET", ["pods_get"])
+
+
+def test_make_gate_reads_the_message_thread_from_state():
+    from lyoko.application.nodes.helpers import make_gate
+
+    gate = make_gate(
+        {"event_id": "chat-1", "chat_id": "42", "message_thread_id": "321"},
+        GateMode.APPROVAL,
+    )
+
+    assert gate._message_thread_id == "321"
 
 
 def test_parse_diagnosis_actionable():
