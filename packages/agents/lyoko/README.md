@@ -29,7 +29,7 @@ Every event enters the graph at `route` and takes one of two branches:
 | :--- | :--- |
 | `route` | Alerts always take the incident branch. For a Telegram message, an LLM classifier decides between `chat` (interactive queries/instructions) and the incident branch (reports of broken infrastructure). |
 | `Supervisor` | Coordinates cross-domain operations and plans multi-step actions by calling `ask_<domain>_specialist` tools. Used by chat and by each incident stage. |
-| `Domain Specialists` | Focused experts with scoped toolsets: `K8sSpecialist` (pods, logs, resources, Argo CD CRDs), `NetworkSpecialist` (clients, bandwidth, APs, VLANs), `SmartHomeSpecialist` (entities, devices, automations), `ObservabilitySpecialist` (Prometheus metrics, alerts). Small domains bind every domain tool; large domains keep domain-locked discovery. |
+| `Domain Specialists` | Focused experts with scoped toolsets: `K8sSpecialist` (pods, logs, resources, Argo CD CRDs), `NetworkSpecialist` (clients, bandwidth, APs, VLANs), `SmartHomeSpecialist` (entities, devices, automations), `ObservabilitySpecialist` (Prometheus metrics, alerts). Each specialist is locked to its domain and uses the shared discovery trio (`gateway_get_domain_tools` → `gateway_call_tool`), whose catalog carries every tool's argument schema. |
 | `diagnose` | Supervisor-led, read-only investigation across specialists. Returns root cause, whether it is auto-fixable, and a remediation plan. |
 | `remediate` | Supervisor-led execution of the plan. State-changing specialist tool calls are gated by the `ToolGate` and need operator approval via Telegram inline buttons. |
 | `verify` | Supervisor-led, read-only check after a stabilization window that the issue has cleared. |

@@ -35,16 +35,18 @@ class MCPClientInterface(ABC):
 
         Every specialist gets the same domain-locked discovery trio (discover the domain
         catalog, read one tool schema, execute through the guarded call tool), so it can never
-        reach another upstream.
+        reach another upstream. The domain list already carries each tool's argument schema, so
+        the schema round-trip is only a fallback when a call is rejected.
         """
 
     @abstractmethod
     async def get_domain_catalog(self, domain: str) -> list[Any]:
-        """Return the full lean tool index (name, description, upstream) for one domain.
+        """Return the full tool index (name, description, upstream, parameters) for one domain.
 
         Follows the gateway's pagination to return every tool. Used to inject the domain's tool
-        list into a specialist prompt. Raises on gateway failure instead of returning an empty
-        list, so a broken gateway is never mistaken for an empty domain.
+        list, with each tool's exact argument names, into a specialist prompt. Raises on gateway
+        failure instead of returning an empty list, so a broken gateway is never mistaken for an
+        empty domain.
         """
 
     @abstractmethod

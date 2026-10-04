@@ -58,6 +58,14 @@ class MCPGatewayService:
         """Retrieve all allowed tools belonging to a specific upstream domain."""
         return await self.registry.get_domain_tools(domain)
 
+    async def get_tool_definition(self, name: str) -> ToolDefinition | None:
+        """Return one tool's definition (with its parameter schema) by name, or None."""
+        base_name = name.split(".", 1)[1] if "." in name else name
+        for tool in await self.discover_tools():
+            if tool.name in (name, base_name):
+                return tool
+        return None
+
     def _resolve_tool_routing(self, name: str) -> tuple[str, UpstreamMCPInterface] | None:
         """Resolve a tool name to its registered upstream handler."""
         return self.registry.resolve_tool_routing(name)

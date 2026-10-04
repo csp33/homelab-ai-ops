@@ -32,7 +32,17 @@ async def test_domain_specialist_run_executes_with_scoped_domain():
     mock_mcp = MagicMock(spec=MCPClientInterface)
     mock_mcp.get_domain_langchain_tools = AsyncMock(return_value=["mock_tool_1", "mock_tool_2"])
     mock_mcp.get_domain_catalog = AsyncMock(
-        return_value=[{"name": "unifi_list_clients", "description": "List network clients"}]
+        return_value=[
+            {
+                "name": "unifi_list_clients",
+                "description": "List network clients",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"network": {"type": "string"}, "limit": {"type": "integer"}},
+                    "required": ["network"],
+                },
+            }
+        ]
     )
 
     agent = DomainSpecialistAgent(
@@ -54,6 +64,6 @@ async def test_domain_specialist_run_executes_with_scoped_domain():
     assert call_kwargs["prompt"] == "Top bandwidth consumers"
     assert call_kwargs["system_prompt"].startswith(NETWORK_SPECIALIST_PROMPT)
     assert "AVAILABLE TOOLS IN YOUR DOMAIN" in call_kwargs["system_prompt"]
-    assert "unifi_list_clients" in call_kwargs["system_prompt"]
+    assert "unifi_list_clients(network, limit?)" in call_kwargs["system_prompt"]
     assert "specialist:unifi" in call_kwargs["tags"]
     assert call_kwargs["tools"] == ["mock_tool_1", "mock_tool_2"]

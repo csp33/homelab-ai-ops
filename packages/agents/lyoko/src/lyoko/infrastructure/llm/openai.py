@@ -262,8 +262,8 @@ class OpenAILLMAdapter(LLMClientInterface):
                                 if repeated_error_count >= 1 or consecutive_tool_errors >= 2:
                                     output_str += (
                                         "\n\n[System Note: This tool keeps failing. Do not retry more "
-                                        "variants. Read its schema with gateway_get_tool_schema and supply "
-                                        "the missing or invalid argument, or switch to a different tool. "
+                                        "variants. Read the tool schema with gateway_get_tool_schema and "
+                                        "supply the exact arguments it requires, then retry once. "
                                         "If the failure is a permissions error, report it instead of "
                                         "retrying.]"
                                     )

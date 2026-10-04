@@ -10,6 +10,19 @@ from lyoko.domain.interfaces.mcp import MCPClientInterface
 logger = logging.getLogger("lyoko.specialists")
 
 
+def _format_signature(name: str, parameters: Any) -> str:
+    """Render a compact call signature (name + argument names, optional marked with ?)."""
+    if not isinstance(parameters, dict):
+        return f"{name}()"
+    properties = parameters.get("properties")
+    if not isinstance(properties, dict) or not properties:
+        return f"{name}()"
+    required = parameters.get("required")
+    required = set(required) if isinstance(required, list) else set()
+    args = [arg if arg in required else f"{arg}?" for arg in properties]
+    return f"{name}({', '.join(args)})"
+
+
 def _format_catalog(catalog: list[Any]) -> str:
     """Render a domain tool index as a prompt section, or an empty string when unavailable."""
     lines: list[str] = []
@@ -19,15 +32,18 @@ def _format_catalog(catalog: list[Any]) -> str:
         name = entry.get("name")
         if not name:
             continue
+        signature = _format_signature(str(name), entry.get("parameters"))
         description = str(entry.get("description") or "").strip()
-        lines.append(f"- {name}: {description}" if description else f"- {name}")
+        lines.append(f"- {signature}: {description}" if description else f"- {signature}")
     if not lines:
         return ""
     body = "\n".join(lines)
     return (
         "--- AVAILABLE TOOLS IN YOUR DOMAIN ---\n"
-        "Call them by exact name with `gateway_call_tool`; use `gateway_get_tool_schema` for "
-        "their arguments.\n"
+        "Call them by exact name with `gateway_call_tool(tool_name, arguments)`. The signature "
+        "after each name shows its exact argument names ('?' = optional). If a call is rejected "
+        "for its arguments, read the tool schema again with `gateway_get_tool_schema` and retry "
+        "once.\n"
         f"{body}\n"
         "---------------------------------------"
     )

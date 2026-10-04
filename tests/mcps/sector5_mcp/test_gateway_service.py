@@ -151,7 +151,7 @@ async def test_gateway_fastmcp_tools_and_truncation(mock_auth):
     )
     mcp = create_gateway_mcp_server(gateway)
 
-    # 1. gateway_get_domain_tools returns a paginated lean index for one domain
+    # 1. gateway_get_domain_tools returns a paginated index with argument schemas
     domain_res = await mcp.call_tool("gateway_get_domain_tools", {"domain": "homeassistant"})
     assert not domain_res.is_error
     index = domain_res.structured_content.get("result", domain_res.structured_content)
@@ -159,7 +159,9 @@ async def test_gateway_fastmcp_tools_and_truncation(mock_auth):
     assert index["has_more"] is False
     by_name = {t["name"]: t for t in index["tools"]}
     assert set(by_name) == {"ha_manage_lights", "ha_get_climate"}
-    assert "parameters" not in by_name["ha_manage_lights"]  # Lean index
+    assert by_name["ha_manage_lights"]["parameters"]["properties"]["entity_id"] == {
+        "type": "string"
+    }  # Argument schema always travels with the list
     assert (
         by_name["ha_manage_lights"]["description"]
         == "Turn on/off and configure lighting brightness and rgb colors."
@@ -271,3 +273,47 @@ async def test_gateway_domain_tools_and_aliases(mock_auth):
     gitops_tools = await gateway.get_domain_tools("gitops")
     assert [t.name for t in gitops_tools] == ["k8s_resources_get"]
     assert gitops_tools == await gateway.get_domain_tools("kubernetes")
+
+
+@pytest.mark.asyncio
+async def test_call_rejected_for_arguments_returns_the_tool_schema(mock_auth):
+    """A 422-style argument error must carry the correct schema so the agent can self-correct."""
+    from sector5_mcp.infrastructure.mcp.server import create_gateway_mcp_server
+
+    mock_ha = MagicMock(spec=UpstreamMCPInterface)
+    mock_ha.list_tools = AsyncMock(
+        return_value=[
+            ToolDefinition(
+                name="ha_manage_lights",
+                description="Manage lights",
+                parameters={
+                    "type": "object",
+                    "properties": {"entity_id": {"type": "string"}},
+                    "required": ["entity_id"],
+                },
+                upstream_type=UpstreamType.HOME_ASSISTANT,
+            )
+        ]
+    )
+    mock_ha.call_tool = AsyncMock(
+        return_value=ToolResult(
+            status="error",
+            content='unknown argument "query"; valid arguments: entity_id',
+            is_error=True,
+        )
+    )
+    gateway = MCPGatewayService(
+        upstreams={UpstreamType.HOME_ASSISTANT: mock_ha}, auth_port=mock_auth
+    )
+    mcp = create_gateway_mcp_server(gateway)
+
+    res = await mcp.call_tool(
+        "gateway_call_tool",
+        {"tool_name": "ha_manage_lights", "arguments": {"query": "x"}},
+    )
+    data = res.structured_content.get("result", res.structured_content)
+
+    assert data["is_error"] is True
+    assert "unknown argument" in data["content"]
+    assert "entity_id" in data["content"]
+    assert "Retry once" in data["content"]

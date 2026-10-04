@@ -171,7 +171,7 @@ class FastMCPClient(MCPClientInterface):
         """Fetch one page of a domain's tool index from the gateway.
 
         Returns the gateway payload: ``domain``, ``total``, ``limit``, ``offset``, ``has_more``
-        and ``tools`` (lean index entries: name, description, upstream).
+        and ``tools`` (index entries: name, description, upstream, parameters/schema).
 
         Raises:
             MCPGatewayError: if the gateway cannot be used or reports the domain has no tools,
@@ -208,11 +208,11 @@ class FastMCPClient(MCPClientInterface):
         domain: str,
         page_size: int = _DOMAIN_PAGE_SIZE,
     ) -> list[dict[str, Any]]:
-        """Fetch the full lean tool index for one upstream domain, following pagination.
+        """Fetch the full tool index for one upstream domain, following pagination.
 
-        Used to inject a domain's tool list into a specialist prompt. Raises on gateway failure
-        instead of returning an empty list, so a broken gateway is never mistaken for an empty
-        domain.
+        Used to inject a domain's tool list, with each tool's exact argument names, into a
+        specialist prompt. Raises on gateway failure instead of returning an empty list, so a
+        broken gateway is never mistaken for an empty domain.
         """
         tools: list[dict[str, Any]] = []
         offset = 0
@@ -322,9 +322,9 @@ class FastMCPClient(MCPClientInterface):
     ) -> list[Any]:
         """Return the domain-locked discovery trio for a specialist agent.
 
-        Every specialist uses the same mechanism: discover its own domain catalog, read a tool
-        schema, and execute through the single guarded ``gateway_call_tool``. The specialist
-        can never reach another upstream.
+        The specialist discovers its own domain catalog (which already carries each tool's
+        argument schema), reads a schema when a call is rejected, and executes through the single
+        guarded ``gateway_call_tool``. It can never reach another upstream.
         """
         return self._domain_discovery_tools(domain, authorizer)
 
