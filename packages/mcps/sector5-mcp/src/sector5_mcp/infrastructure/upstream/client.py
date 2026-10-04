@@ -15,6 +15,23 @@ from sector5_mcp.domain.models.upstream import ToolDefinition, ToolResult, Upstr
 logger = logging.getLogger("sector5_mcp.upstream_client")
 
 
+def _tool_annotations(tool: Any) -> dict[str, Any]:
+    """Normalize an MCP tool's optional annotations into a plain dict.
+
+    The MCP SDK models annotations (e.g. ``readOnlyHint``) as a Pydantic object; older or
+    third-party servers may send a plain dict. Either way the upstream's hint is preserved so it
+    can be propagated to the gateway catalog and the agent's tool gate.
+    """
+    annotations = getattr(tool, "annotations", None)
+    if annotations is None:
+        return {}
+    if isinstance(annotations, dict):
+        return annotations
+    if hasattr(annotations, "model_dump"):
+        return annotations.model_dump(exclude_none=True, by_alias=True)
+    return {}
+
+
 class ProcessUpstreamClient(UpstreamMCPInterface):
     """Client that communicates with an upstream MCP server via a persistent stdio sub-process."""
 
@@ -105,6 +122,7 @@ class ProcessUpstreamClient(UpstreamMCPInterface):
                         description=tool.description or "",
                         parameters=getattr(tool, "input_schema", {}),
                         upstream_type=self.upstream_type,
+                        annotations=_tool_annotations(tool),
                     )
                 )
             return tool_definitions

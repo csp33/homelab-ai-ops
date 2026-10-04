@@ -59,3 +59,13 @@ class MCPClientInterface(ABC):
             MCPGatewayUnreachableError: the gateway could not be reached.
             MCPGatewayError: any other unexpected gateway failure.
         """
+
+    @abstractmethod
+    def is_read_only(self, tool_name: str) -> bool | None:
+        """Return the upstream's explicit read-only hint for a tool, or ``None`` when unknown.
+
+        Implementations cache the hints carried by a domain catalog or a tool schema. ``None``
+        (no catalog loaded yet, or the upstream declared nothing) tells the tool gate to fall back
+        to its name-based policy. An explicit ``False`` means the upstream says the tool may change
+        state and must not be overridden by a name pattern.
+        """

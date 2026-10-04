@@ -94,6 +94,45 @@ async def test_list_tools_reads_input_schema():
 
 
 @pytest.mark.asyncio
+async def test_list_tools_preserves_upstream_annotations():
+    """The upstream's readOnlyHint must survive discovery so the agent gate can honor it."""
+    from mcp.types import ToolAnnotations
+
+    client = ProcessUpstreamClient(command="grafana", upstream_type=UpstreamType.GRAFANA)
+
+    annotated = SimpleNamespace(
+        name="query_prometheus",
+        description="Query Prometheus",
+        input_schema={"type": "object"},
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    )
+    plain_dict = SimpleNamespace(
+        name="legacy",
+        description="Dict annotations",
+        input_schema={},
+        annotations={"readOnlyHint": False},
+    )
+
+    mock_session = AsyncMock()
+    mock_session.list_tools.return_value = SimpleNamespace(tools=[annotated, plain_dict])
+
+    with (
+        patch("sector5_mcp.infrastructure.upstream.client.stdio_client") as mock_stdio,
+        patch("sector5_mcp.infrastructure.upstream.client.ClientSession") as mock_session_cls,
+    ):
+        mock_stdio.return_value.__aenter__.return_value = (MagicMock(), MagicMock())
+        mock_stdio.return_value.__aexit__.return_value = None
+        mock_session_cls.return_value.__aenter__.return_value = mock_session
+        mock_session_cls.return_value.__aexit__.return_value = None
+
+        tools = {t.name: t for t in await client.list_tools()}
+
+    assert tools["query_prometheus"].read_only is True
+    assert tools["query_prometheus"].annotations["readOnlyHint"] is True
+    assert tools["legacy"].read_only is False
+
+
+@pytest.mark.asyncio
 async def test_call_tool_handles_is_error_and_text_content():
     client = ProcessUpstreamClient(
         command="k8s",

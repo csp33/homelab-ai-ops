@@ -15,6 +15,7 @@ DEFAULT_READ_ONLY_TOOLS: tuple[str, ...] = (
     "get_*",
     "list_*",
     "search_*",
+    "query_*",
     "*_get",
     "*_get_*",
     "*_list",
@@ -24,6 +25,8 @@ DEFAULT_READ_ONLY_TOOLS: tuple[str, ...] = (
     "*_top",
     "*_search",
     "*_search_*",
+    "*_query",
+    "*_query_*",
     "*_stats_summary",
     "*_tool_index",
 )

@@ -85,6 +85,8 @@ def register_gateway_tools(mcp: FastMCP, service: MCPGatewayService) -> None:
             "description": definition.description,
             "upstream": str(definition.upstream_type),
             "parameters": definition.parameters,
+            "annotations": definition.annotations,
+            "read_only_hint": definition.read_only,
         }
 
     @mcp.tool()

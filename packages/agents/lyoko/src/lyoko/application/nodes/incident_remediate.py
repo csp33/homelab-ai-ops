@@ -68,6 +68,7 @@ def create_remediate_node(
             approval_manager=approval_manager,
             chat_manager=chat_manager,
             plan=state.get("plan", ""),
+            mcp_client=mcp_client,
         )
         error: str | None = None
         summary = ""

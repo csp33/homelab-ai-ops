@@ -73,6 +73,7 @@ class UnifiUpstreamClient(ProcessUpstreamClient):
                                     description=sub_tool.get("description", ""),
                                     parameters=_extract_parameters(sub_tool),
                                     upstream_type=self.upstream_type,
+                                    annotations=sub_tool.get("annotations") or {},
                                 )
                             )
         except Exception as exc:

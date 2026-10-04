@@ -37,6 +37,8 @@ def _gate(mode: GateMode = GateMode.READ_ONLY, **kwargs) -> ToolGate:
         "gateway_get_domain_tools",
         "get_file_contents",
         "list_commits",
+        "grafana_query_prometheus",
+        "query_loki_logs",
     ],
 )
 def test_default_read_only_patterns_cover_inspection_tools(tool):
@@ -82,6 +84,51 @@ async def test_read_only_mode_refuses_everything_else_even_if_auto_approved():
     assert refusal is not None
     assert refusal.startswith("Refused:")
     assert [r.outcome.value for r in gate.records] == ["refused"]
+
+
+@pytest.mark.asyncio
+async def test_upstream_read_only_hint_allows_a_tool_name_patterns_would_gate():
+    """grafana_query_prometheus matches no read-only pattern; the upstream hint must unblock it."""
+    gate = _gate(
+        GateMode.READ_ONLY,
+        readonly_lookup=lambda name: True if name == "grafana_query_prometheus" else None,
+    )
+
+    assert await gate.authorize("grafana_query_prometheus", {"expr": "up"}) is None
+    assert gate.records == []
+
+
+@pytest.mark.asyncio
+async def test_upstream_non_read_only_hint_overrides_a_read_only_name_pattern():
+    gate = _gate(
+        GateMode.READ_ONLY,
+        readonly_lookup=lambda name: False if name == "pods_get" else None,
+    )
+
+    refusal = await gate.authorize("pods_get", {})
+
+    assert refusal is not None
+    assert refusal.startswith("Refused:")
+    assert [r.outcome.value for r in gate.records] == ["refused"]
+
+
+@pytest.mark.asyncio
+async def test_unknown_hint_falls_back_to_the_name_patterns():
+    gate = _gate(GateMode.READ_ONLY, readonly_lookup=lambda name: None)
+
+    assert await gate.authorize("pods_get", {}) is None
+
+
+@pytest.mark.asyncio
+async def test_upstream_non_read_only_hint_still_honors_auto_approval():
+    gate = _gate(
+        GateMode.APPROVAL,
+        auto_approved_patterns=["resources_scale"],
+        readonly_lookup=lambda name: False if name == "resources_scale" else None,
+    )
+
+    assert await gate.authorize("resources_scale", {"replicas": 2}) is None
+    assert [r.outcome.value for r in gate.records] == ["auto_approved"]
 
 
 @pytest.mark.asyncio

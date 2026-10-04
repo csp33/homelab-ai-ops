@@ -395,3 +395,77 @@ async def test_call_tool_bounds_the_gateway_call_with_a_timeout():
 
     assert _RecordingClient.seen["name"] == "gateway_call_tool"
     assert _RecordingClient.seen["timeout"] == 12.0
+
+
+def test_is_read_only_is_unknown_before_any_catalog_is_loaded():
+    client = FastMCPClient(server_url="http://x/mcp", token="")
+    assert client.is_read_only("grafana_query_prometheus") is None
+
+
+def test_remembered_readonly_hints_are_tri_state_and_namespace_aware():
+    client = FastMCPClient(server_url="http://x/mcp", token="")
+    client._remember_readonly_hints(
+        [
+            {"name": "grafana_query_prometheus", "read_only_hint": True},
+            {"name": "resources_scale", "read_only_hint": False},
+            {"name": "pods_list"},
+        ]
+    )
+
+    assert client.is_read_only("grafana_query_prometheus") is True
+    assert client.is_read_only("resources_scale") is False
+    assert client.is_read_only("pods_list") is None
+    assert client.is_read_only("grafana.grafana_query_prometheus") is True
+
+
+class _PayloadClient:
+    """Stand-in for fastmcp.Client returning a fixed payload for any call."""
+
+    payload: dict = {}
+
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        pass
+
+    async def __aenter__(self) -> "_PayloadClient":
+        return self
+
+    async def __aexit__(self, *_exc: object) -> bool:
+        return False
+
+    async def call_tool(self, name: str, arguments: dict, *, timeout: object = None) -> object:
+        return _ResultForTimeout(_PayloadClient.payload)
+
+
+@pytest.mark.asyncio
+async def test_domain_catalog_remembers_readonly_hints():
+    client = FastMCPClient(server_url="http://x/mcp", token="")
+    _PayloadClient.payload = {
+        "domain": "grafana",
+        "total": 2,
+        "limit": 50,
+        "offset": 0,
+        "has_more": False,
+        "tools": [
+            {"name": "grafana_query_prometheus", "read_only_hint": True},
+            {"name": "grafana_update_dashboard", "read_only_hint": False},
+        ],
+    }
+    with patch("lyoko.infrastructure.mcp.client.Client", _PayloadClient):
+        await client.get_domain_tools_page("grafana")
+
+    assert client.is_read_only("grafana_query_prometheus") is True
+    assert client.is_read_only("grafana_update_dashboard") is False
+
+
+@pytest.mark.asyncio
+async def test_tool_schema_remembers_the_readonly_hint():
+    client = FastMCPClient(server_url="http://x/mcp", token="")
+    _PayloadClient.payload = {
+        "name": "grafana_query_prometheus",
+        "description": "Query Prometheus",
+        "annotations": {"readOnlyHint": True},
+    }
+    with patch("lyoko.infrastructure.mcp.client.Client", _PayloadClient):
+        await client.get_tool_schema("grafana_query_prometheus")
+
+    assert client.is_read_only("grafana_query_prometheus") is True

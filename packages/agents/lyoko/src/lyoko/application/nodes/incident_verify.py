@@ -46,6 +46,7 @@ def create_verify_node(
             GateMode.READ_ONLY,
             approval_manager=approval_manager,
             chat_manager=chat_manager,
+            mcp_client=mcp_client,
         )
         changes = "\n".join(f"- {describe_call(a)} {a['arguments']}" for a in executed)
         try:
