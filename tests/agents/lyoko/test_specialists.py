@@ -38,6 +38,12 @@ async def test_all_specialists_carry_filtering_discipline():
 
 
 @pytest.mark.asyncio
+async def test_network_specialist_knows_essid_is_the_wifi_field():
+    assert "essid" in NETWORK_SPECIALIST_PROMPT
+    assert "not `ssid`" in NETWORK_SPECIALIST_PROMPT
+
+
+@pytest.mark.asyncio
 async def test_domain_specialist_run_executes_with_scoped_domain():
     mock_llm = MagicMock(spec=LLMClientInterface)
     mock_llm.chat = AsyncMock(return_value="Top client: humberto (435 GB)")
