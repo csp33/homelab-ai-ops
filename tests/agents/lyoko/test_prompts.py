@@ -53,3 +53,12 @@ def test_supervisor_prompt_guards_against_hijack_and_domain_substitution():
 
 def test_smarthome_prompt_forbids_invented_tool_names():
     assert "Never invent or guess a tool name" in SMARTHOME_SPECIALIST_PROMPT
+
+
+def test_observability_prompt_requires_datasource_uid():
+    assert "datasourceUid" in OBSERVABILITY_SPECIALIST_PROMPT
+    assert "datasource or UID error" in OBSERVABILITY_SPECIALIST_PROMPT
+
+
+def test_supervisor_routes_hardware_metrics_to_grafana():
+    assert "node-exporter" in SUPERVISOR_SYSTEM_PROMPT
