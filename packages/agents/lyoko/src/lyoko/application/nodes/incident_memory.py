@@ -4,14 +4,16 @@ import logging
 from typing import Any
 
 from lyoko.config import settings
+from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
+from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
 
 logger = logging.getLogger("lyoko.workflow.incident.memory")
 
 
 async def retrieve_incident_lessons(
     state: dict[str, Any],
-    memory_repository: Any,
-    embeddings_service: Any,
+    memory_repository: MemoryRepositoryInterface | None,
+    embeddings_service: EmbeddingsServiceInterface | None,
 ) -> tuple[list[dict[str, Any]], str]:
     """Retrieve relevant operator feedback and past experiences from semantic memory."""
     if memory_repository is None:

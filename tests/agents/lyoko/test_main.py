@@ -3,13 +3,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from lyoko.main import (
-    HealthEndpointFilter,
-    build_domain_specialists,
-    build_supervisor,
-    create_app,
-    lifespan,
-)
+from lyoko.composition import build_domain_specialists, build_supervisor
+from lyoko.logging_config import HealthEndpointFilter
+from lyoko.main import create_app, lifespan
 
 
 @pytest.mark.asyncio

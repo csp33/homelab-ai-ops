@@ -6,8 +6,6 @@ from typing import Any
 
 import httpx
 from fastmcp import Client
-from langchain_core.runnables import RunnableLambda
-from langchain_core.tools import StructuredTool, ToolException
 from lyoko.config import settings
 from lyoko.domain.exceptions.mcp import (
     MCPAuthenticationError,
@@ -16,6 +14,7 @@ from lyoko.domain.exceptions.mcp import (
     MCPGatewayUnreachableError,
 )
 from lyoko.domain.interfaces.mcp import MCPClientInterface, ToolAuthorizer
+from lyoko.infrastructure.mcp.langchain_tools import build_domain_tools, build_gateway_tools
 
 logger = logging.getLogger("lyoko.infrastructure.mcp.client")
 
@@ -176,7 +175,7 @@ class FastMCPClient(MCPClientInterface):
         """Fetch one page of a domain's tool index from the gateway.
 
         Returns the gateway payload: ``domain``, ``total``, ``limit``, ``offset``, ``has_more``
-        and ``tools`` (index entries: name, description, upstream, parameters/schema).
+        and ``tools`` (lean index entries: name, description, upstream).
 
         Raises:
             MCPGatewayError: if the gateway cannot be used or reports the domain has no tools,
@@ -214,11 +213,11 @@ class FastMCPClient(MCPClientInterface):
         domain: str,
         page_size: int = _DOMAIN_PAGE_SIZE,
     ) -> list[dict[str, Any]]:
-        """Fetch the full tool index for one upstream domain, following pagination.
+        """Fetch the full lean tool index for one upstream domain, following pagination.
 
-        Used to inject a domain's tool list, with each tool's exact argument names, into a
-        specialist prompt. Raises on gateway failure instead of returning an empty list, so a
-        broken gateway is never mistaken for an empty domain.
+        Used to inject a domain's tool list into a specialist prompt. Raises on gateway failure
+        instead of returning an empty list, so a broken gateway is never mistaken for an empty
+        domain.
         """
         tools: list[dict[str, Any]] = []
         offset = 0
@@ -249,82 +248,6 @@ class FastMCPClient(MCPClientInterface):
         except Exception as exc:
             raise await self._to_gateway_error(f"get schema of '{tool_name}'", exc) from exc
 
-    def _authorized_call(
-        self,
-        tool_name: str,
-        authorizer: ToolAuthorizer | None,
-    ):
-        async def _run(arguments: dict[str, Any]) -> str:
-            if authorizer is not None:
-                refusal = await authorizer(tool_name, arguments)
-                if refusal:
-                    raise ToolException(refusal)
-            result = await self.call_tool(tool_name, arguments)
-            if isinstance(result, dict):
-                if result.get("status") == "failed":
-                    raise ToolException(str(result.get("error", "unknown MCP gateway error")))
-                if result.get("status") == "success":
-                    content = result.get("content")
-                    if content is None or content == "" or content == [] or content == {}:
-                        result = dict(result)
-                        result["content"] = "No resources found or empty result."
-            elif result is None or result == "":
-                result = "No resources found or empty result."
-            return str(result)
-
-        return _run
-
-    def _domain_discovery_tools(
-        self,
-        domain: str,
-        authorizer: ToolAuthorizer | None,
-    ) -> list[Any]:
-        """Domain-locked trio: discover the domain catalog, read a schema, execute a tool."""
-
-        async def _list_domain_tools(limit: int = 50, offset: int = 0) -> str:
-            try:
-                return str(await self.get_domain_tools_page(domain, limit=limit, offset=offset))
-            except MCPGatewayError as exc:
-                raise ToolException(str(exc)) from exc
-
-        async def _get_schema(tool_name: str) -> str:
-            try:
-                return str(await self.get_tool_schema(tool_name))
-            except MCPGatewayError as exc:
-                raise ToolException(str(exc)) from exc
-
-        async def _call_tool(tool_name: str, arguments: dict[str, Any]) -> str:
-            return await RunnableLambda(
-                self._authorized_call(tool_name, authorizer),
-                name=f"mcp:{tool_name}",
-            ).ainvoke(arguments)
-
-        return [
-            StructuredTool.from_function(
-                coroutine=_list_domain_tools,
-                name="gateway_get_domain_tools",
-                description=(
-                    f"List the tools of the '{domain}' domain with a one-line description. "
-                    "Paginate with 'limit' (max 100) and 'offset'; follow 'has_more'. Call this to "
-                    "discover what you can do, then gateway_get_tool_schema for the arguments and "
-                    "gateway_call_tool to run it. Do not invent tools outside this list."
-                ),
-                handle_tool_error=True,
-            ),
-            StructuredTool.from_function(
-                coroutine=_get_schema,
-                name="gateway_get_tool_schema",
-                description=(f"Get the parameter schema of one '{domain}' tool before calling it."),
-                handle_tool_error=True,
-            ),
-            StructuredTool.from_function(
-                coroutine=_call_tool,
-                name="gateway_call_tool",
-                description=f"Execute a '{domain}' domain tool by exact name with arguments.",
-                handle_tool_error=True,
-            ),
-        ]
-
     async def get_domain_langchain_tools(
         self,
         domain: str,
@@ -332,11 +255,11 @@ class FastMCPClient(MCPClientInterface):
     ) -> list[Any]:
         """Return the domain-locked discovery trio for a specialist agent.
 
-        The specialist discovers its own domain catalog (which already carries each tool's
-        argument schema), reads a schema when a call is rejected, and executes through the single
-        guarded ``gateway_call_tool``. It can never reach another upstream.
+        Every specialist uses the same mechanism: discover its own domain catalog, read a tool
+        schema, and execute through the single guarded ``gateway_call_tool``. The specialist
+        can never reach another upstream.
         """
-        return self._domain_discovery_tools(domain, authorizer)
+        return build_domain_tools(self, domain, authorizer)
 
     def get_langchain_tools(self, authorizer: ToolAuthorizer | None = None) -> list[Any]:
         """Return LangChain tools to discover and execute homelab tools across domains.
@@ -348,68 +271,4 @@ class FastMCPClient(MCPClientInterface):
         When ``authorizer`` is given it is consulted before every ``gateway_call_tool``
         invocation; a refusal is raised as a ``ToolException`` and the tool never runs.
         """
-
-        async def _gateway_get_domain_tools(domain: str, limit: int = 50, offset: int = 0) -> str:
-            """List one page of the tools of one upstream domain.
-
-            Args:
-                domain: Upstream domain, e.g. 'kubernetes', 'unifi', 'homeassistant', 'grafana', 'github', 'telegram'.
-                limit: Maximum tools to return in this page (max 100).
-                offset: Number of tools to skip for pagination.
-            """
-            try:
-                return str(await self.get_domain_tools_page(domain, limit=limit, offset=offset))
-            except MCPGatewayError as exc:
-                raise ToolException(str(exc)) from exc
-
-        async def _gateway_get_tool_schema(tool_name: str) -> str:
-            """Get the full parameter schema and description of one tool.
-
-            Args:
-                tool_name: Exact name of the tool to inspect.
-            """
-            try:
-                return str(await self.get_tool_schema(tool_name))
-            except MCPGatewayError as exc:
-                raise ToolException(str(exc)) from exc
-
-        async def _gateway_call_tool(tool_name: str, arguments: dict[str, Any]) -> str:
-            """Execute any operational homelab tool by its exact name with arguments.
-
-            Args:
-                tool_name: Exact name of the tool to invoke.
-                arguments: Dictionary of parameters matching the tool schema.
-            """
-            # Every call goes through one generic tool, so name the nested run after the real
-            # gateway tool. Traces then show ``mcp:pods_log`` instead of an anonymous call.
-            return await RunnableLambda(
-                self._authorized_call(tool_name, authorizer),
-                name=f"mcp:{tool_name}",
-            ).ainvoke(arguments)
-
-        domain_tool = StructuredTool.from_function(
-            coroutine=_gateway_get_domain_tools,
-            name="gateway_get_domain_tools",
-            description=(
-                "List the tools available in one upstream domain (kubernetes, unifi, "
-                "homeassistant, grafana, github, telegram). Use it to discover capabilities, "
-                "then gateway_get_tool_schema and gateway_call_tool."
-            ),
-            handle_tool_error=True,
-        )
-
-        schema_tool = StructuredTool.from_function(
-            coroutine=_gateway_get_tool_schema,
-            name="gateway_get_tool_schema",
-            description="Get the exact parameter schema of a specific tool before calling it with gateway_call_tool.",
-            handle_tool_error=True,
-        )
-
-        call_tool = StructuredTool.from_function(
-            coroutine=_gateway_call_tool,
-            name="gateway_call_tool",
-            description="Execute any operational homelab tool by name with arguments to fetch live status, manage devices, query metrics, or perform operations.",
-            handle_tool_error=True,
-        )
-
-        return [domain_tool, schema_tool, call_tool]
+        return build_gateway_tools(self, authorizer)

@@ -4,11 +4,12 @@ import logging
 
 from langchain_openai import OpenAIEmbeddings
 from lyoko.config import settings
+from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
 
 logger = logging.getLogger("lyoko.embeddings")
 
 
-class EmbeddingsService:
+class EmbeddingsService(EmbeddingsServiceInterface):
     """Service to compute dense vector embeddings for incident patterns and operator feedback."""
 
     def __init__(self, api_key: str | None = None, model: str = "text-embedding-3-small") -> None:

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
 from lyoko.domain.models.memory import MemoryEntry, MemoryQueryResult
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
@@ -12,7 +13,7 @@ from psycopg_pool import AsyncConnectionPool
 logger = logging.getLogger("lyoko.db.memory")
 
 
-class PostgresMemoryRepository:
+class PostgresMemoryRepository(MemoryRepositoryInterface):
     """Repository managing persistent semantic memory and operator feedback."""
 
     def __init__(self, pool: AsyncConnectionPool) -> None:

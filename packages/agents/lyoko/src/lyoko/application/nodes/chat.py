@@ -15,7 +15,9 @@ from lyoko.application.nodes.helpers import (
 )
 from lyoko.application.tool_gate import GateMode
 from lyoko.config import settings
+from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
 from lyoko.domain.interfaces.llm import LLMClientInterface
+from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
 
 logger = logging.getLogger("lyoko.workflow.chat")
 
@@ -26,8 +28,8 @@ def create_chat_node(
     supervisor: Any = None,
     approval_manager: ApprovalManager | None = None,
     chat_manager: ChatManager | None = None,
-    memory_repository: Any = None,
-    embeddings_service: Any = None,
+    memory_repository: MemoryRepositoryInterface | None = None,
+    embeddings_service: EmbeddingsServiceInterface | None = None,
 ) -> Callable[[dict[str, Any], RunnableConfig], Any]:
     """Factory creating the chat node handler with injected dependencies."""
 
