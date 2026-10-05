@@ -84,6 +84,13 @@ class TelegramOutboundMixin:
                     ),
                     context="send HTML message",
                 )
+                logger.info(
+                    "send_message (HTML) chat=%s reply_to=%s thread=%s -> message_id=%s.",
+                    target,
+                    msg_id,
+                    thread_id,
+                    getattr(sent, "message_id", None),
+                )
                 return _to_sent_message(sent, str(target))
             except Exception as exc:
                 logger.warning(
@@ -113,6 +120,13 @@ class TelegramOutboundMixin:
                 ),
                 context="send message",
             )
+        logger.info(
+            "send_message (plain) chat=%s reply_to=%s thread=%s -> message_id=%s.",
+            target,
+            msg_id,
+            thread_id,
+            getattr(sent, "message_id", None),
+        )
         return _to_sent_message(sent, str(target))
 
     async def edit_message(

@@ -4,6 +4,7 @@ Sends a handler's reply back to the originating chat, redirecting to the linked 
 for channel posts and degrading from HTML to plain text when Telegram rejects the markup.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -16,7 +17,53 @@ class TelegramReplyMixin:
     """Deliver replies with discussion-group redirect and HTML fallback."""
 
     discussion_group_id: str | None
+    discussion_mapping_timeout: float
+    discussion_mapping_interval: float
     _channel_to_discussion: dict[tuple[str, int], int]
+
+    async def _await_discussion_mapping(
+        self,
+        chat_id: str,
+        message_id: int,
+        timeout: float | None = None,
+        interval: float | None = None,
+    ) -> bool:
+        """Wait for the automatic forward that links a channel post to its discussion message.
+
+        A channel post and its automatic forward into the linked discussion group arrive as two
+        separate updates, and the post can win the race. Without the mapping the reply cannot be
+        threaded under the alert and lands as a stray message in the group's general topic. Give
+        the forward a bounded moment to land before resolving the reply target.
+        """
+        key = (str(chat_id), int(message_id))
+        if key in self._channel_to_discussion:
+            logger.info(
+                "Discussion mapping already present for channel post %s -> %s.",
+                key,
+                self._channel_to_discussion[key],
+            )
+            return True
+
+        wait = self.discussion_mapping_timeout if timeout is None else timeout
+        step = self.discussion_mapping_interval if interval is None else interval
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + wait
+        while loop.time() < deadline:
+            await asyncio.sleep(step)
+            if key in self._channel_to_discussion:
+                logger.info(
+                    "Discussion mapping arrived for channel post %s -> %s.",
+                    key,
+                    self._channel_to_discussion[key],
+                )
+                return True
+
+        logger.warning(
+            "No discussion message for channel post %s after %.1fs; replying without a thread.",
+            key,
+            wait,
+        )
+        return False
 
     def _resolve_reply_target(
         self,
@@ -63,15 +110,28 @@ class TelegramReplyMixin:
         target_chat_id, target_reply_id, target_thread_id = self._resolve_reply_target(
             msg, chat_id, chat_type, message_thread_id
         )
+        logger.info(
+            "Direct reply fallback: to chat=%s reply_to=%s thread=%s (origin chat=%s type=%s).",
+            target_chat_id,
+            target_reply_id,
+            target_thread_id,
+            chat_id,
+            chat_type,
+        )
 
         if target_chat_id != chat_id:
             try:
-                await self.send_message(
+                sent = await self.send_message(
                     chat_id=target_chat_id,
                     text=reply,
                     reply_to_message_id=target_reply_id,
                     message_thread_id=target_thread_id,
                     parse_mode="HTML",
+                )
+                logger.info(
+                    "Direct reply sent to discussion group %s -> message_id=%s.",
+                    target_chat_id,
+                    getattr(sent, "message_id", None),
                 )
             except Exception as disc_err:
                 logger.warning(
@@ -86,6 +146,7 @@ class TelegramReplyMixin:
                     message_thread_id=message_thread_id,
                     allow_sending_without_reply=True,
                 )
+                logger.info("Direct reply sent as a channel reply for msg %s.", msg.message_id)
         else:
             try:
                 await msg.reply_text(
@@ -95,6 +156,7 @@ class TelegramReplyMixin:
                     message_thread_id=message_thread_id,
                     allow_sending_without_reply=True,
                 )
+                logger.info("Direct reply sent in chat %s for msg %s.", chat_id, msg.message_id)
             except Exception as html_err:
                 logger.warning("Failed to reply with HTML, falling back: %s", html_err)
                 try:
@@ -104,10 +166,21 @@ class TelegramReplyMixin:
                         message_thread_id=message_thread_id,
                         allow_sending_without_reply=True,
                     )
+                    logger.info(
+                        "Direct plain reply sent in chat %s for msg %s.", chat_id, msg.message_id
+                    )
                 except Exception:
-                    await self.send_message(
+                    logger.warning(
+                        "msg.reply_text failed in chat %s; retrying via send_message.", chat_id
+                    )
+                    sent = await self.send_message(
                         chat_id=chat_id,
                         text=reply,
                         reply_to_message_id=msg.message_id,
                         message_thread_id=message_thread_id,
+                    )
+                    logger.info(
+                        "Direct reply sent via send_message in chat %s -> message_id=%s.",
+                        chat_id,
+                        getattr(sent, "message_id", None),
                     )

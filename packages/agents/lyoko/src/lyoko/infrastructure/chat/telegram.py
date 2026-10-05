@@ -89,6 +89,11 @@ class TelegramConnector(
         self.memory_repository = memory_repository
         self.embeddings_service = embeddings_service
 
+        # The channel post and its discussion-group forward can arrive in either order; bound how
+        # long a channel post waits for the forward so its reply threads under the alert.
+        self.discussion_mapping_timeout = 6.0
+        self.discussion_mapping_interval = 0.2
+
         self._channel_to_discussion: dict[tuple[str, int], int] = {}
         self._message_handlers: list[Callable[[IncomingMessage], Awaitable[str | None]]] = []
         self._approval_handlers: list[Callable[[ApprovalResponse], Awaitable[None]]] = []
