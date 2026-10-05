@@ -86,6 +86,11 @@ class TelegramStreamingReply:
         """Return True if message generation was stopped."""
         return self._stopped.is_set()
 
+    @property
+    def disabled(self) -> bool:
+        """Return True when the placeholder could not be created and edits are skipped."""
+        return self._disabled
+
     def _int_or_none(self, value: str | int | None) -> int | None:
         if value is None:
             return None
@@ -119,6 +124,10 @@ class TelegramStreamingReply:
     async def start(self) -> None:
         """Send the placeholder message, threaded to the originating message."""
         if not self.bot or not hasattr(self.bot, "send_message"):
+            logger.warning(
+                "Streaming disabled for chat %s: bot is unavailable or cannot send messages.",
+                self.chat_id,
+            )
             self._disabled = True
             return
         self._started_at = asyncio.get_event_loop().time()
@@ -136,9 +145,21 @@ class TelegramStreamingReply:
             )
             self.message_id = getattr(sent, "message_id", None)
             self._status_task = asyncio.create_task(self._status_loop())
+            logger.info(
+                "Streaming placeholder sent: chat=%s reply_to=%s thread=%s message_id=%s.",
+                self.chat_id,
+                reply_to,
+                thread,
+                self.message_id,
+            )
         except Exception as exc:
             logger.warning(
-                "Telegram streaming placeholder failed for chat %s: %s", self.chat_id, exc
+                "Telegram streaming placeholder failed for chat %s (reply_to=%s thread=%s): %s: %s",
+                self.chat_id,
+                reply_to,
+                thread,
+                type(exc).__name__,
+                exc,
             )
             self._disabled = True
 
@@ -236,7 +257,7 @@ class TelegramStreamingReply:
             return await self._edit(plain, parse_mode=None, reply_markup=None)
 
         try:
-            return await _attempt()
+            result = await _attempt()
         except _FloodControl as flood:
             logger.warning(
                 "Telegram flood control for chat %s; waiting %.0fs before delivering.",
@@ -245,9 +266,16 @@ class TelegramStreamingReply:
             )
             await asyncio.sleep(flood.wait)
             try:
-                return await _attempt()
+                result = await _attempt()
             except _FloodControl:
-                return False
+                result = False
+        if not result:
+            logger.warning(
+                "Streaming edit failed for chat %s message_id=%s (both HTML and plain text).",
+                self.chat_id,
+                self.message_id,
+            )
+        return result
 
     def _done_text(self) -> str:
         """Completed checklist plus a Done marker, kept until the answer replaces it."""
@@ -262,13 +290,27 @@ class TelegramStreamingReply:
         """
         await self._cancel_status()
         if self._disabled or self.message_id is None:
+            logger.warning(
+                "Cannot finalize streaming reply for chat %s: disabled=%s message_id=%s.",
+                self.chat_id,
+                self._disabled,
+                self.message_id,
+            )
             return False
         await self._edit_html_with_plain_fallback(self._done_text())
         if self.finalize_delay_seconds > 0:
             await asyncio.sleep(self.finalize_delay_seconds)
         if self._stopped.is_set():
+            logger.info("Streaming reply for chat %s was stopped before delivery.", self.chat_id)
             return False
-        return await self._edit_html_with_plain_fallback(formatted_text)
+        delivered = await self._edit_html_with_plain_fallback(formatted_text)
+        logger.info(
+            "Streaming reply delivered for chat %s message_id=%s: %s.",
+            self.chat_id,
+            self.message_id,
+            delivered,
+        )
+        return delivered
 
     async def finalize_stopped(self) -> None:
         """Freeze the checklist with a stopped note when the operator pressed stop."""
@@ -284,5 +326,10 @@ class TelegramStreamingReply:
             return
         try:
             await self.bot.delete_message(chat_id=self.chat_id, message_id=self.message_id)
+            logger.info(
+                "Streaming placeholder deleted: chat=%s message_id=%s.",
+                self.chat_id,
+                self.message_id,
+            )
         except Exception as exc:
             logger.debug("Could not delete streaming placeholder in chat %s: %s", self.chat_id, exc)

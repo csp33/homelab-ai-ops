@@ -147,8 +147,32 @@ class TelegramInboundMixin:
             if context and getattr(context, "bot", None)
             else (self._app.bot if self._app else None)
         )
+        # A channel post may reach us before its discussion-group forward; wait for the mapping so
+        # the reply is threaded under the alert instead of landing in the group's general topic.
+        if chat_type == "channel" and self.discussion_group_id:
+            logger.info(
+                "Channel post %s in %s: waiting up to %.1fs for its discussion-group forward.",
+                msg.message_id,
+                chat_id,
+                self.discussion_mapping_timeout,
+            )
+            mapped = await self._await_discussion_mapping(chat_id, msg.message_id)
+            logger.info(
+                "Channel post %s discussion mapping %s.",
+                msg.message_id,
+                "found" if mapped else "NOT found (will reply without a thread)",
+            )
         target_chat_id, target_reply_id, target_thread_id = self._resolve_reply_target(
             msg, chat_id, chat_type, message_thread_id
+        )
+        logger.info(
+            "Reply target: chat=%s reply_to=%s thread=%s (origin chat=%s type=%s msg=%s).",
+            target_chat_id,
+            target_reply_id,
+            target_thread_id,
+            chat_id,
+            chat_type,
+            getattr(msg, "message_id", None),
         )
         streamer = TelegramStreamingReply(
             bot=bot_instance,
@@ -157,6 +181,13 @@ class TelegramInboundMixin:
             message_thread_id=target_thread_id,
         )
         await streamer.start()
+        logger.info(
+            "Streaming placeholder for msg %s: chat=%s message_id=%s disabled=%s.",
+            getattr(msg, "message_id", None),
+            target_chat_id,
+            streamer.message_id,
+            streamer.disabled,
+        )
         streamer_key = (str(target_chat_id), streamer.draft_id)
         self._active_streamers[streamer_key] = streamer
         try:
@@ -221,21 +252,44 @@ class TelegramInboundMixin:
                         reply = await handler(incoming)
 
                     if not reply:
+                        logger.info(
+                            "Handler %s produced no reply for msg %s in chat %s.",
+                            getattr(handler, "__qualname__", handler),
+                            getattr(msg, "message_id", None),
+                            chat_id,
+                        )
                         continue
 
                     answered = True
                     if streamer.is_stopped():
+                        logger.info(
+                            "Streaming reply for msg %s was stopped by the operator.", chat_id
+                        )
                         await streamer.finalize_stopped()
                         return
-                    if not await streamer.finalize(markdown_to_telegram_html(reply)):
+                    finalized = await streamer.finalize(markdown_to_telegram_html(reply))
+                    logger.info(
+                        "Streaming finalize for msg %s in chat %s: %s (placeholder message_id=%s).",
+                        getattr(msg, "message_id", None),
+                        target_chat_id,
+                        "edited in place" if finalized else "FAILED, using direct reply",
+                        streamer.message_id,
+                    )
+                    if not finalized:
                         await self._reply_to_chat(msg, reply, chat_id, chat_type, message_thread_id)
                 except (asyncio.CancelledError, GeneratorExit):
                     logger.info("Message generation cancelled by user in chat %s", chat_id)
                     return
                 except Exception as exc:
-                    logger.error("Error executing message handler: %s", exc)
+                    logger.error("Error executing message handler: %s", exc, exc_info=True)
                     answered = True
                     if not await streamer.finalize(f"⚠️ Error processing request: {exc}"):
+                        logger.warning(
+                            "Streaming finalize of the error notice failed for msg %s in chat %s; "
+                            "using direct reply fallback.",
+                            getattr(msg, "message_id", None),
+                            chat_id,
+                        )
                         with contextlib.suppress(Exception):
                             await msg.reply_text(
                                 f"⚠️ Error processing request: {exc}",
@@ -244,6 +298,12 @@ class TelegramInboundMixin:
                                 allow_sending_without_reply=True,
                             )
             if not answered:
+                logger.info(
+                    "No handler answered msg %s in chat %s; discarding placeholder %s.",
+                    getattr(msg, "message_id", None),
+                    chat_id,
+                    streamer.message_id,
+                )
                 await streamer.discard()
         finally:
             self._active_streamers.pop(streamer_key, None)

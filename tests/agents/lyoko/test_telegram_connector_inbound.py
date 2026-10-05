@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -264,3 +265,93 @@ async def test_telegram_connector_channel_post_redirects_to_discussion_group():
 
     # The placeholder is finalized with the answer appended below the checklist.
     assert bot.edit_message_text.call_args.kwargs["text"].endswith("Reply in thread")
+
+
+@pytest.mark.asyncio
+async def test_channel_post_waits_for_late_discussion_forward_to_thread_reply():
+    """The post and its discussion forward race; a late forward must still thread the reply."""
+    connector = TelegramConnector(
+        bot_token="fake:token",
+        allowed_user_ids=set(),
+        allowed_chat_ids={"-1001234567890", "-1004400196957"},
+        default_chat_id="-1001234567890",
+        discussion_group_id="-1004400196957",
+    )
+    connector.discussion_mapping_interval = 0.01
+    connector.discussion_mapping_timeout = 1.0
+
+    async def handler(msg: IncomingMessage) -> str:
+        return "Reply in thread"
+
+    connector.register_message_handler(handler)
+
+    bot = _mock_bot(message_id=999)
+
+    forward_msg = MagicMock()
+    forward_msg.message_id = 200
+    forward_origin = MagicMock()
+    forward_origin.type = "channel"
+    forward_origin.chat.id = -1001234567890
+    forward_origin.message_id = 50
+    forward_msg.forward_origin = forward_origin
+
+    # The forward lands after the channel post, exactly like the real Telegram race.
+    asyncio.get_event_loop().call_later(0.03, connector._record_channel_forward, forward_msg)
+
+    channel_update = MagicMock()
+    channel_update.message = None
+    channel_update.effective_chat.id = -1001234567890
+    channel_update.effective_chat.type = "channel"
+    channel_update.effective_user = None
+    channel_update.effective_message.message_id = 50
+    channel_update.effective_message.message_thread_id = None
+    channel_update.effective_message.text = "Hello from channel"
+    channel_update.effective_message.is_automatic_forward = False
+    channel_update.effective_message.set_reaction = AsyncMock()
+    channel_update.effective_message.reply_text = AsyncMock()
+
+    await connector._handle_telegram_message(channel_update, _context(bot))
+
+    call_kwargs = bot.send_message.call_args.kwargs
+    assert call_kwargs["chat_id"] == "-1004400196957"
+    assert call_kwargs["reply_to_message_id"] == 200
+    assert call_kwargs["message_thread_id"] == 200
+
+
+@pytest.mark.asyncio
+async def test_channel_post_proceeds_after_mapping_timeout_without_forward():
+    """A channel post with no discussion forward must still be answered, not wait forever."""
+    connector = TelegramConnector(
+        bot_token="fake:token",
+        allowed_user_ids=set(),
+        allowed_chat_ids={"-1001234567890", "-1004400196957"},
+        default_chat_id="-1001234567890",
+        discussion_group_id="-1004400196957",
+    )
+    connector.discussion_mapping_interval = 0.01
+    connector.discussion_mapping_timeout = 0.05
+
+    async def handler(msg: IncomingMessage) -> str:
+        return "Reply in thread"
+
+    connector.register_message_handler(handler)
+
+    bot = _mock_bot(message_id=999)
+
+    channel_update = MagicMock()
+    channel_update.message = None
+    channel_update.effective_chat.id = -1001234567890
+    channel_update.effective_chat.type = "channel"
+    channel_update.effective_user = None
+    channel_update.effective_message.message_id = 50
+    channel_update.effective_message.message_thread_id = None
+    channel_update.effective_message.text = "Hello from channel"
+    channel_update.effective_message.is_automatic_forward = False
+    channel_update.effective_message.set_reaction = AsyncMock()
+    channel_update.effective_message.reply_text = AsyncMock()
+
+    await connector._handle_telegram_message(channel_update, _context(bot))
+
+    call_kwargs = bot.send_message.call_args.kwargs
+    assert call_kwargs["chat_id"] == "-1004400196957"
+    assert call_kwargs["reply_to_message_id"] == 50
