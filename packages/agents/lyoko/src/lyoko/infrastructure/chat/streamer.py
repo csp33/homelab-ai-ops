@@ -14,6 +14,7 @@ import re
 from typing import Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import RetryAfter
 
 logger = logging.getLogger("lyoko.chat.telegram")
 
@@ -21,6 +22,24 @@ INITIAL_STATUS = "Thinking…"
 STOP_CALLBACK_PREFIX = "stop"
 MAX_MESSAGE_LENGTH = 4096
 _TAG_PATTERN = re.compile(r"<[^>]+>")
+# Telegram throttles edits to one message and answers flood control with a RetryAfter delay.
+# Cap the wait so a throttled answer is still delivered instead of being dropped silently.
+_MAX_FLOOD_WAIT_SECONDS = 40.0
+
+
+class _FloodControl(Exception):
+    """Telegram asked us to back off; carries how long to wait before retrying."""
+
+    def __init__(self, wait: float) -> None:
+        super().__init__(f"telegram flood control, retry in {wait:.0f}s")
+        self.wait = wait
+
+
+def _retry_after_seconds(exc: RetryAfter) -> float:
+    """Read the RetryAfter delay as seconds, accepting int or ``timedelta`` (newer PTB)."""
+    retry_after = exc.retry_after
+    total_seconds = getattr(retry_after, "total_seconds", None)
+    return total_seconds() if callable(total_seconds) else float(retry_after)
 
 
 class TelegramStreamingReply:
@@ -32,8 +51,9 @@ class TelegramStreamingReply:
         chat_id: str | int,
         reply_to_message_id: str | int | None = None,
         message_thread_id: str | int | None = None,
-        status_interval_seconds: float = 2.5,
-        finalize_delay_seconds: float = 3.5,
+        status_interval_seconds: float = 4.0,
+        finalize_delay_seconds: float = 1.5,
+        progress_edit_gap_seconds: float = 3.0,
         parse_mode: str = "HTML",
     ) -> None:
         self.bot = bot
@@ -41,6 +61,12 @@ class TelegramStreamingReply:
         self.reply_to_message_id = reply_to_message_id
         self.message_thread_id = message_thread_id
         self.status_interval_seconds = status_interval_seconds
+        # Progress edits are coalesced: Telegram flood control drops the final answer when the
+        # placeholder is edited on every tool step. New steps still update at most this often,
+        # and a coalesced step is flushed by the periodic refresh.
+        self.progress_edit_gap_seconds = progress_edit_gap_seconds
+        self._last_progress_edit = 0.0
+        self._pending_progress = False
         self.finalize_delay_seconds = finalize_delay_seconds
         self.parse_mode = parse_mode
         self.message_id: int | None = None
@@ -75,15 +101,19 @@ class TelegramStreamingReply:
         return InlineKeyboardMarkup([[button]])
 
     def _render(self, done: bool = False) -> str:
-        """Render the checklist: completed steps get a check, the active one a timer."""
-        lines = ["<b>🧠 Progress</b>"]
-        last = len(self._steps) - 1
+        """Render the checklist: elapsed time in the header, no misleading per-step timer.
+
+        The clock shows how long the whole run has been going, so it keeps ticking while a
+        single tool is slow. Putting it on the active step made a long tool look stuck.
+        """
         elapsed = int(asyncio.get_event_loop().time() - self._started_at)
+        lines = [f"<b>🧠 Progress</b> · {elapsed}s"]
+        last = len(self._steps) - 1
         for index, step in enumerate(self._steps):
             if index < last or done:
                 lines.append(f"✔ {step}")
             else:
-                lines.append(f"⏳ {step} · {elapsed}s")
+                lines.append(f"⏳ {step}")
         return "\n".join(lines)
 
     async def start(self) -> None:
@@ -122,7 +152,19 @@ class TelegramStreamingReply:
                 async with self._lock:
                     if self._stopped.is_set() or self._disabled:
                         return
-                    await self._edit(self._render(), parse_mode=self.parse_mode)
+                    now = asyncio.get_event_loop().time()
+                    if (
+                        not self._pending_progress
+                        and now - self._last_progress_edit < self.progress_edit_gap_seconds
+                    ):
+                        continue
+                    self._pending_progress = False
+                    try:
+                        await self._edit(self._render(), parse_mode=self.parse_mode)
+                    except _FloodControl as flood:
+                        logger.debug(
+                            "Skipping progress refresh for chat %s: %s", self.chat_id, flood
+                        )
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -145,10 +187,18 @@ class TelegramStreamingReply:
         if self._steps[-1] == text:
             return
         self._steps.append(text)
+        now = asyncio.get_event_loop().time()
+        if now - self._last_progress_edit < self.progress_edit_gap_seconds:
+            # Too soon since the last edit; flush this step on the next refresh tick.
+            self._pending_progress = True
+            return
         async with self._lock:
             if self._stopped.is_set() or self._disabled or self.message_id is None:
                 return
-            await self._edit(self._render(), parse_mode=self.parse_mode)
+            try:
+                await self._edit(self._render(), parse_mode=self.parse_mode)
+            except _FloodControl as flood:
+                logger.debug("Skipping progress edit for chat %s: %s", self.chat_id, flood)
 
     async def _edit(
         self, text: str, parse_mode: str | None, reply_markup: Any = "__keep__"
@@ -166,7 +216,12 @@ class TelegramStreamingReply:
             kwargs["reply_markup"] = reply_markup
         try:
             await self.bot.edit_message_text(**kwargs)
+            self._last_progress_edit = asyncio.get_event_loop().time()
             return True
+        except RetryAfter as exc:
+            raise _FloodControl(
+                min(_retry_after_seconds(exc) + 0.5, _MAX_FLOOD_WAIT_SECONDS)
+            ) from exc
         except Exception as exc:
             if "not modified" in str(exc).lower():
                 return True
@@ -174,10 +229,25 @@ class TelegramStreamingReply:
             return False
 
     async def _edit_html_with_plain_fallback(self, text: str) -> bool:
-        if await self._edit(text, parse_mode=self.parse_mode, reply_markup=None):
-            return True
-        plain = _TAG_PATTERN.sub("", text)
-        return await self._edit(plain, parse_mode=None, reply_markup=None)
+        async def _attempt() -> bool:
+            if await self._edit(text, parse_mode=self.parse_mode, reply_markup=None):
+                return True
+            plain = _TAG_PATTERN.sub("", text)
+            return await self._edit(plain, parse_mode=None, reply_markup=None)
+
+        try:
+            return await _attempt()
+        except _FloodControl as flood:
+            logger.warning(
+                "Telegram flood control for chat %s; waiting %.0fs before delivering.",
+                self.chat_id,
+                flood.wait,
+            )
+            await asyncio.sleep(flood.wait)
+            try:
+                return await _attempt()
+            except _FloodControl:
+                return False
 
     def _done_text(self) -> str:
         """Completed checklist plus a Done marker, kept until the answer replaces it."""

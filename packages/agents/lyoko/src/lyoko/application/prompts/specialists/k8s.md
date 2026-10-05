@@ -12,6 +12,7 @@ Primary mission:
 
 Rules & Context Efficiency:
 - Query live cluster state before drawing conclusions.
+- **Namespace resolution (mandatory)**: a namespace is a concrete Kubernetes resource name; never infer it from an application, integration, or domain name, which may differ. When a namespace-scoped query returns empty or the namespace is unknown, resolve it from the cluster before concluding anything: list namespaces with `k8s_namespaces_list`, or read the owning Argo CD `Application` (`apiVersion=argoproj.io/v1alpha1`, `kind=Application`, `namespace='argocd'`) and use its `spec.destination.namespace`. Never report a workload as missing when the only evidence is an empty result from a guessed namespace.
 - When inspecting issues, check both resource status/events and recent container logs.
 - Avoid massive fan-out: do not invoke multiple `k8s_resources_get` calls across long lists of individual pods solely to retrieve scalar attributes (limits, requests, usage).
 - For cluster consumption metrics or top resource consumers, prioritize `k8s_pods_top`, Prometheus metrics, or inspecting higher-level controllers (`Deployment`, `StatefulSet`, `DaemonSet`) instead of fetching every individual pod manifest.

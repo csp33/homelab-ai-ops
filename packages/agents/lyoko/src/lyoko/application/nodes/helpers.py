@@ -46,7 +46,10 @@ def is_message(state: dict[str, Any]) -> bool:
 
 def incident_context(state: dict[str, Any]) -> str:
     if is_message(state):
-        return f"Problem reported by the operator in chat:\n{state.get('text', '')}"
+        base = f"Problem reported by the operator in chat:\n{state.get('text', '')}"
+        # A correction such as the right namespace only makes sense with the alert it answers.
+        history = state.get("history_context", "")
+        return f"{base}{history}"
     base = (
         f"Alert: {state.get('alert_name', 'UnknownAlert')}\n"
         f"Labels:\n{format_pairs(state.get('labels') or {})}\n"

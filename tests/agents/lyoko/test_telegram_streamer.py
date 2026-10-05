@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from lyoko.infrastructure.chat.streamer import TelegramStreamingReply
+from telegram.error import RetryAfter
 
 
 def _fake_bot(message_id: int = 555) -> MagicMock:
@@ -41,7 +42,7 @@ async def test_start_sends_threaded_checklist_with_stop_button():
 async def test_set_status_appends_checklist_steps():
     """Verify each factual status appends a step: completed steps check, active step timer."""
     bot = _fake_bot()
-    streamer = TelegramStreamingReply(bot=bot, chat_id="12345")
+    streamer = TelegramStreamingReply(bot=bot, chat_id="12345", progress_edit_gap_seconds=0)
     await streamer.start()
     bot.edit_message_text.reset_mock()
 
@@ -154,6 +155,35 @@ async def test_finalize_falls_back_to_plain_on_html_error():
 
 
 @pytest.mark.asyncio
+async def test_finalize_waits_out_flood_control_and_delivers_the_answer(monkeypatch):
+    """A throttled final edit must be retried after the flood wait, not dropped."""
+    bot = _fake_bot()
+    answer_state = {"attempts": 0}
+
+    async def edit(**kwargs):
+        if kwargs.get("text") == "<b>Ack</b>":
+            answer_state["attempts"] += 1
+            if answer_state["attempts"] == 1:
+                raise RetryAfter(7)
+        return None
+
+    bot.edit_message_text = AsyncMock(side_effect=edit)
+    slept: list[float] = []
+
+    async def fake_sleep(seconds):  # noqa: ANN001
+        slept.append(seconds)
+
+    monkeypatch.setattr("lyoko.infrastructure.chat.streamer.asyncio.sleep", fake_sleep)
+
+    streamer = TelegramStreamingReply(bot=bot, chat_id="12345", finalize_delay_seconds=0)
+    await streamer.start()
+
+    assert await streamer.finalize("<b>Ack</b>") is True
+    assert answer_state["attempts"] == 2
+    assert slept and slept[0] >= 7
+
+
+@pytest.mark.asyncio
 async def test_start_failure_disables_streaming():
     """Verify a failed placeholder disables streaming so the caller falls back to a reply."""
     bot = _fake_bot()
@@ -192,7 +222,11 @@ async def test_status_loop_refreshes_active_step_timer():
     """Verify the background loop keeps the active step's elapsed timer live."""
     bot = _fake_bot()
     streamer = TelegramStreamingReply(
-        bot=bot, chat_id="12345", status_interval_seconds=0.01, finalize_delay_seconds=0
+        bot=bot,
+        chat_id="12345",
+        status_interval_seconds=0.01,
+        finalize_delay_seconds=0,
+        progress_edit_gap_seconds=0,
     )
     await streamer.start()
     bot.edit_message_text.reset_mock()
@@ -201,6 +235,24 @@ async def test_status_loop_refreshes_active_step_timer():
 
     assert bot.edit_message_text.call_count >= 1
     assert "Progress" in bot.edit_message_text.call_args.kwargs["text"]
+    await streamer.finalize("<b>done</b>")
+
+
+@pytest.mark.asyncio
+async def test_progress_timer_lives_in_the_header_not_on_the_active_step():
+    """A slow tool must not look stuck: elapsed time belongs to the header, not the step."""
+    bot = _fake_bot()
+    streamer = TelegramStreamingReply(
+        bot=bot, chat_id="12345", status_interval_seconds=0.01, finalize_delay_seconds=0
+    )
+    await streamer.start()
+    await streamer.set_status("🛰️ Calling <code>ha_get_logs</code>")
+    await asyncio.sleep(0.05)
+
+    text = bot.edit_message_text.call_args.kwargs["text"]
+    assert "<b>🧠 Progress</b> ·" in text
+    active_line = next(line for line in text.splitlines() if line.startswith("⏳"))
+    assert "·" not in active_line
     await streamer.finalize("<b>done</b>")
 
 

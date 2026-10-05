@@ -26,12 +26,17 @@ def create_route_node(
         """Alerts are incidents. For a message, the LLM decides between chat and incident."""
         if not is_message(state):
             return {"route": Route.INCIDENT.value}
+
+        text = state.get("text", "")
         if llm is None:
             return {"route": Route.CHAT.value}
 
+        history_context = state.get("history_context", "")
+        router_input = text if not history_context else f"{text}{history_context}"
+
         try:
             answer = await llm.chat(
-                prompt=state.get("text", ""),
+                prompt=router_input,
                 system_prompt=ROUTER_SYSTEM_PROMPT,
                 trace_name="route-llm",
                 tags=["phase:route"],
