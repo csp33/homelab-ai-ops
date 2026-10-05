@@ -4,15 +4,35 @@ These methods send, edit, and request approval; they rely on ``self._app`` and
 ``self.default_chat_id`` provided by the concrete connector.
 """
 
+import asyncio
 import html
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from lyoko.domain.models.chat import ApprovalRequest, SentMessage
 from lyoko.infrastructure.chat.formatting import markdown_to_telegram_html
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import RetryAfter
 
 logger = logging.getLogger("lyoko.chat.telegram")
+
+# A throttled send must still be delivered: wait for Telegram's RetryAfter (capped) and retry.
+_MAX_FLOOD_WAIT_SECONDS = 45.0
+
+
+async def _with_flood_retry(call: Callable[[], Awaitable[Any]], *, context: str) -> Any:
+    """Run one Telegram call, waiting out flood control and retrying it once."""
+    try:
+        return await call()
+    except RetryAfter as exc:
+        retry_after = exc.retry_after
+        total_seconds = getattr(retry_after, "total_seconds", None)
+        seconds = total_seconds() if callable(total_seconds) else float(retry_after)
+        wait = min(seconds + 1.0, _MAX_FLOOD_WAIT_SECONDS)
+        logger.warning("Telegram flood control on %s; waiting %.0fs then retrying.", context, wait)
+        await asyncio.sleep(wait)
+        return await call()
 
 
 def _to_sent_message(result: object, fallback_chat_id: str) -> SentMessage | None:
@@ -53,13 +73,16 @@ class TelegramOutboundMixin:
         if parse_mode == "HTML":
             formatted = markdown_to_telegram_html(text)
             try:
-                sent = await self._app.bot.send_message(
-                    chat_id=target,
-                    text=formatted,
-                    parse_mode="HTML",
-                    reply_to_message_id=msg_id,
-                    message_thread_id=thread_id,
-                    allow_sending_without_reply=True,
+                sent = await _with_flood_retry(
+                    lambda: self._app.bot.send_message(
+                        chat_id=target,
+                        text=formatted,
+                        parse_mode="HTML",
+                        reply_to_message_id=msg_id,
+                        message_thread_id=thread_id,
+                        allow_sending_without_reply=True,
+                    ),
+                    context="send HTML message",
                 )
                 return _to_sent_message(sent, str(target))
             except Exception as exc:
@@ -68,21 +91,27 @@ class TelegramOutboundMixin:
                 )
 
         try:
-            sent = await self._app.bot.send_message(
-                chat_id=target,
-                text=text,
-                parse_mode=parse_mode if parse_mode != "HTML" else None,
-                reply_to_message_id=msg_id,
-                message_thread_id=thread_id,
-                allow_sending_without_reply=True,
+            sent = await _with_flood_retry(
+                lambda: self._app.bot.send_message(
+                    chat_id=target,
+                    text=text,
+                    parse_mode=parse_mode if parse_mode != "HTML" else None,
+                    reply_to_message_id=msg_id,
+                    message_thread_id=thread_id,
+                    allow_sending_without_reply=True,
+                ),
+                context="send message",
             )
         except Exception:
-            sent = await self._app.bot.send_message(
-                chat_id=target,
-                text=text,
-                reply_to_message_id=msg_id,
-                message_thread_id=thread_id,
-                allow_sending_without_reply=True,
+            sent = await _with_flood_retry(
+                lambda: self._app.bot.send_message(
+                    chat_id=target,
+                    text=text,
+                    reply_to_message_id=msg_id,
+                    message_thread_id=thread_id,
+                    allow_sending_without_reply=True,
+                ),
+                context="send message",
             )
         return _to_sent_message(sent, str(target))
 
@@ -108,11 +137,14 @@ class TelegramOutboundMixin:
         if parse_mode == "HTML":
             formatted = markdown_to_telegram_html(text)
             try:
-                sent = await self._app.bot.edit_message_text(
-                    chat_id=target,
-                    message_id=msg_id,
-                    text=formatted,
-                    parse_mode="HTML",
+                sent = await _with_flood_retry(
+                    lambda: self._app.bot.edit_message_text(
+                        chat_id=target,
+                        message_id=msg_id,
+                        text=formatted,
+                        parse_mode="HTML",
+                    ),
+                    context="edit HTML message",
                 )
                 return _to_sent_message(sent, str(target)) or SentMessage(
                     chat_id=str(target), message_id=str(msg_id)
@@ -123,11 +155,14 @@ class TelegramOutboundMixin:
                 )
 
         try:
-            sent = await self._app.bot.edit_message_text(
-                chat_id=target,
-                message_id=msg_id,
-                text=text,
-                parse_mode=parse_mode if parse_mode != "HTML" else None,
+            sent = await _with_flood_retry(
+                lambda: self._app.bot.edit_message_text(
+                    chat_id=target,
+                    message_id=msg_id,
+                    text=text,
+                    parse_mode=parse_mode if parse_mode != "HTML" else None,
+                ),
+                context="edit message",
             )
         except Exception as exc:
             logger.debug("Failed to edit plain message in Telegram: %s", exc)
