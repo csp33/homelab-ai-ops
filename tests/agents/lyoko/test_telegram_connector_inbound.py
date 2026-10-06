@@ -222,10 +222,13 @@ async def test_telegram_connector_channel_post_redirects_to_discussion_group():
         discussion_group_id="-1004400196957",
     )
 
-    async def handler(msg: IncomingMessage) -> str:
+    captured: list[IncomingMessage] = []
+
+    async def capture(msg: IncomingMessage) -> str:
+        captured.append(msg)
         return "Reply in thread"
 
-    connector.register_message_handler(handler)
+    connector.register_message_handler(capture)
 
     bot = _mock_bot(message_id=999)
 
@@ -254,6 +257,10 @@ async def test_telegram_connector_channel_post_redirects_to_discussion_group():
     channel_update.effective_message.reply_text = AsyncMock()
 
     await connector._handle_telegram_message(channel_update, _context(bot))
+
+    # The handler receives the resolved target so approvals and progress thread correctly.
+    assert captured[0].chat_id == "-1004400196957"
+    assert captured[0].message_thread_id == "200"
 
     # The placeholder goes to the discussion group, not the channel.
     channel_update.effective_message.reply_text.assert_not_called()

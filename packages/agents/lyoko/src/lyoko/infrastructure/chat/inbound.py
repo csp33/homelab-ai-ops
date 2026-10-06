@@ -223,7 +223,10 @@ class TelegramInboundMixin:
 
             incoming = IncomingMessage(
                 message_id=str(msg.message_id),
-                chat_id=chat_id,
+                # Talk in the resolved target (the linked discussion group's thread for a channel
+                # post), so every downstream message - progress, approvals, report - threads there
+                # instead of landing in the channel or the group's general topic.
+                chat_id=str(target_chat_id),
                 user=ChatUser(
                     user_id=user_id or chat_id,
                     username=username,
@@ -231,7 +234,7 @@ class TelegramInboundMixin:
                 ),
                 text=text,
                 reply_to_message_id=reply_to_message_id,
-                message_thread_id=str(message_thread_id) if message_thread_id is not None else None,
+                message_thread_id=(str(target_thread_id) if target_thread_id is not None else None),
             )
 
             answered = False
