@@ -14,6 +14,9 @@ from lyoko.domain.models.chat import ApprovalAction, ApprovalRequest
 
 logger = logging.getLogger("lyoko.tool_gate")
 
+# Above this size the approval arguments are omitted: the Action/Plan lines describe the change.
+_MAX_ARGUMENTS_PREVIEW_CHARS = 300
+
 ReadOnlyLookup = Callable[[str], bool | None]
 """Returns an upstream's explicit read-only hint for a tool, or ``None`` when it declared none."""
 
@@ -167,13 +170,12 @@ class ToolGate:
         details_parts = [f"Action: {action_summary}"]
         if self._plan:
             details_parts.append(f"Plan: {self._plan}")
-        details_parts.extend(
-            [
-                self._origin,
-                f"Tool: `{tool_name}`",
-                f"Arguments:\n```json\n{format_arguments(arguments)}\n```",
-            ]
-        )
+        details_parts.extend([self._origin, f"Tool: `{tool_name}`"])
+        # Only show the arguments when they are short enough to read; a full resource manifest is
+        # noise, and the Action/Plan lines already say what will happen.
+        args_text = format_arguments(arguments)
+        if "truncated" not in args_text and len(args_text) <= _MAX_ARGUMENTS_PREVIEW_CHARS:
+            details_parts.append(f"Arguments:\n```json\n{args_text}\n```")
         request = ApprovalRequest(
             incident_id=approval_id,
             session_id=self._session_id,

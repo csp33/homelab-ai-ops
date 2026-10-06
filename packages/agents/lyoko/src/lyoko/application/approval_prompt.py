@@ -3,8 +3,24 @@
 import json
 from typing import Any
 
+import yaml
+
 _MAX_ARGUMENTS_CHARS = 1500
 _MAX_ARG_VALUE_CHARS = 280
+
+
+def _resource_identity(resource: Any) -> tuple[str, str] | None:
+    """Return ``(kind, name)`` from a resource manifest string, or ``None`` if not parseable."""
+    if not isinstance(resource, str):
+        return None
+    try:
+        document = yaml.safe_load(resource)
+    except yaml.YAMLError:
+        return None
+    if not isinstance(document, dict) or not document.get("kind"):
+        return None
+    name = (document.get("metadata") or {}).get("name")
+    return str(document["kind"]), str(name) if name else ""
 
 
 def describe_action(tool_name: str, arguments: dict[str, Any]) -> str:
@@ -42,6 +58,10 @@ def describe_action(tool_name: str, arguments: dict[str, Any]) -> str:
         or "apply" in tool_name
         or "patch" in tool_name
     ):
+        identity = _resource_identity(arguments.get("resource"))
+        if identity is not None:
+            kind, name = identity
+            return f"Apply changes to {kind} '{name}'." if name else f"Apply changes to {kind}."
         kind = arguments.get("kind") or "resource"
         name = arguments.get("name") or ""
         ns = f" in namespace '{arguments['namespace']}'" if arguments.get("namespace") else ""
