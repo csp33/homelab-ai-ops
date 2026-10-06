@@ -75,3 +75,34 @@ async def test_route_node_and_choose_branch():
     route_node_llm = create_route_node(llm=mock_llm)
     res_routed = await route_node_llm({"event_type": "message", "text": "pod crashed"}, MagicMock())
     assert res_routed["route"] == "incident"
+
+
+def test_status_callback_reads_only_config_configurable():
+    from lyoko.application.nodes.helpers import status_callback
+
+    sentinel = object()
+    assert status_callback({"configurable": {"on_status": sentinel}}) is sentinel
+    assert status_callback({"configurable": {}}) is None
+    assert status_callback(None) is None
+    assert status_callback("not-a-config") is None
+
+
+@pytest.mark.asyncio
+async def test_diagnose_node_forwards_streaming_status_callback(monkeypatch):
+    """The incident branch must forward on_status so the placeholder shows steps, not 'Thinking…'."""
+    import lyoko.application.nodes.incident_diagnose as diagnose_module
+
+    captured: dict[str, object] = {}
+
+    async def fake_run_supervised(*args, **kwargs):  # noqa: ANN002, ANN003
+        captured.update(kwargs)
+        return "ROOT_CAUSE: drift\nACTIONABLE: no\nPLAN: check"
+
+    monkeypatch.setattr(diagnose_module, "run_supervised", fake_run_supervised)
+
+    node = diagnose_module.create_diagnose_node(mcp_client=object(), llm=object())
+    sentinel = object()
+    state = {"event_type": "message", "text": "hi", "event_id": "evt-1", "session_id": "s1"}
+    await node(state, {"configurable": {"on_status": sentinel}})
+
+    assert captured.get("on_status") is sentinel
