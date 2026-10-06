@@ -12,10 +12,10 @@ from lyoko.config import DEFAULT_READ_ONLY_TOOLS
 
 def test_format_arguments_shortens_a_large_resource_manifest():
     """A full manifest argument must not flood the approval prompt with escaped YAML."""
-    from lyoko.application.tool_gate import _format_arguments
+    from lyoko.application.approval_prompt import format_arguments
 
     huge_manifest = "apiVersion: argoproj.io/v1alpha1\nkind: Application\n" * 50
-    text = _format_arguments({"resource": huge_manifest, "name": "arr-stack"})
+    text = format_arguments({"resource": huge_manifest, "name": "arr-stack"})
 
     assert "truncated" in text
     assert '"name": "arr-stack"' in text
