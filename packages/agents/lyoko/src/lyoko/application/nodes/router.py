@@ -6,6 +6,7 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 from lyoko.application.nodes.helpers import is_message
+from lyoko.application.notifications import is_recovery_notification
 from lyoko.application.router import ROUTER_SYSTEM_PROMPT, Route, parse_route
 from lyoko.domain.interfaces.llm import LLMClientInterface
 
@@ -28,6 +29,10 @@ def create_route_node(
             return {"route": Route.INCIDENT.value}
 
         text = state.get("text", "")
+        if is_recovery_notification(text):
+            # A recovery needs no investigation; answer it in chat without an LLM call.
+            logger.info("Recovery notification detected; routing to chat.")
+            return {"route": Route.CHAT.value}
         if llm is None:
             return {"route": Route.CHAT.value}
 
