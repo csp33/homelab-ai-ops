@@ -82,6 +82,9 @@ async def lifespan(app: FastAPI):
         )
 
     llm = getattr(app.state, "llm", None) or build_llm_adapter()
+    diagnose_llm = getattr(app.state, "diagnose_llm", None) or build_llm_adapter(
+        settings.openai_diagnose_model or None
+    )
     mcp_client = getattr(app.state, "mcp_client", None) or FastMCPClient()
     approval_manager = getattr(app.state, "approval_manager", None) or ApprovalManager()
     try:
@@ -102,6 +105,9 @@ async def lifespan(app: FastAPI):
         mcp_client, llm
     )
     supervisor = getattr(app.state, "supervisor", None) or build_supervisor(specialists, llm)
+    diagnose_supervisor = getattr(app.state, "diagnose_supervisor", None) or build_supervisor(
+        specialists, diagnose_llm
+    )
 
     alert_guard = AlertStormProtector(chat_manager=chat_manager)
     chat_manager.register_approval_handler(alert_guard.handle_force_approval)
@@ -118,11 +124,15 @@ async def lifespan(app: FastAPI):
         specialists=specialists,
         memory_repository=memory_repo,
         embeddings_service=embeddings_service,
+        diagnose_llm=diagnose_llm,
+        diagnose_supervisor=diagnose_supervisor,
     )
 
     app.state.llm = llm
+    app.state.diagnose_llm = diagnose_llm
     app.state.specialists = specialists
     app.state.supervisor = supervisor
+    app.state.diagnose_supervisor = diagnose_supervisor
     app.state.workflow_engine = workflow_engine
     app.state.db_pool = pool
     app.state.checkpointer = checkpointer
@@ -139,12 +149,14 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     llm = build_llm_adapter()
+    diagnose_llm = build_llm_adapter(settings.openai_diagnose_model or None)
     mcp_client = FastMCPClient()
     approval_manager = ApprovalManager()
     chat_manager = build_chat_manager(approval_manager)
     tracer = build_tracer()
     specialists = build_domain_specialists(mcp_client, llm)
     supervisor = build_supervisor(specialists, llm)
+    diagnose_supervisor = build_supervisor(specialists, diagnose_llm)
     alert_guard = AlertStormProtector(chat_manager=chat_manager)
     chat_manager.register_approval_handler(alert_guard.handle_force_approval)
 
@@ -158,11 +170,15 @@ def create_app() -> FastAPI:
         llm=llm,
         supervisor=supervisor,
         specialists=specialists,
+        diagnose_llm=diagnose_llm,
+        diagnose_supervisor=diagnose_supervisor,
     )
     app.state.llm = llm
+    app.state.diagnose_llm = diagnose_llm
     app.state.mcp_client = mcp_client
     app.state.specialists = specialists
     app.state.supervisor = supervisor
+    app.state.diagnose_supervisor = diagnose_supervisor
     app.state.approval_manager = approval_manager
     app.state.chat_manager = chat_manager
     app.state.alert_guard = alert_guard

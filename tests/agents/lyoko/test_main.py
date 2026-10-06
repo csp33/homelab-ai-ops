@@ -3,7 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from lyoko.composition import build_domain_specialists, build_supervisor
+from lyoko.composition import build_domain_specialists, build_llm_adapter, build_supervisor
+from lyoko.config import settings
 from lyoko.logging_config import HealthEndpointFilter
 from lyoko.main import create_app, lifespan
 
@@ -26,6 +27,26 @@ def test_build_domain_specialists_and_supervisor():
     assert set(specialists.keys()) == {"kubernetes", "unifi", "homeassistant", "grafana"}
     supervisor = build_supervisor(specialists, llm=None)
     assert supervisor.specialists == specialists
+
+
+def test_build_llm_adapter_model_override(monkeypatch):
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test")
+    assert build_llm_adapter().model_name == settings.openai_model
+    assert build_llm_adapter("gpt-4.1").model_name == "gpt-4.1"
+    assert build_llm_adapter(settings.openai_diagnose_model).model_name == "gpt-4.1"
+
+
+def test_create_app_wires_a_stronger_diagnose_model(monkeypatch):
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test")
+    monkeypatch.setattr(settings, "openai_model", "gpt-4o-mini")
+    monkeypatch.setattr(settings, "openai_diagnose_model", "gpt-4.1")
+
+    app = create_app()
+
+    assert app.state.llm.model_name == "gpt-4o-mini"
+    assert app.state.diagnose_llm.model_name == "gpt-4.1"
+    assert app.state.diagnose_supervisor.llm is app.state.diagnose_llm
+    assert app.state.supervisor.llm is app.state.llm
 
 
 @pytest.mark.asyncio

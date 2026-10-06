@@ -87,7 +87,8 @@ Configure LYOKO using environment variables (in `.env` or Kubernetes ConfigMap/S
 | `LYOKO_HOST` | `0.0.0.0` | Webhook receiver bind host. |
 | `LYOKO_PORT` | `9000` | Webhook receiver bind port. |
 | `OPENAI_API_KEY` | `""` | OpenAI API key for LLM diagnosis, chat, and embeddings. |
-| `OPENAI_MODEL` | `gpt-4o-mini` | LLM model used for chat and remediation reasoning. |
+| `OPENAI_MODEL` | `gpt-4o-mini` | Cheaper LLM used for chat, remediation, verification, and specialists. |
+| `OPENAI_DIAGNOSE_MODEL` | `gpt-4.1` | Stronger LLM used for the diagnose phase (synthesis + go/no-go). Empty falls back to `OPENAI_MODEL`. |
 | `MCP_SERVER_URL` | `http://localhost:8000/mcp` | URL of the `sector5-mcp` gateway endpoint. |
 | `SERVICE_TOKEN` | `""` | Bearer token for authenticating against `sector5-mcp`. Required when the gateway runs with `AUTH_ENABLED=true`. |
 | `MCP_FAIL_FAST` | `true` | Abort startup if the gateway rejects credentials (401/403) or the URL is not an MCP endpoint (404). |

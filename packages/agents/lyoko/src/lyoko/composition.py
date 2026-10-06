@@ -40,13 +40,17 @@ def _secret(value: object) -> str:
     return str(value) if value else ""
 
 
-def build_llm_adapter() -> LLMClientInterface | None:
-    """Instantiate concrete LLM infrastructure adapter if configured."""
+def build_llm_adapter(model_name: str | None = None) -> LLMClientInterface | None:
+    """Instantiate concrete LLM infrastructure adapter if configured.
+
+    ``model_name`` overrides the default model, which lets the composition root give one phase a
+    stronger (or cheaper) model without affecting the others.
+    """
     if not settings.openai_api_key:
         return None
     return OpenAILLMAdapter(
         api_key=_secret(settings.openai_api_key),
-        model_name=settings.openai_model,
+        model_name=model_name or settings.openai_model,
     )
 
 
