@@ -27,6 +27,7 @@ from lyoko.application.nodes.helpers import is_message, make_gate, status_callba
 from lyoko.application.tool_gate import GateMode
 from lyoko.config import settings
 from lyoko.domain.interfaces.mcp import MCPClientInterface
+from lyoko.domain.interfaces.tracer import null_span
 
 logger = logging.getLogger("lyoko.workflow.autosync")
 
@@ -61,8 +62,12 @@ def create_argocd_autosync_node(
     mcp_client: MCPClientInterface | None,
     approval_manager: ApprovalManager | None = None,
     chat_manager: ChatManager | None = None,
+    tracer: Any = None,
 ) -> Callable[[dict[str, Any], RunnableConfig], Any]:
     """Factory creating the deterministic Argo CD autosync triage node."""
+
+    def _span(name: str) -> Any:
+        return tracer.span(name) if tracer is not None else null_span()
 
     async def argocd_autosync_node(state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
         if mcp_client is None or not is_message(state):
@@ -85,7 +90,10 @@ def create_argocd_autosync_node(
         await report(f"🔎 Checking Argo CD autosync for {app}")
         get_args = {**_APPLICATION, "name": app}
         try:
-            manifest = manifest_from_tool_result(await mcp_client.call_tool(_GET_TOOL, get_args))
+            with _span(f"mcp:{_GET_TOOL}"):
+                manifest = manifest_from_tool_result(
+                    await mcp_client.call_tool(_GET_TOOL, get_args)
+                )
         except Exception as exc:
             logger.warning("Autosync fast-path read failed for %s: %s", app, exc)
             return {"triage": TRIAGE_DIAGNOSE}
@@ -115,7 +123,8 @@ def create_argocd_autosync_node(
             mcp_client=mcp_client,
         )
         resource = manifest_to_yaml(enable_autosync(manifest))
-        refusal = await gate.authorize(_APPLY_TOOL, {"resource": resource})
+        with _span("operator-approval"):
+            refusal = await gate.authorize(_APPLY_TOOL, {"resource": resource})
         actions = [record.to_dict() for record in gate.records]
 
         if refusal is not None:
@@ -132,7 +141,8 @@ def create_argocd_autosync_node(
 
         await report(f"🛠 Enabling autosync on {app}")
         try:
-            await mcp_client.call_tool(_APPLY_TOOL, {"resource": resource})
+            with _span(f"mcp:{_APPLY_TOOL}"):
+                await mcp_client.call_tool(_APPLY_TOOL, {"resource": resource})
         except Exception as exc:
             logger.error("Autosync fast-path apply failed for %s: %s", app, exc, exc_info=True)
             return {
@@ -154,7 +164,10 @@ def create_argocd_autosync_node(
             )
             await asyncio.sleep(settings.verification_delay_seconds)
             try:
-                after = manifest_from_tool_result(await mcp_client.call_tool(_GET_TOOL, get_args))
+                with _span(f"mcp:{_GET_TOOL}"):
+                    after = manifest_from_tool_result(
+                        await mcp_client.call_tool(_GET_TOOL, get_args)
+                    )
             except Exception as exc:
                 logger.warning("Autosync fast-path verification failed for %s: %s", app, exc)
                 break
