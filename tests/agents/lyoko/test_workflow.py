@@ -251,8 +251,8 @@ async def test_incident_workflow_live_status_updates(monkeypatch):
     # Verify progressive edits (after diagnose, after remediate, and final report on notify)
     assert chat.edit_message.await_count >= 3
     final_edit_text = chat.edit_message.await_args_list[-1].kwargs["text"]
-    assert "📋 *[LYOKO Incident Report]*" in final_edit_text
-    assert "*Status:* RESOLVED" in final_edit_text
+    assert "📋 **LYOKO Incident Report**" in final_edit_text
+    assert "**Status:** ✅ RESOLVED" in final_edit_text
 
 
 def test_incident_context_formats_correlated_alerts():
