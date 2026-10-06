@@ -60,6 +60,17 @@ def test_format_incident_report():
     assert "Disk full" in report
     assert "Cleaned up temp logs" in report
 
+    message_state = {
+        "event_type": "message",
+        "is_resolved": True,
+        "text": "autosync arr-stack please",
+        "root_cause": "Autosync disabled",
+        "action_taken": "Enabled autosync",
+    }
+    message_report = format_incident_report(message_state)
+    assert "**Report:**" not in message_report
+    assert "autosync arr-stack please" not in message_report
+
 
 @pytest.mark.asyncio
 async def test_route_node_and_choose_branch():

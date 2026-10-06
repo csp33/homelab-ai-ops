@@ -8,7 +8,6 @@ from lyoko.application.chat_manager import ChatManager
 from lyoko.application.nodes.helpers import (
     describe_call,
     is_message,
-    truncate,
 )
 from lyoko.config import settings
 
@@ -20,9 +19,7 @@ def format_incident_report(state: dict[str, Any]) -> str:
     resolved = bool(state.get("is_resolved"))
     status = "✅ RESOLVED" if resolved else "🚨 ESCALATED / REQUIRES ACTION"
     lines = ["📋 **LYOKO Incident Report**", "", f"**Status:** {status}"]
-    if is_message(state):
-        lines.append(f"**Report:** {truncate(state.get('text', ''))}")
-    else:
+    if not is_message(state):
         labels = state.get("labels") or {}
         target = ", ".join(f"{k}={labels[k]}" for k in sorted(labels) if k != "alertname")
         lines.append(f"**Alert:** {state.get('alert_name', '')}")
