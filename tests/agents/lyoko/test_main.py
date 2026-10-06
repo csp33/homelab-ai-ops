@@ -32,8 +32,10 @@ def test_build_domain_specialists_and_supervisor():
 def test_build_llm_adapter_model_override(monkeypatch):
     monkeypatch.setattr(settings, "openai_api_key", "sk-test")
     assert build_llm_adapter().model_name == settings.openai_model
+    assert build_llm_adapter().use_responses_api is True
     assert build_llm_adapter("gpt-4.1").model_name == "gpt-4.1"
     assert build_llm_adapter(settings.openai_diagnose_model).model_name == "gpt-4.1"
+    assert build_llm_adapter(use_responses_api=False).use_responses_api is False
 
 
 def test_create_app_wires_a_stronger_diagnose_model(monkeypatch):

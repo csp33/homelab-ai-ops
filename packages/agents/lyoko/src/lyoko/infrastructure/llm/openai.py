@@ -22,9 +22,11 @@ class OpenAILLMAdapter(LLMClientInterface):
         api_key: str | None = None,
         model_name: str = "gpt-4o-mini",
         temperature: float = 0.0,
+        use_responses_api: bool = True,
     ) -> None:
         self.model_name = model_name
         self.temperature = temperature
+        self.use_responses_api = use_responses_api
         self._api_key = api_key
         self._client: ChatOpenAI | None = None
 
@@ -36,6 +38,7 @@ class OpenAILLMAdapter(LLMClientInterface):
                 model=self.model_name,
                 temperature=self.temperature,
                 api_key=api_key,
+                use_responses_api=self.use_responses_api,
             )
         return self._client
 

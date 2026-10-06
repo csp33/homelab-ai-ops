@@ -57,6 +57,14 @@ class AgentSettings(BaseSettings):
             "mis-synthesis is the main failure mode. Empty falls back to openai_model."
         ),
     )
+    openai_use_responses_api: bool = Field(
+        default=True,
+        description=(
+            "Use the OpenAI Responses API (/v1/responses) instead of Chat Completions. It keeps "
+            "reasoning and tool context across steps and uses prompt caching better. Set false to "
+            "fall back to Chat Completions."
+        ),
+    )
 
     # MCP Gateway connection
     mcp_server_url: str = Field(
