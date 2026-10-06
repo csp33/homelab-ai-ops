@@ -34,6 +34,7 @@ Edit `.env` to supply at minimum your `OPENAI_API_KEY`:
 OPENAI_API_KEY=sk-your-openai-api-key-here
 OPENAI_MODEL=gpt-4o-mini
 OPENAI_DIAGNOSE_MODEL=gpt-4.1
+OPENAI_USE_RESPONSES_API=true
 ```
 
 ### 2. Start the Stack
@@ -117,6 +118,7 @@ Key environment variables in `.env`:
 | `OPENAI_API_KEY` | `""` | OpenAI API key for LLM diagnosis and embeddings. |
 | `OPENAI_MODEL` | `gpt-4o-mini` | Cheaper model for chat, remediation, verification, and domain specialists. |
 | `OPENAI_DIAGNOSE_MODEL` | `gpt-4.1` | Stronger model for the diagnose phase (synthesis + go/no-go). Empty falls back to `OPENAI_MODEL`. |
+| `OPENAI_USE_RESPONSES_API` | `true` | Use the OpenAI Responses API (`/v1/responses`) instead of Chat Completions. |
 | `MCP_HOST` / `MCP_PORT` | `0.0.0.0` / `8000` | Gateway listening interface and HTTP port. |
 | `LYOKO_HOST` / `LYOKO_PORT` | `0.0.0.0` / `9000` | Agent webhook receiver host and port. |
 | `POSTGRES_HOST` / `POSTGRES_DB` | `localhost` / `lyoko` | PostgreSQL host and database name. |
