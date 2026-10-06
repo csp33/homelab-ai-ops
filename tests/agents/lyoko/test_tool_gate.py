@@ -10,6 +10,19 @@ from lyoko.application.tool_gate import GateMode, ToolGate, matches_any
 from lyoko.config import DEFAULT_READ_ONLY_TOOLS
 
 
+def test_format_arguments_shortens_a_large_resource_manifest():
+    """A full manifest argument must not flood the approval prompt with escaped YAML."""
+    from lyoko.application.tool_gate import _format_arguments
+
+    huge_manifest = "apiVersion: argoproj.io/v1alpha1\nkind: Application\n" * 50
+    text = _format_arguments({"resource": huge_manifest, "name": "arr-stack"})
+
+    assert "truncated" in text
+    assert '"name": "arr-stack"' in text
+    # The preview collapses newlines so the manifest does not render as an unreadable \\n blob.
+    assert "\nkind:" not in text
+
+
 def _gate(mode: GateMode = GateMode.READ_ONLY, **kwargs) -> ToolGate:
     return ToolGate(
         mode=mode,

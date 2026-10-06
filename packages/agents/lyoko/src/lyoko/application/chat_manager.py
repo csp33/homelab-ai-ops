@@ -109,7 +109,10 @@ class ChatManager:
         return results
 
     async def broadcast_approval_request(
-        self, request: ApprovalRequest, message_thread_id: str | int | None = None
+        self,
+        request: ApprovalRequest,
+        message_thread_id: str | int | None = None,
+        reply_to_message_id: str | int | None = None,
     ) -> None:
         """Send approval request across all registered connectors with fault tolerance.
 
@@ -119,7 +122,9 @@ class ChatManager:
         for conn in self.connectors:
             try:
                 sent = await conn.send_approval_request(
-                    request, message_thread_id=message_thread_id
+                    request,
+                    message_thread_id=message_thread_id,
+                    reply_to_message_id=reply_to_message_id,
                 )
                 self._link_sent_message(sent, request.session_id or request.incident_id)
             except Exception as e:

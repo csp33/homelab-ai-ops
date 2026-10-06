@@ -165,7 +165,7 @@ async def test_approval_in_chat_does_not_block_another_event():
     chat = AsyncMock()
     requests: list = []
 
-    async def broadcast(request, message_thread_id=None) -> None:
+    async def broadcast(request, message_thread_id=None, reply_to_message_id=None) -> None:
         requests.append(request)
 
     chat.broadcast_approval_request = broadcast

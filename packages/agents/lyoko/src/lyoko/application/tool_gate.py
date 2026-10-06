@@ -15,6 +15,7 @@ from lyoko.domain.models.chat import ApprovalAction, ApprovalRequest
 logger = logging.getLogger("lyoko.tool_gate")
 
 _MAX_ARGUMENTS_CHARS = 1500
+_MAX_ARG_VALUE_CHARS = 280
 
 ReadOnlyLookup = Callable[[str], bool | None]
 """Returns an upstream's explicit read-only hint for a tool, or ``None`` when it declared none."""
@@ -188,7 +189,9 @@ class ToolGate:
             ],
         )
         await self._chat_manager.broadcast_approval_request(
-            request, message_thread_id=self._message_thread_id
+            request,
+            message_thread_id=self._message_thread_id,
+            reply_to_message_id=self._message_thread_id,
         )
         response = await self._approval_manager.wait_for_approval(approval_id)
 
@@ -269,7 +272,15 @@ def _describe_action(tool_name: str, arguments: dict[str, Any]) -> str:
 
 
 def _format_arguments(arguments: dict[str, Any]) -> str:
-    text = json.dumps(arguments, indent=2, default=str, ensure_ascii=False)
+    def _preview(value: Any) -> Any:
+        # A full resource manifest is huge and unreadable once JSON-escaped; show a short,
+        # single-line preview instead so the operator can actually read the approval prompt.
+        if isinstance(value, str) and len(value) > _MAX_ARG_VALUE_CHARS:
+            return " ".join(value[:_MAX_ARG_VALUE_CHARS].split()) + " … (truncated)"
+        return value
+
+    redacted = {key: _preview(value) for key, value in arguments.items()}
+    text = json.dumps(redacted, indent=2, default=str, ensure_ascii=False)
     if len(text) > _MAX_ARGUMENTS_CHARS:
         return text[:_MAX_ARGUMENTS_CHARS] + "\n... (truncated)"
     return text
