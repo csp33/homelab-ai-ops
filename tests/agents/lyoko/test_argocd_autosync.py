@@ -152,22 +152,16 @@ async def test_autosync_node_waits_for_argo_to_reconcile(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_autosync_node_emits_trace_spans(monkeypatch):
-    """The fast path calls infrastructure directly, so it wraps steps in tracer spans."""
-    from contextlib import contextmanager
-
+    """The fast path calls infrastructure directly, so it wraps steps in named traced runs."""
     monkeypatch.setattr(settings, "verification_delay_seconds", 0)
 
     class _SpanTracer:
         def __init__(self) -> None:
             self.spans: list[str] = []
 
-        def span(self, name, metadata=None):  # noqa: ANN001
-            @contextmanager
-            def _cm():
-                self.spans.append(name)
-                yield None
-
-            return _cm()
+        async def traced(self, name, run):  # noqa: ANN001
+            self.spans.append(name)
+            return await run()
 
     mcp = MagicMock()
     mcp.call_tool = AsyncMock(
