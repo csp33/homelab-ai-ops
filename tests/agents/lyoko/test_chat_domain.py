@@ -111,7 +111,9 @@ async def test_concrete_chat_connector_implementation():
         ) -> None:
             self.sent_messages.append((chat_id, text, parse_mode))
 
-        async def send_approval_request(self, request: ApprovalRequest) -> None:
+        async def send_approval_request(
+            self, request: ApprovalRequest, message_thread_id=None, reply_to_message_id=None
+        ) -> None:
             self.approval_requests.append(request)
 
         def register_message_handler(self, handler: MessageHandler) -> None:

@@ -43,7 +43,10 @@ class ChatConnector(ABC):
 
     @abstractmethod
     async def send_approval_request(
-        self, request: ApprovalRequest, message_thread_id: str | int | None = None
+        self,
+        request: ApprovalRequest,
+        message_thread_id: str | int | None = None,
+        reply_to_message_id: str | int | None = None,
     ) -> SentMessage | None:
         """Send an approval prompt and return a reference to it when available."""
 

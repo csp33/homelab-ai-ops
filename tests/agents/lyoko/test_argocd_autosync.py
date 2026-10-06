@@ -18,6 +18,7 @@ from lyoko.application.nodes.argocd_autosync import (
     choose_triage,
     create_argocd_autosync_node,
 )
+from lyoko.config import settings
 
 _ALERT = "🔔 Alert· Argo CD application arr-stack has sync status OutOfSync for more than 15m."
 
@@ -92,7 +93,8 @@ def test_choose_triage():
 
 
 @pytest.mark.asyncio
-async def test_autosync_node_enables_autosync_end_to_end():
+async def test_autosync_node_enables_autosync_end_to_end(monkeypatch):
+    monkeypatch.setattr(settings, "verification_delay_seconds", 0)
     mcp = MagicMock()
     mcp.call_tool = AsyncMock(
         side_effect=[
@@ -118,6 +120,34 @@ async def test_autosync_node_enables_autosync_end_to_end():
     # First read, apply, verify read.
     called = [call.args[0] for call in mcp.call_tool.await_args_list]
     assert called == ["k8s_resources_get", "k8s_resources_create_or_update", "k8s_resources_get"]
+
+
+@pytest.mark.asyncio
+async def test_autosync_node_waits_for_argo_to_reconcile(monkeypatch):
+    """Argo reconciles asynchronously: keep polling until Synced instead of escalating early."""
+    monkeypatch.setattr(settings, "verification_delay_seconds", 0)
+    mcp = MagicMock()
+    mcp.call_tool = AsyncMock(
+        side_effect=[
+            _app_yaml(False, "OutOfSync", "Healthy"),
+            {"status": "success"},
+            _app_yaml(True, "OutOfSync", "Healthy"),  # not reconciled yet
+            _app_yaml(True, "OutOfSync", "Progressing"),  # still reconciling
+            _app_yaml(True, "Synced", "Healthy"),  # converged
+        ]
+    )
+    node = create_argocd_autosync_node(
+        mcp_client=mcp,
+        approval_manager=_approval_manager(True),
+        chat_manager=_chat_manager(),
+    )
+    state = {"event_type": "message", "text": _ALERT, "event_id": "e1", "chat_id": "-100"}
+
+    result = await node(state, {})
+
+    assert result["is_resolved"] is True
+    assert result["requires_escalation"] is False
+    assert mcp.call_tool.await_count == 5
 
 
 @pytest.mark.asyncio

@@ -6,6 +6,7 @@ reads the Application, and when autosync is disabled it enables it directly thro
 deterministically. Anything it does not recognize falls through to the normal ``diagnose`` node.
 """
 
+import asyncio
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -22,11 +23,15 @@ from lyoko.application.argocd_outofsync import (
 )
 from lyoko.application.chat_manager import ChatManager
 from lyoko.application.hitl import ApprovalManager
-from lyoko.application.nodes.helpers import is_message, make_gate
+from lyoko.application.nodes.helpers import is_message, make_gate, status_callback
 from lyoko.application.tool_gate import GateMode
+from lyoko.config import settings
 from lyoko.domain.interfaces.mcp import MCPClientInterface
 
 logger = logging.getLogger("lyoko.workflow.autosync")
+
+# Argo CD reconciles asynchronously after the manifest change, so poll for a bounded time.
+_VERIFY_ATTEMPTS = 6
 
 TRIAGE_DIAGNOSE = "diagnose"
 TRIAGE_HANDLED = "handled"
@@ -67,6 +72,17 @@ def create_argocd_autosync_node(
         if not app:
             return {"triage": TRIAGE_DIAGNOSE}
 
+        on_status = status_callback(config)
+
+        async def report(step: str) -> None:
+            if on_status is not None:
+                try:
+                    await on_status(step)
+                except Exception:  # a status update must never break the fast path
+                    logger.debug("Failed to report autosync status step '%s'.", step)
+
+        logger.info("Autosync fast-path: checking application '%s'.", app)
+        await report(f"🔎 Checking Argo CD autosync for {app}")
         get_args = {**_APPLICATION, "name": app}
         try:
             manifest = manifest_from_tool_result(await mcp_client.call_tool(_GET_TOOL, get_args))
@@ -75,6 +91,10 @@ def create_argocd_autosync_node(
             return {"triage": TRIAGE_DIAGNOSE}
 
         if manifest is None or not autosync_disabled(manifest) or has_sync_error(manifest):
+            logger.info(
+                "Autosync fast-path not applicable for '%s' (autosync already on or a sync error).",
+                app,
+            )
             return {"triage": TRIAGE_DIAGNOSE}
 
         plan = f"Enable Argo CD autosync for application `{app}` (prune + selfHeal)."
@@ -82,6 +102,10 @@ def create_argocd_autosync_node(
             f"The Argo CD application `{app}` is OutOfSync because autosync is disabled "
             "(`spec.syncPolicy.automated`). Without autosync, drift is never reconciled."
         )
+        logger.info(
+            "Autosync fast-path: '%s' has autosync disabled; requesting operator approval.", app
+        )
+        await report(f"⏳ Waiting for approval to enable autosync on {app}")
         gate = make_gate(
             state,
             GateMode.APPROVAL,
@@ -95,6 +119,7 @@ def create_argocd_autosync_node(
         actions = [record.to_dict() for record in gate.records]
 
         if refusal is not None:
+            logger.info("Autosync fast-path: '%s' not approved: %s", app, refusal)
             return {
                 "triage": TRIAGE_HANDLED,
                 "root_cause": root_cause,
@@ -105,6 +130,7 @@ def create_argocd_autosync_node(
                 "is_resolved": False,
             }
 
+        await report(f"🛠 Enabling autosync on {app}")
         try:
             await mcp_client.call_tool(_APPLY_TOOL, {"resource": resource})
         except Exception as exc:
@@ -121,14 +147,25 @@ def create_argocd_autosync_node(
 
         verification = ""
         resolved = False
-        try:
-            after = manifest_from_tool_result(await mcp_client.call_tool(_GET_TOOL, get_args))
-            if after is not None:
-                resolved = is_synced_and_healthy(after)
-                verification = f"Application `{app}` now {_status_line(after)}."
-        except Exception as exc:
-            logger.warning("Autosync fast-path verification failed for %s: %s", app, exc)
+        for attempt in range(_VERIFY_ATTEMPTS):
+            await report(
+                f"🔍 Verifying {app} is Synced and Healthy"
+                + (f" ({attempt}/{_VERIFY_ATTEMPTS - 1})" if attempt else "")
+            )
+            await asyncio.sleep(settings.verification_delay_seconds)
+            try:
+                after = manifest_from_tool_result(await mcp_client.call_tool(_GET_TOOL, get_args))
+            except Exception as exc:
+                logger.warning("Autosync fast-path verification failed for %s: %s", app, exc)
+                break
+            if after is None:
+                break
+            resolved = is_synced_and_healthy(after)
+            verification = f"Application `{app}` now {_status_line(after)}."
+            if resolved:
+                break
 
+        logger.info("Autosync fast-path: '%s' resolved=%s (%s).", app, resolved, verification)
         return {
             "triage": TRIAGE_HANDLED,
             "root_cause": root_cause,

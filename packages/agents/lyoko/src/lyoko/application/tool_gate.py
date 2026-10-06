@@ -1,20 +1,18 @@
 """Tool-call gate: decides whether an agent's tool call runs, needs approval, or is refused."""
 
 import fnmatch
-import json
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
+from lyoko.application.approval_prompt import describe_action, format_arguments
 from lyoko.application.chat_manager import ChatManager
 from lyoko.application.hitl import ApprovalManager
 from lyoko.domain.models.chat import ApprovalAction, ApprovalRequest
 
 logger = logging.getLogger("lyoko.tool_gate")
-
-_MAX_ARGUMENTS_CHARS = 1500
 
 ReadOnlyLookup = Callable[[str], bool | None]
 """Returns an upstream's explicit read-only hint for a tool, or ``None`` when it declared none."""
@@ -165,7 +163,7 @@ class ToolGate:
 
         self._approval_count += 1
         approval_id = f"{self._event_id}.{self._approval_count}"
-        action_summary = _describe_action(tool_name, arguments)
+        action_summary = describe_action(tool_name, arguments)
         details_parts = [f"Action: {action_summary}"]
         if self._plan:
             details_parts.append(f"Plan: {self._plan}")
@@ -173,7 +171,7 @@ class ToolGate:
             [
                 self._origin,
                 f"Tool: `{tool_name}`",
-                f"Arguments:\n```json\n{_format_arguments(arguments)}\n```",
+                f"Arguments:\n```json\n{format_arguments(arguments)}\n```",
             ]
         )
         request = ApprovalRequest(
@@ -188,7 +186,9 @@ class ToolGate:
             ],
         )
         await self._chat_manager.broadcast_approval_request(
-            request, message_thread_id=self._message_thread_id
+            request,
+            message_thread_id=self._message_thread_id,
+            reply_to_message_id=self._message_thread_id,
         )
         response = await self._approval_manager.wait_for_approval(approval_id)
 
@@ -203,73 +203,3 @@ class ToolGate:
             f"Denied: the operator did not approve '{tool_name}' ({reason}). Do not retry it or "
             "look for a way around the denial. Stop and report what you found."
         )
-
-
-def _describe_action(tool_name: str, arguments: dict[str, Any]) -> str:
-    """Produce a concise human-readable sentence explaining what the tool call wants to do."""
-    # Specific tool explanations
-    if "scale" in tool_name:
-        name = (
-            arguments.get("name")
-            or arguments.get("deployment")
-            or arguments.get("workload")
-            or "workload"
-        )
-        replicas = arguments.get("replicas")
-        ns = f" in namespace '{arguments['namespace']}'" if arguments.get("namespace") else ""
-        return f"Scale {name} to {replicas} replicas{ns}."
-
-    if "delete" in tool_name:
-        target = (
-            arguments.get("name")
-            or arguments.get("pod")
-            or arguments.get("deployment")
-            or arguments.get("target")
-            or "resource"
-        )
-        ns = f" from namespace '{arguments['namespace']}'" if arguments.get("namespace") else ""
-        return f"Delete {target}{ns}."
-
-    if "restart" in tool_name:
-        target = arguments.get("name") or arguments.get("deployment") or "workload"
-        ns = f" in namespace '{arguments['namespace']}'" if arguments.get("namespace") else ""
-        return f"Restart {target}{ns}."
-
-    if (
-        "create" in tool_name
-        or "update" in tool_name
-        or "apply" in tool_name
-        or "patch" in tool_name
-    ):
-        kind = arguments.get("kind") or "resource"
-        name = arguments.get("name") or ""
-        ns = f" in namespace '{arguments['namespace']}'" if arguments.get("namespace") else ""
-        target = f"{kind} '{name}'" if name else kind
-        return f"Apply changes to {target}{ns}."
-
-    if tool_name.startswith("ha_") or "homeassistant" in tool_name:
-        service = arguments.get("service") or arguments.get("domain") or tool_name
-        entity = arguments.get("entity_id") or ""
-        return f"Execute Home Assistant action '{service}'{' on ' + entity if entity else ''}."
-
-    if tool_name.startswith("unifi_"):
-        action = arguments.get("action") or arguments.get("command") or tool_name
-        return f"Execute UniFi network action '{action}'."
-
-    # General fallback
-    readable_name = tool_name.replace("_", " ").strip()
-    key_params = [
-        f"{k}='{v}'"
-        for k, v in arguments.items()
-        if k in ("name", "namespace", "replicas", "entity_id", "service", "action", "command")
-    ]
-    if key_params:
-        return f"Execute {readable_name} with {', '.join(key_params)}."
-    return f"Execute tool '{tool_name}'."
-
-
-def _format_arguments(arguments: dict[str, Any]) -> str:
-    text = json.dumps(arguments, indent=2, default=str, ensure_ascii=False)
-    if len(text) > _MAX_ARGUMENTS_CHARS:
-        return text[:_MAX_ARGUMENTS_CHARS] + "\n... (truncated)"
-    return text
