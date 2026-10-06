@@ -41,6 +41,38 @@ async def test_telegram_connector_callback_query_approval():
 
 
 @pytest.mark.asyncio
+async def test_callback_preserves_approval_markup():
+    """Telegram returns an answered message's text unformatted, so the edit must reuse the sent markup."""
+    connector = TelegramConnector(
+        bot_token="fake:token", allowed_user_ids={"12345"}, default_chat_id="12345"
+    )
+    connector._approval_message_html[("12345", 42)] = (
+        "🚨 <b>[APPROVAL REQUIRED]</b>\n\n<b>Action:</b> Apply changes to Application 'arr-stack'.",
+        "HTML",
+    )
+
+    mock_update = MagicMock()
+    mock_update.effective_user.id = 12345
+    mock_update.effective_user.first_name = "Admin"
+    mock_update.effective_chat.id = 12345
+    mock_query = MagicMock()
+    mock_query.data = "approve:inc-1"
+    mock_query.message.message_id = 42
+    mock_query.message.text = "🚨 [APPROVAL REQUIRED]\n\nAction: Apply changes."
+    mock_query.answer = AsyncMock()
+    mock_query.edit_message_text = AsyncMock()
+    mock_update.callback_query = mock_query
+
+    await connector._handle_callback_query(mock_update, MagicMock())
+
+    edited = mock_query.edit_message_text.call_args[0][0]
+    assert "<b>[APPROVAL REQUIRED]</b>" in edited
+    assert "<b>Action:</b>" in edited
+    assert mock_query.edit_message_text.call_args[1]["parse_mode"] == "HTML"
+    assert ("12345", 42) not in connector._approval_message_html
+
+
+@pytest.mark.asyncio
 async def test_telegram_connector_callback_query_rejection():
     connector = TelegramConnector(
         bot_token="fake:token", allowed_user_ids={"12345"}, default_chat_id="12345"

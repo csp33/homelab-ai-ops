@@ -8,6 +8,7 @@ import contextlib
 import html
 import inspect
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -19,12 +20,18 @@ from telegram.ext import ContextTypes
 logger = logging.getLogger("lyoko.chat.telegram")
 
 
+def _strip_tags(text: str) -> str:
+    """Remove Telegram HTML tags, used when re-editing a message that was sent as plain text."""
+    return re.sub(r"<[^>]+>", "", text)
+
+
 class TelegramCallbackMixin:
     """Handle button clicks and channel-forward mapping."""
 
     _active_streamers: dict[tuple[str, int], TelegramStreamingReply]
     _channel_to_discussion: dict[tuple[str, int], int]
     _approval_handlers: list[Callable[[ApprovalResponse], Awaitable[None]]]
+    _approval_message_html: dict[tuple[str, int], tuple[str, str | None]]
 
     async def _handle_stop_callback(self, query: Any, chat_id: str | None, message_id: str) -> None:
         """Stop the in-flight generation whose streaming placeholder carries the stop button."""
@@ -117,17 +124,25 @@ class TelegramCallbackMixin:
         else:
             status_text = f"❌ <b>Rejected</b> by admin ({user_name})."
 
-        current_text = (
-            query.message.text
-            if query.message and hasattr(query.message, "text") and query.message.text
-            else ""
-        )
-        if current_text:
-            new_text = f"{current_text}\n\n<b>Result:</b> {status_text}"
+        # Telegram strips an answered message's formatting from `text`, so reuse the markup we
+        # originally sent (kept by the connector) to avoid losing every bold label on the edit.
+        message_id = getattr(query.message, "message_id", None) if query.message else None
+        stored = None
+        if chat_id is not None and message_id is not None:
+            stored = self._approval_message_html.pop((str(chat_id), int(message_id)), None)
+        if stored is not None:
+            current_text, parse_mode = stored
         else:
-            new_text = f"<b>Result:</b> {status_text}"
+            current_text, parse_mode = (query.message.text or "" if query.message else ""), "HTML"
+
+        if parse_mode is None:
+            current_text = _strip_tags(current_text)
+            result_text = _strip_tags(status_text)
+        else:
+            result_text = f"<b>Result:</b> {status_text}"
+        new_text = f"{current_text}\n\n{result_text}" if current_text else result_text
         try:
-            await query.edit_message_text(new_text, parse_mode="HTML")
+            await query.edit_message_text(new_text, parse_mode=parse_mode)
         except Exception as edit_err:
             logger.debug("Could not edit message text after callback: %s", edit_err)
 
