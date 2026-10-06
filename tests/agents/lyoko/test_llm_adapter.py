@@ -8,6 +8,15 @@ from langchain_core.messages import ToolMessage
 from lyoko.infrastructure.llm.openai import OpenAILLMAdapter
 
 
+def test_openai_llm_adapter_uses_responses_api_by_default():
+    """The adapter defaults to the Responses API and can be switched back to Chat Completions."""
+    assert OpenAILLMAdapter(api_key="sk-test").client.use_responses_api is True
+    assert (
+        OpenAILLMAdapter(api_key="sk-test", use_responses_api=False).client.use_responses_api
+        is False
+    )
+
+
 @pytest.mark.asyncio
 async def test_openai_llm_adapter_chat():
     """Verify chat invocation delegates to ChatOpenAI with proper messages."""

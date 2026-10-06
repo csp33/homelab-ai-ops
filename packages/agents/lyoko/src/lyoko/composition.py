@@ -40,17 +40,23 @@ def _secret(value: object) -> str:
     return str(value) if value else ""
 
 
-def build_llm_adapter(model_name: str | None = None) -> LLMClientInterface | None:
+def build_llm_adapter(
+    model_name: str | None = None, use_responses_api: bool | None = None
+) -> LLMClientInterface | None:
     """Instantiate concrete LLM infrastructure adapter if configured.
 
     ``model_name`` overrides the default model, which lets the composition root give one phase a
-    stronger (or cheaper) model without affecting the others.
+    stronger (or cheaper) model without affecting the others. ``use_responses_api`` overrides the
+    OpenAI runtime for A/B comparisons; it defaults to the configured setting.
     """
     if not settings.openai_api_key:
         return None
+    if use_responses_api is None:
+        use_responses_api = settings.openai_use_responses_api
     return OpenAILLMAdapter(
         api_key=_secret(settings.openai_api_key),
         model_name=model_name or settings.openai_model,
+        use_responses_api=use_responses_api,
     )
 
 
