@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from lyoko.application.nodes.chat import create_chat_node
 from lyoko.application.nodes.helpers import (
     format_pairs,
     incident_context,
@@ -12,6 +13,10 @@ from lyoko.application.nodes.helpers import (
 )
 from lyoko.application.nodes.notify import format_incident_report
 from lyoko.application.nodes.router import choose_branch, create_route_node
+from lyoko.application.notifications import (
+    RECOVERY_ACKNOWLEDGEMENT,
+    is_recovery_notification,
+)
 from lyoko.domain.interfaces.llm import LLMClientInterface
 
 
@@ -106,3 +111,44 @@ async def test_diagnose_node_forwards_streaming_status_callback(monkeypatch):
     await node(state, {"configurable": {"on_status": sentinel}})
 
     assert captured.get("on_status") is sentinel
+
+
+def test_is_recovery_notification():
+    gatus = (
+        "⛑ Gatus\nAn alert for BentoPDF/pdf.internal.cspaez.org — HTTP has been resolved:\n"
+        "—\n    healthcheck passing successfully 5 time(s) in a row"
+    )
+    assert is_recovery_notification(gatus) is True
+    assert is_recovery_notification("The alert has been cleared.") is True
+    assert is_recovery_notification("[RESOLVED] Service back up") is True
+    assert is_recovery_notification("status: resolved") is True
+    assert is_recovery_notification("This is unresolved and still broken") is False
+    assert is_recovery_notification("radarr keeps crashing, fix it") is False
+    assert is_recovery_notification("") is False
+
+
+@pytest.mark.asyncio
+async def test_route_node_sends_recovery_to_chat_without_llm():
+    mock_llm = MagicMock(spec=LLMClientInterface)
+    mock_llm.chat = AsyncMock(side_effect=AssertionError("LLM must not be called for recoveries"))
+    node = create_route_node(llm=mock_llm)
+
+    res = await node({"event_type": "message", "text": "HTTP has been resolved"}, MagicMock())
+
+    assert res["route"] == "chat"
+    mock_llm.chat.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_chat_node_acknowledges_recovery_without_supervisor():
+    supervisor = MagicMock()
+    supervisor.coordinate = AsyncMock()
+    node = create_chat_node(mcp_client=object(), llm=object(), supervisor=supervisor)
+
+    res = await node(
+        {"event_type": "message", "text": "An alert has been resolved: passing successfully"},
+        MagicMock(),
+    )
+
+    assert res["reply"] == RECOVERY_ACKNOWLEDGEMENT
+    supervisor.coordinate.assert_not_called()
