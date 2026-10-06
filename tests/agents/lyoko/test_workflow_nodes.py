@@ -54,7 +54,8 @@ def test_format_incident_report():
         "verification": "Pod running 0 restarts",
     }
     report = format_incident_report(state)
-    assert "STATUS:* RESOLVED" in report or "Status:* RESOLVED" in report
+    assert "**LYOKO Incident Report**" in report
+    assert "**Status:** ✅ RESOLVED" in report
     assert "CrashLoopBackOff" in report
     assert "Disk full" in report
     assert "Cleaned up temp logs" in report

@@ -17,25 +17,26 @@ logger = logging.getLogger("lyoko.workflow.notify")
 
 def format_incident_report(state: dict[str, Any]) -> str:
     """Build a structured Markdown incident summary from workflow state."""
-    status = "RESOLVED" if state.get("is_resolved") else "ESCALATED / REQUIRES ACTION"
-    lines = ["📋 *[LYOKO Incident Report]*", "", f"• *Status:* {status}"]
+    resolved = bool(state.get("is_resolved"))
+    status = "✅ RESOLVED" if resolved else "🚨 ESCALATED / REQUIRES ACTION"
+    lines = ["📋 **LYOKO Incident Report**", "", f"**Status:** {status}"]
     if is_message(state):
-        lines.append(f"• *Report:* {truncate(state.get('text', ''))}")
+        lines.append(f"**Report:** {truncate(state.get('text', ''))}")
     else:
         labels = state.get("labels") or {}
         target = ", ".join(f"{k}={labels[k]}" for k in sorted(labels) if k != "alertname")
-        lines.append(f"• *Alert:* {state.get('alert_name', '')}")
+        lines.append(f"**Alert:** {state.get('alert_name', '')}")
         if target:
-            lines.append(f"• *Target:* {target}")
-    lines.append(f"• *Root Cause:* {state.get('root_cause', 'Unknown')}")
-    lines.append(f"• *Action Taken:* {state.get('action_taken', 'None')}")
+            lines.append(f"**Target:** {target}")
+    lines.append(f"**Root Cause:** {state.get('root_cause', 'Unknown')}")
+    lines.append(f"**Action Taken:** {state.get('action_taken', 'None')}")
     if state.get("matched_memories"):
-        lines.append(f"• *Memories Applied:* {len(state['matched_memories'])}")
+        lines.append(f"**Memories Applied:** {len(state['matched_memories'])}")
     actions = state.get("actions") or []
     if actions:
-        lines.append("• *Tool Calls:* " + ", ".join(describe_call(a) for a in actions))
+        lines.append("**Tool Calls:** " + ", ".join(describe_call(a) for a in actions))
     if state.get("verification"):
-        lines.append(f"• *Verification:* {state['verification']}")
+        lines.append(f"**Verification:** {state['verification']}")
     return "\n".join(lines)
 
 
