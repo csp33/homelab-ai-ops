@@ -6,6 +6,7 @@ reads the Application, and when autosync is disabled it enables it directly thro
 deterministically. Anything it does not recognize falls through to the normal ``diagnose`` node.
 """
 
+import asyncio
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -24,9 +25,13 @@ from lyoko.application.chat_manager import ChatManager
 from lyoko.application.hitl import ApprovalManager
 from lyoko.application.nodes.helpers import is_message, make_gate, status_callback
 from lyoko.application.tool_gate import GateMode
+from lyoko.config import settings
 from lyoko.domain.interfaces.mcp import MCPClientInterface
 
 logger = logging.getLogger("lyoko.workflow.autosync")
+
+# Argo CD reconciles asynchronously after the manifest change, so poll for a bounded time.
+_VERIFY_ATTEMPTS = 6
 
 TRIAGE_DIAGNOSE = "diagnose"
 TRIAGE_HANDLED = "handled"
@@ -140,16 +145,25 @@ def create_argocd_autosync_node(
                 "is_resolved": False,
             }
 
-        await report(f"🔍 Verifying {app} is Synced and Healthy")
         verification = ""
         resolved = False
-        try:
-            after = manifest_from_tool_result(await mcp_client.call_tool(_GET_TOOL, get_args))
-            if after is not None:
-                resolved = is_synced_and_healthy(after)
-                verification = f"Application `{app}` now {_status_line(after)}."
-        except Exception as exc:
-            logger.warning("Autosync fast-path verification failed for %s: %s", app, exc)
+        for attempt in range(_VERIFY_ATTEMPTS):
+            await report(
+                f"🔍 Verifying {app} is Synced and Healthy"
+                + (f" ({attempt}/{_VERIFY_ATTEMPTS - 1})" if attempt else "")
+            )
+            await asyncio.sleep(settings.verification_delay_seconds)
+            try:
+                after = manifest_from_tool_result(await mcp_client.call_tool(_GET_TOOL, get_args))
+            except Exception as exc:
+                logger.warning("Autosync fast-path verification failed for %s: %s", app, exc)
+                break
+            if after is None:
+                break
+            resolved = is_synced_and_healthy(after)
+            verification = f"Application `{app}` now {_status_line(after)}."
+            if resolved:
+                break
 
         logger.info("Autosync fast-path: '%s' resolved=%s (%s).", app, resolved, verification)
         return {
