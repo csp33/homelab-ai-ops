@@ -14,6 +14,10 @@ from lyoko.application.nodes.helpers import (
     run_supervised,
     status_callback,
 )
+from lyoko.application.notifications import (
+    RECOVERY_ACKNOWLEDGEMENT,
+    is_recovery_notification,
+)
 from lyoko.application.tool_gate import GateMode
 from lyoko.config import settings
 from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
@@ -38,6 +42,10 @@ def create_chat_node(
         """Answer the operator. Coordinates through the multi-agent supervisor with ToolGate safety."""
         text = state.get("text", "")
         history_context = state.get("history_context", "")
+        if is_recovery_notification(text):
+            # A recovery notification has nothing to investigate; acknowledge it and stop.
+            logger.info("Recovery notification acknowledged without investigation.")
+            return {"reply": RECOVERY_ACKNOWLEDGEMENT}
         if llm is None:
             return {"reply": _NO_LLM_REPLY.format(text=text)}
 
