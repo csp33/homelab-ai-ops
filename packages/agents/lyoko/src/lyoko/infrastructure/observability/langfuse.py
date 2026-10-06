@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from lyoko.config import settings
-from lyoko.domain.interfaces.tracer import TracerInterface
+from lyoko.domain.interfaces.tracer import TracerInterface, null_span
 
 logger = logging.getLogger("lyoko.observability.langfuse")
 
@@ -72,6 +72,18 @@ class LangfuseTracer(TracerInterface):
         except Exception as exc:
             logger.warning(f"Failed to create Langfuse callback handler: {exc}")
             return None
+
+    def span(self, name: str, metadata: dict[str, Any] | None = None) -> Any:
+        """Open a named span in the current trace; a no-op when tracing is disabled."""
+        if not self._enabled or self._client is None:
+            return null_span()
+        try:
+            return self._client.start_as_current_observation(
+                as_type="span", name=name, metadata=metadata or {}
+            )
+        except Exception as exc:
+            logger.debug("Failed to start Langfuse span '%s': %s", name, exc)
+            return null_span()
 
     def get_trace_config(
         self,

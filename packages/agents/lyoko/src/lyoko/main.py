@@ -126,6 +126,7 @@ async def lifespan(app: FastAPI):
         embeddings_service=embeddings_service,
         diagnose_llm=diagnose_llm,
         diagnose_supervisor=diagnose_supervisor,
+        tracer=getattr(app.state, "tracer", None),
     )
 
     app.state.llm = llm
@@ -172,6 +173,7 @@ def create_app() -> FastAPI:
         specialists=specialists,
         diagnose_llm=diagnose_llm,
         diagnose_supervisor=diagnose_supervisor,
+        tracer=tracer,
     )
     app.state.llm = llm
     app.state.diagnose_llm = diagnose_llm

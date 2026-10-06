@@ -151,6 +151,49 @@ async def test_autosync_node_waits_for_argo_to_reconcile(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_autosync_node_emits_trace_spans(monkeypatch):
+    """The fast path calls infrastructure directly, so it wraps steps in tracer spans."""
+    from contextlib import contextmanager
+
+    monkeypatch.setattr(settings, "verification_delay_seconds", 0)
+
+    class _SpanTracer:
+        def __init__(self) -> None:
+            self.spans: list[str] = []
+
+        def span(self, name, metadata=None):  # noqa: ANN001
+            @contextmanager
+            def _cm():
+                self.spans.append(name)
+                yield None
+
+            return _cm()
+
+    mcp = MagicMock()
+    mcp.call_tool = AsyncMock(
+        side_effect=[
+            _app_yaml(False, "OutOfSync", "Healthy"),
+            {"status": "success"},
+            _app_yaml(True, "Synced", "Healthy"),
+        ]
+    )
+    tracer = _SpanTracer()
+    node = create_argocd_autosync_node(
+        mcp_client=mcp,
+        approval_manager=_approval_manager(True),
+        chat_manager=_chat_manager(),
+        tracer=tracer,
+    )
+    state = {"event_type": "message", "text": _ALERT, "event_id": "e1", "chat_id": "-100"}
+
+    await node(state, {})
+
+    assert "mcp:k8s_resources_get" in tracer.spans
+    assert "mcp:k8s_resources_create_or_update" in tracer.spans
+    assert "operator-approval" in tracer.spans
+
+
+@pytest.mark.asyncio
 async def test_autosync_node_aborts_when_denied():
     mcp = MagicMock()
     mcp.call_tool = AsyncMock(return_value=_app_yaml(False, "OutOfSync", "Healthy"))

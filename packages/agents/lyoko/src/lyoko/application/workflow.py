@@ -104,6 +104,7 @@ def create_lyoko_graph(
     embeddings_service: EmbeddingsServiceInterface | None = None,
     diagnose_llm: LLMClientInterface | None = None,
     diagnose_supervisor: Any = None,
+    tracer: Any = None,
 ) -> Any:
     """Build the LangGraph StateGraph that routes, answers, investigates and remediates.
 
@@ -115,6 +116,7 @@ def create_lyoko_graph(
         mcp_client=mcp_client,
         approval_manager=approval_manager,
         chat_manager=chat_manager,
+        tracer=tracer,
     )
     chat_node = create_chat_node(
         mcp_client=mcp_client,
