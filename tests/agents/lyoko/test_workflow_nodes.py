@@ -3,7 +3,6 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from lyoko.application.argocd import outofsync_hint, parse_outofsync_app
 from lyoko.application.nodes.helpers import (
     format_pairs,
     incident_context,
@@ -107,37 +106,3 @@ async def test_diagnose_node_forwards_streaming_status_callback(monkeypatch):
     await node(state, {"configurable": {"on_status": sentinel}})
 
     assert captured.get("on_status") is sentinel
-
-
-def test_parse_outofsync_app_and_hint():
-    text = "🔔 Alert· Argo CD application arr-stack has sync status OutOfSync for more than 15m."
-    assert parse_outofsync_app(text) == "arr-stack"
-    hint = outofsync_hint(text)
-    assert "arr-stack" in hint
-    assert "ACTIONABLE: yes" in hint
-    assert outofsync_hint("radarr keeps crashing") == ""
-    assert parse_outofsync_app("") is None
-
-
-@pytest.mark.asyncio
-async def test_diagnose_prompt_includes_outofsync_hint(monkeypatch):
-    import lyoko.application.nodes.incident_diagnose as diagnose_module
-
-    captured: dict[str, object] = {}
-
-    async def fake_run_supervised(*args, **kwargs):  # noqa: ANN002, ANN003
-        captured.update(kwargs)
-        return "ROOT_CAUSE: autosync off\nACTIONABLE: yes\nPLAN: enable autosync"
-
-    monkeypatch.setattr(diagnose_module, "run_supervised", fake_run_supervised)
-
-    node = diagnose_module.create_diagnose_node(mcp_client=object(), llm=object())
-    state = {
-        "event_type": "message",
-        "text": "Argo CD application arr-stack has sync status OutOfSync for more than 15m.",
-        "event_id": "evt-2",
-        "session_id": "s2",
-    }
-    await node(state, {"configurable": {}})
-
-    assert "arr-stack" in str(captured.get("prompt"))

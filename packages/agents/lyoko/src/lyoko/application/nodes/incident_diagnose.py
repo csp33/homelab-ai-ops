@@ -5,7 +5,6 @@ from collections.abc import Callable
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from lyoko.application.argocd import outofsync_hint
 from lyoko.application.chat_manager import ChatManager
 from lyoko.application.hitl import ApprovalManager
 from lyoko.application.incident_prompts import DIAGNOSE_SYSTEM_PROMPT, parse_diagnosis
@@ -81,10 +80,7 @@ def create_diagnose_node(
             mcp_client=mcp_client,
         )
         try:
-            prompt_content = (
-                f"Investigate this.\n\n{incident_context(state)}{lessons_context}"
-                f"{outofsync_hint(state.get('text', ''))}"
-            )
+            prompt_content = f"Investigate this.\n\n{incident_context(state)}{lessons_context}"
             answer = await run_supervised(
                 state,
                 gate,
