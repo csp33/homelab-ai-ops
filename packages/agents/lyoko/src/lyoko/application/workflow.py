@@ -98,8 +98,14 @@ def create_lyoko_graph(
     specialists: dict[str, Any] | None = None,
     memory_repository: MemoryRepositoryInterface | None = None,
     embeddings_service: EmbeddingsServiceInterface | None = None,
+    diagnose_llm: LLMClientInterface | None = None,
+    diagnose_supervisor: Any = None,
 ) -> Any:
-    """Build the LangGraph StateGraph that routes, answers, investigates and remediates."""
+    """Build the LangGraph StateGraph that routes, answers, investigates and remediates.
+
+    ``diagnose_llm``/``diagnose_supervisor`` optionally give the diagnose phase a different model
+    than the rest of the graph; both fall back to ``llm``/``supervisor`` when omitted.
+    """
     route_node = create_route_node(llm=llm)
     chat_node = create_chat_node(
         mcp_client=mcp_client,
@@ -112,8 +118,8 @@ def create_lyoko_graph(
     )
     diagnose_node = create_diagnose_node(
         mcp_client=mcp_client,
-        llm=llm,
-        supervisor=supervisor,
+        llm=diagnose_llm or llm,
+        supervisor=diagnose_supervisor or supervisor,
         approval_manager=approval_manager,
         chat_manager=chat_manager,
         memory_repository=memory_repository,

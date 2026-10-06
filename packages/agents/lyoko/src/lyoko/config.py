@@ -45,7 +45,18 @@ class AgentSettings(BaseSettings):
 
     # LLM Provider
     openai_api_key: str = Field(default="", description="OpenAI API Key")
-    openai_model: str = Field(default="gpt-4o-mini", description="OpenAI Model name")
+    openai_model: str = Field(
+        default="gpt-4o-mini",
+        description="OpenAI model for chat, remediation, verification, and domain specialists.",
+    )
+    openai_diagnose_model: str = Field(
+        default="gpt-4.1",
+        description=(
+            "OpenAI model for the diagnose phase, which synthesizes the specialists' evidence and "
+            "decides whether the incident is actionable. A stronger model here pays off because "
+            "mis-synthesis is the main failure mode. Empty falls back to openai_model."
+        ),
+    )
 
     # MCP Gateway connection
     mcp_server_url: str = Field(
