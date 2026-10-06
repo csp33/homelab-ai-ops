@@ -17,6 +17,7 @@ from lyoko.application.nodes.helpers import (
     incident_context,
     make_gate,
     run_supervised,
+    status_callback,
 )
 from lyoko.application.tool_gate import CallOutcome, GateMode, ToolCallRecord
 from lyoko.domain.interfaces.llm import LLMClientInterface
@@ -87,6 +88,7 @@ def create_remediate_node(
                     f"Root cause: {state.get('root_cause', 'Unknown')}\n\n"
                     f"Plan:\n{state.get('plan', '')}"
                 ),
+                on_status=status_callback(config),
             )
             summary = parse_result(answer)
         except Exception as exc:

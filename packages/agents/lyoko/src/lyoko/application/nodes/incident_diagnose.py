@@ -18,6 +18,7 @@ from lyoko.application.nodes.helpers import (
     make_gate,
     origin,
     run_supervised,
+    status_callback,
 )
 from lyoko.application.nodes.incident_memory import retrieve_incident_lessons
 from lyoko.application.tool_gate import GateMode
@@ -90,6 +91,7 @@ def create_diagnose_node(
                 phase="diagnose",
                 system_prompt=DIAGNOSE_SYSTEM_PROMPT,
                 prompt=prompt_content,
+                on_status=status_callback(config),
             )
         except Exception as exc:
             logger.error("Investigation failed: %s", exc, exc_info=True)

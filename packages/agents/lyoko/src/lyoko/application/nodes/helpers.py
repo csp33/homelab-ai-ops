@@ -44,6 +44,18 @@ def is_message(state: dict[str, Any]) -> bool:
     return state.get("event_type", EVENT_ALERT) == EVENT_MESSAGE
 
 
+def status_callback(config: Any) -> Any:
+    """Return the streaming status callback carried by the run config, if any.
+
+    ``on_status`` lives in ``config['configurable']`` (never in the checkpointed state) and is set
+    by the Telegram handler when a live progress placeholder exists. Every node that runs an agent
+    must forward it so the placeholder shows the steps instead of staying on "Thinking…".
+    """
+    if not isinstance(config, dict):
+        return None
+    return config.get("configurable", {}).get("on_status")
+
+
 def incident_context(state: dict[str, Any]) -> str:
     if is_message(state):
         base = f"Problem reported by the operator in chat:\n{state.get('text', '')}"

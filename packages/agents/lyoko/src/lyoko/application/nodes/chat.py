@@ -12,6 +12,7 @@ from lyoko.application.nodes.helpers import (
     _NO_LLM_REPLY,
     make_gate,
     run_supervised,
+    status_callback,
 )
 from lyoko.application.tool_gate import GateMode
 from lyoko.config import settings
@@ -88,9 +89,7 @@ def create_chat_node(
             chat_manager=chat_manager,
             mcp_client=mcp_client,
         )
-        on_status = None
-        if isinstance(config, dict):
-            on_status = config.get("configurable", {}).get("on_status")
+        on_status = status_callback(config)
         try:
             answer = await run_supervised(
                 state,
