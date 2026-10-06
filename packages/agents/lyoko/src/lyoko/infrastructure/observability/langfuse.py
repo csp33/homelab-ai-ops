@@ -1,10 +1,11 @@
 """Langfuse implementation of tracer interface and callback handler factory."""
 
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from lyoko.config import settings
-from lyoko.domain.interfaces.tracer import TracerInterface, null_span
+from lyoko.domain.interfaces.tracer import TracerInterface
 
 logger = logging.getLogger("lyoko.observability.langfuse")
 
@@ -73,17 +74,26 @@ class LangfuseTracer(TracerInterface):
             logger.warning(f"Failed to create Langfuse callback handler: {exc}")
             return None
 
-    def span(self, name: str, metadata: dict[str, Any] | None = None) -> Any:
-        """Open a named span in the current trace; a no-op when tracing is disabled."""
-        if not self._enabled or self._client is None:
-            return null_span()
+    async def traced(self, name: str, run: Callable[[], Awaitable[Any]]) -> Any:
+        """Run a direct infrastructure call as a named child of the current graph node.
+
+        Langfuse's CallbackHandler links observations by parent run, not by OpenTelemetry context,
+        so a manual span would become a separate root trace. Executing the call through a named
+        LangChain runnable instead inherits the ambient callbacks and nests it correctly.
+        """
+        if not self._enabled:
+            return await run()
+
         try:
-            return self._client.start_as_current_observation(
-                as_type="span", name=name, metadata=metadata or {}
-            )
+            from langchain_core.runnables import RunnableLambda
         except Exception as exc:
-            logger.debug("Failed to start Langfuse span '%s': %s", name, exc)
-            return null_span()
+            logger.debug("RunnableLambda unavailable, running '%s' untraced: %s", name, exc)
+            return await run()
+
+        async def _invoke(_: Any) -> Any:
+            return await run()
+
+        return await RunnableLambda(_invoke, name=name).ainvoke(None)
 
     def get_trace_config(
         self,

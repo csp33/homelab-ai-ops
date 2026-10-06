@@ -1,14 +1,8 @@
 """Tracer interface definition for LYOKO."""
 
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import Awaitable, Callable
 from typing import Any
-
-
-@contextmanager
-def null_span() -> Iterator[None]:
-    yield None
 
 
 class TracerInterface(ABC):
@@ -16,13 +10,14 @@ class TracerInterface(ABC):
     def get_callback_handler(self) -> Any | None:
         """Return callback handler for LangGraph / LangChain tracing."""
 
-    def span(self, name: str, metadata: dict[str, Any] | None = None) -> Any:
-        """Record a named span in the current trace. A no-op unless tracing is enabled.
+    async def traced(self, name: str, run: Callable[[], Awaitable[Any]]) -> Any:
+        """Run an infrastructure call as a named step in the current trace.
 
-        Used by code paths that call infrastructure directly (no LLM/LangChain run to trace), so
-        their steps still show up in the trace under the enclosing graph node.
+        Code paths that call infrastructure directly (no LLM/LangChain run to trace) wrap each
+        step in this, so it shows up under the enclosing graph node instead of an untraced gap.
+        The default runs the call as-is; tracers that support it may emit a child span.
         """
-        return null_span()
+        return await run()
 
     def get_trace_config(
         self,
