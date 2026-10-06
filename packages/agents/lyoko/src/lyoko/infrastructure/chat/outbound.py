@@ -229,4 +229,10 @@ class TelegramOutboundMixin:
                 reply_to_message_id=reply_to_id,
                 allow_sending_without_reply=True,
             )
+            text = plain_text
+            parse_mode: str | None = None
+        else:
+            parse_mode = "HTML"
+        if sent is not None:
+            self._approval_message_html[(str(target), int(sent.message_id))] = (text, parse_mode)
         return _to_sent_message(sent, str(target))
