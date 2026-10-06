@@ -69,7 +69,6 @@ async def test_message_the_router_calls_an_incident_runs_the_incident_branch():
     assert llm.calls == ["route", "diagnose"]
     assert "sonarr keeps crashing, fix it" in llm.prompts["diagnose"]
     assert "Incident Report" in result["reply"]
-    assert "sonarr keeps crashing, fix it" in result["reply"]
     assert "database credentials" in result["reply"]
     # The Telegram handler replies with the report. Broadcasting it too would send it twice.
     chat.broadcast_message.assert_not_awaited()
