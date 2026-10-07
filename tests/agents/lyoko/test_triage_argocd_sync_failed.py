@@ -49,9 +49,7 @@ def test_can_handle_detects_alert_and_message():
 @pytest.mark.asyncio
 async def test_execute_resolves_when_already_succeeded():
     mcp = MagicMock()
-    mcp.call_tool = AsyncMock(
-        return_value=yaml.safe_dump(_app_manifest("Succeeded", "Synced"))
-    )
+    mcp.call_tool = AsyncMock(return_value=yaml.safe_dump(_app_manifest("Succeeded", "Synced")))
     handler = ArgoCDSyncFailedHandler(mcp_client=mcp)
 
     state = {

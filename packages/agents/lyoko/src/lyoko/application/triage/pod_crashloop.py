@@ -83,9 +83,7 @@ class PodCrashLoopHandler:
     async def _span(self, name: str, run: Any) -> Any:
         return await self.tracer.traced(name, run) if self.tracer is not None else await run()
 
-    async def execute(
-        self, state: dict[str, Any], config: RunnableConfig
-    ) -> TriageResult | None:
+    async def execute(self, state: dict[str, Any], config: RunnableConfig) -> TriageResult | None:
         target = extract_crashloop_target(state)
         if not target or self.mcp_client is None:
             return None
@@ -103,7 +101,9 @@ class PodCrashLoopHandler:
         plan = f"Delete crashing pod `{pod}` in namespace `{namespace}` to trigger fresh controller recreation."
         root_cause = f"Pod `{pod}` in namespace `{namespace}` is failing in CrashLoopBackOff."
 
-        logger.info("Pod crashloop triage: requesting approval to delete pod %s/%s.", namespace, pod)
+        logger.info(
+            "Pod crashloop triage: requesting approval to delete pod %s/%s.", namespace, pod
+        )
         await report(f"⏳ Waiting for approval to restart pod {pod} ({namespace})")
 
         gate = make_gate(
@@ -120,6 +120,13 @@ class PodCrashLoopHandler:
         actions = [record.to_dict() for record in gate.records]
 
         if refusal is not None:
+            # If refused because no approval channel is configured, fall through to diagnose
+            if "no approval channel" in refusal.lower():
+                logger.info(
+                    "Pod crashloop restart: no approval channel configured; falling through to diagnose."
+                )
+                return None
+
             logger.info("Pod crashloop restart not approved: %s", refusal)
             return TriageResult(
                 handled=True,
@@ -152,7 +159,9 @@ class PodCrashLoopHandler:
         resolved = False
         verification = ""
         for attempt in range(_VERIFY_ATTEMPTS):
-            await report(f"🔍 Verifying pod health in {namespace} (attempt {attempt + 1}/{_VERIFY_ATTEMPTS})")
+            await report(
+                f"🔍 Verifying pod health in {namespace} (attempt {attempt + 1}/{_VERIFY_ATTEMPTS})"
+            )
             await asyncio.sleep(settings.verification_delay_seconds)
             try:
                 pod_data = await self._span(

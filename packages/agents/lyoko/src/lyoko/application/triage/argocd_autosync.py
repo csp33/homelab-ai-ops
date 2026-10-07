@@ -76,9 +76,7 @@ class ArgoCDAutosyncHandler:
     async def _span(self, name: str, run: Any) -> Any:
         return await self.tracer.traced(name, run) if self.tracer is not None else await run()
 
-    async def execute(
-        self, state: dict[str, Any], config: RunnableConfig
-    ) -> TriageResult | None:
+    async def execute(self, state: dict[str, Any], config: RunnableConfig) -> TriageResult | None:
         app = extract_outofsync_app(state)
         if not app or self.mcp_client is None:
             return None

@@ -42,8 +42,6 @@ class TriageHandler(Protocol):
         """Check if this handler can deterministically handle the alert or message."""
         ...
 
-    async def execute(
-        self, state: dict[str, Any], config: RunnableConfig
-    ) -> TriageResult | None:
+    async def execute(self, state: dict[str, Any], config: RunnableConfig) -> TriageResult | None:
         """Execute deterministic triage and return result, or None to fall through."""
         ...

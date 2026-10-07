@@ -61,9 +61,7 @@ async def test_execute_restarts_cloudflared_with_approval(monkeypatch):
     # 1. k8s_pods_list_in_namespace -> finds cloudflare-tunnel-xxx
     # 2. k8s_pods_delete -> deletes pod
     # 3. k8s_resources_get -> deployment status availableReplicas >= 1
-    deployment_ok = {
-        "status": {"availableReplicas": 1, "replicas": 1, "readyReplicas": 1}
-    }
+    deployment_ok = {"status": {"availableReplicas": 1, "replicas": 1, "readyReplicas": 1}}
     mcp.call_tool = AsyncMock(
         side_effect=[
             {"items": [{"metadata": {"name": "cloudflare-tunnel-6f8b9d-abc"}}]},

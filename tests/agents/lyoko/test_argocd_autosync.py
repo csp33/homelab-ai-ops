@@ -238,6 +238,7 @@ async def test_autosync_node_falls_through_when_not_applicable():
     assert alert_matching == {"triage": TRIAGE_DIAGNOSE}
 
     # An unknown alert event falls through directly without checking
-    alert_other = await node({"event_type": "alert", "alert_name": "OtherAlert", "event_id": "e4"}, {})
+    alert_other = await node(
+        {"event_type": "alert", "alert_name": "OtherAlert", "event_id": "e4"}, {}
+    )
     assert alert_other == {"triage": TRIAGE_DIAGNOSE}
-

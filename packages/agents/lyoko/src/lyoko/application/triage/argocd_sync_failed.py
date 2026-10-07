@@ -40,10 +40,7 @@ def extract_sync_failed_app(state: dict[str, Any]) -> str | None:
 
 
 def _parse_manifest(result: Any) -> dict[str, Any] | None:
-    if isinstance(result, dict):
-        content = result.get("content", result)
-    else:
-        content = result
+    content = result.get("content", result) if isinstance(result, dict) else result
     if isinstance(content, dict):
         return content
     if not isinstance(content, str):
@@ -105,9 +102,7 @@ class ArgoCDSyncFailedHandler:
     async def _span(self, name: str, run: Any) -> Any:
         return await self.tracer.traced(name, run) if self.tracer is not None else await run()
 
-    async def execute(
-        self, state: dict[str, Any], config: RunnableConfig
-    ) -> TriageResult | None:
+    async def execute(self, state: dict[str, Any], config: RunnableConfig) -> TriageResult | None:
         app = extract_sync_failed_app(state)
         if not app or self.mcp_client is None:
             return None

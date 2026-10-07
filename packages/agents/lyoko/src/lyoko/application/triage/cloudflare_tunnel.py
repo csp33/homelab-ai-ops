@@ -49,10 +49,7 @@ def is_cloudflare_tunnel_event(state: dict[str, Any]) -> bool:
 
 
 def _parse_manifest(result: Any) -> dict[str, Any] | None:
-    if isinstance(result, dict):
-        content = result.get("content", result)
-    else:
-        content = result
+    content = result.get("content", result) if isinstance(result, dict) else result
     if isinstance(content, dict):
         return content
     if not isinstance(content, str):
@@ -116,9 +113,7 @@ class CloudflareTunnelHandler:
             logger.warning("Failed to list pods in %s: %s", _NAMESPACE, exc)
         return None
 
-    async def execute(
-        self, state: dict[str, Any], config: RunnableConfig
-    ) -> TriageResult | None:
+    async def execute(self, state: dict[str, Any], config: RunnableConfig) -> TriageResult | None:
         if self.mcp_client is None:
             return None
 
@@ -137,7 +132,9 @@ class CloudflareTunnelHandler:
             logger.info("No cloudflared pod found in %s; falling through.", _NAMESPACE)
             return None
 
-        plan = f"Restart Cloudflare Tunnel by deleting pod `{pod_name}` in namespace `{_NAMESPACE}`."
+        plan = (
+            f"Restart Cloudflare Tunnel by deleting pod `{pod_name}` in namespace `{_NAMESPACE}`."
+        )
         root_cause = "Cloudflare Tunnel pod is not ready or continuously restarting."
 
         logger.info("Cloudflare tunnel triage: requesting approval to restart %s.", pod_name)
@@ -159,6 +156,12 @@ class CloudflareTunnelHandler:
         actions = [record.to_dict() for record in gate.records]
 
         if refusal is not None:
+            if "no approval channel" in refusal.lower():
+                logger.info(
+                    "Cloudflare tunnel restart: no approval channel configured; falling through to diagnose."
+                )
+                return None
+
             logger.info("Cloudflare tunnel restart not approved: %s", refusal)
             return TriageResult(
                 handled=True,
