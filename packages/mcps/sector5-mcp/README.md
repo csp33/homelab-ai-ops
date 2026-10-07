@@ -1,6 +1,6 @@
 <div align="center">
 
-# sector5-mcp
+# Sector 5 MCP
 
 ### Unified FastMCP Gateway & Security Harness for Homelab Operations
 
