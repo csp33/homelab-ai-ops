@@ -1,7 +1,6 @@
-"""Notification node for publishing incident reports and replying to operators."""
+"""Use case for formatting and broadcasting incident notification reports."""
 
 import logging
-from collections.abc import Callable
 from typing import Any
 
 from lyoko.application.chat_manager import ChatManager
@@ -10,8 +9,9 @@ from lyoko.application.nodes.helpers import (
     is_message,
     truncate,
 )
+from lyoko.config import settings
 
-logger = logging.getLogger("lyoko.workflow.notify")
+logger = logging.getLogger("lyoko.application.use_cases.notify_report")
 
 
 def format_incident_report(state: dict[str, Any]) -> str:
@@ -38,14 +38,33 @@ def format_incident_report(state: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def create_notify_node(chat_manager: ChatManager | None = None) -> Callable[[dict[str, Any]], Any]:
-    """Factory creating the notify node handler."""
-    from lyoko.application.use_cases.notify_report import NotifyIncidentReportUseCase
+class NotifyIncidentReportUseCase:
+    """Formats and publishes incident reports across active channels."""
 
-    use_case = NotifyIncidentReportUseCase(chat_manager=chat_manager)
+    def __init__(self, chat_manager: ChatManager | None = None) -> None:
+        self.chat_manager = chat_manager
 
-    async def notify_node(state: dict[str, Any]) -> dict[str, Any]:
+    async def execute(self, state: dict[str, Any]) -> dict[str, Any]:
         """Build the incident report. Alerts broadcast it; a message gets it as the reply."""
-        return await use_case.execute(state)
-
-    return notify_node
+        summary = format_incident_report(state)
+        logger.info(summary)
+        if is_message(state):
+            # The Telegram handler sends the reply to the message that started the incident.
+            return {"reply": summary}
+        if self.chat_manager is not None:
+            progress_message_id = state.get("progress_message_id")
+            progress_chat_id = state.get("progress_chat_id")
+            edited = False
+            if progress_message_id and progress_chat_id:
+                results = await self.chat_manager.edit_message(
+                    chat_id=progress_chat_id,
+                    message_id=progress_message_id,
+                    text=summary,
+                )
+                edited = bool(results)
+            if not edited:
+                chat_id = state.get("chat_id") or settings.telegram_default_chat_id or ""
+                await self.chat_manager.broadcast_message(
+                    chat_id=chat_id, text=summary, session_id=state.get("session_id")
+                )
+        return {}

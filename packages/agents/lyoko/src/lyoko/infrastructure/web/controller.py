@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 from lyoko.domain.interfaces.tracer import TracerInterface
 from lyoko.domain.models.incident import Incident, compute_incident_key
-from lyoko.domain.models.memory import FeedbackRequest, MemoryEntry
+from lyoko.domain.models.memory import FeedbackRequest
 
 
 def create_webhook_router(
@@ -116,26 +116,19 @@ def create_feedback_router() -> APIRouter:
                 detail="PostgreSQL memory repository is not available or configured.",
             )
 
+        from lyoko.application.use_cases.record_feedback import RecordFeedbackUseCase
+
         embeddings_service = getattr(request.app.state, "embeddings_service", None)
-        embedding = None
-
-        if embeddings_service:
-            text_to_embed = (
-                f"{payload.alert_name or ''} {payload.service_name} {payload.namespace} "
-                f"{payload.incident_pattern} {payload.operator_feedback}"
-            )
-            embedding = await embeddings_service.embed_text(text_to_embed)
-
-        entry = MemoryEntry(
-            namespace=payload.namespace,
-            service_name=payload.service_name,
-            alert_name=payload.alert_name,
-            incident_pattern=payload.incident_pattern,
-            operator_feedback=payload.operator_feedback,
-            action_rule=payload.action_rule,
+        use_case = RecordFeedbackUseCase(
+            memory_repository=memory_repo,
+            embeddings_service=embeddings_service,
         )
 
-        memory_id = await memory_repo.save_memory(entry, embedding=embedding)
+        try:
+            memory_id = await use_case.execute_from_request(payload)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
         return {
             "status": "success",
             "memory_id": memory_id,

@@ -6,7 +6,6 @@ from typing import Any
 from sector5_mcp.application.guardrail import GuardrailEngine
 from sector5_mcp.application.registry import ToolRegistry
 from sector5_mcp.config import settings
-from sector5_mcp.domain.exceptions.tool import ToolNotFoundError
 from sector5_mcp.domain.interfaces.auth import AuthVerifierInterface
 from sector5_mcp.domain.interfaces.upstream import UpstreamMCPInterface
 from sector5_mcp.domain.models.auth import AuthIdentity
@@ -45,6 +44,14 @@ class MCPGatewayService:
             upstreams=self.upstreams,
             guardrail=self.guardrail,
         )
+        from sector5_mcp.application.use_cases.discover_tools import DiscoverToolsUseCase
+        from sector5_mcp.application.use_cases.execute_tool import ExecuteToolUseCase
+
+        self._discover_use_case = DiscoverToolsUseCase(registry=self.registry)
+        self._execute_use_case = ExecuteToolUseCase(
+            registry=self.registry,
+            guardrail=self.guardrail,
+        )
 
     def verify_access(self, token: str | None) -> AuthIdentity:
         """Verify client authentication credentials via the injected auth port."""
@@ -52,19 +59,15 @@ class MCPGatewayService:
 
     async def discover_tools(self, force_refresh: bool = False) -> list[ToolDefinition]:
         """Discover tools across all upstream MCP servers."""
-        return await self.registry.discover_tools(force_refresh=force_refresh)
+        return await self._discover_use_case.execute_all(force_refresh=force_refresh)
 
     async def get_domain_tools(self, domain: str) -> list[ToolDefinition]:
         """Retrieve all allowed tools belonging to a specific upstream domain."""
-        return await self.registry.get_domain_tools(domain)
+        return await self._discover_use_case.execute_for_domain(domain)
 
     async def get_tool_definition(self, name: str) -> ToolDefinition | None:
         """Return one tool's definition (with its parameter schema) by name, or None."""
-        base_name = name.split(".", 1)[1] if "." in name else name
-        for tool in await self.discover_tools():
-            if tool.name in (name, base_name):
-                return tool
-        return None
+        return await self._discover_use_case.execute_get_definition(name)
 
     def _resolve_tool_routing(self, name: str) -> tuple[str, UpstreamMCPInterface] | None:
         """Resolve a tool name to its registered upstream handler."""
@@ -72,21 +75,4 @@ class MCPGatewayService:
 
     async def execute_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         """Validate safety guardrails and route tool execution to the upstream MCP server."""
-        route = self._resolve_tool_routing(name)
-        if route is None:
-            # Re-attempt discovery in case tools were registered dynamically
-            await self.discover_tools()
-            route = self._resolve_tool_routing(name)
-
-        if route is None:
-            raise ToolNotFoundError(
-                f"Tool '{name}' not found on any upstream MCP server or blocked by policy."
-            )
-
-        upstream_name, upstream_client = route
-
-        # Enforce all active security guardrails (namespace, command exec whitelist/blacklist, tool rules)
-        self.guardrail.validate_tool_call(name, arguments, upstream_name=upstream_name)
-
-        logger.info(f"Routing tool '{name}' to upstream '{upstream_name}'...")
-        return await upstream_client.call_tool(name, arguments)
+        return await self._execute_use_case.execute(name, arguments)
