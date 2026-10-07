@@ -29,19 +29,10 @@ def create_triage_node(
 
 
 def create_composite_triage_node(
-    mcp_client: MCPClientInterface | None,
-    approval_manager: ApprovalManager | None = None,
-    chat_manager: ChatManager | None = None,
-    tracer: Any = None,
+    handlers: Sequence[TriageHandler],
 ) -> Callable[[dict[str, Any], RunnableConfig], Any]:
-    """Factory creating the composite deterministic triage node with all registered handlers."""
-    use_case = TriageIncidentUseCase(
-        mcp_client=mcp_client,
-        approval_manager=approval_manager,
-        chat_manager=chat_manager,
-        tracer=tracer,
-    )
-    return create_triage_node(use_case=use_case)
+    """Factory creating the composite deterministic triage node with injected handlers."""
+    return create_triage_node(handlers=handlers)
 
 
 def create_argocd_autosync_node(

@@ -136,8 +136,9 @@ async def test_triage_incident_use_case():
     res = await uc.execute({"event_type": "alert"}, {})
     assert res == {"triage": TRIAGE_DIAGNOSE}
 
-    mock_mcp = AsyncMock()
-    uc_mcp = TriageIncidentUseCase(mcp_client=mock_mcp)
+    handler = MagicMock()
+    handler.can_handle.return_value = False
+    uc_with_handlers = TriageIncidentUseCase(handlers=[handler])
     # Message does not match any deterministic handler
-    res2 = await uc_mcp.execute({"event_type": "message", "text": "normal message"}, {})
+    res2 = await uc_with_handlers.execute({"event_type": "message", "text": "normal message"}, {})
     assert res2 == {"triage": TRIAGE_DIAGNOSE}

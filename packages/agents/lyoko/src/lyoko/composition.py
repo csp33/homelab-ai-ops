@@ -20,6 +20,11 @@ from lyoko.application.specialists.prompts import (
     SMARTHOME_SPECIALIST_PROMPT,
 )
 from lyoko.application.supervisor import SupervisorAgent
+from lyoko.application.triage.argocd_autosync import ArgoCDAutosyncHandler
+from lyoko.application.triage.argocd_sync_failed import ArgoCDSyncFailedHandler
+from lyoko.application.triage.base import TriageHandler
+from lyoko.application.triage.cloudflare_tunnel import CloudflareTunnelHandler
+from lyoko.application.triage.pod_crashloop import PodCrashLoopHandler
 from lyoko.config import settings
 from lyoko.domain.exceptions.mcp import MCPGatewayError
 from lyoko.domain.interfaces.llm import LLMClientInterface
@@ -103,6 +108,41 @@ def build_supervisor(
 ) -> SupervisorAgent:
     """Instantiate central multi-agent supervisor."""
     return SupervisorAgent(specialists=specialists, llm=llm)
+
+
+def build_triage_handlers(
+    mcp_client: MCPClientInterface | None,
+    approval_manager: ApprovalManager | None = None,
+    chat_manager: ChatManager | None = None,
+    tracer: object = None,
+) -> list[TriageHandler]:
+    """Instantiate deterministic fast-path triage handlers."""
+    return [
+        ArgoCDAutosyncHandler(
+            mcp_client=mcp_client,
+            approval_manager=approval_manager,
+            chat_manager=chat_manager,
+            tracer=tracer,
+        ),
+        PodCrashLoopHandler(
+            mcp_client=mcp_client,
+            approval_manager=approval_manager,
+            chat_manager=chat_manager,
+            tracer=tracer,
+        ),
+        CloudflareTunnelHandler(
+            mcp_client=mcp_client,
+            approval_manager=approval_manager,
+            chat_manager=chat_manager,
+            tracer=tracer,
+        ),
+        ArgoCDSyncFailedHandler(
+            mcp_client=mcp_client,
+            approval_manager=approval_manager,
+            chat_manager=chat_manager,
+            tracer=tracer,
+        ),
+    ]
 
 
 def build_chat_manager(
