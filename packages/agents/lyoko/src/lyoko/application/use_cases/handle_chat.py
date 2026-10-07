@@ -1,0 +1,94 @@
+"""Use case for answering operator messages via chat."""
+
+import logging
+from typing import Any
+
+from langchain_core.runnables import RunnableConfig
+from lyoko.application.chat_manager import ChatManager
+from lyoko.application.chat_prompts import CHAT_SYSTEM_PROMPT
+from lyoko.application.hitl import ApprovalManager
+from lyoko.application.nodes.helpers import (
+    _NO_LLM_REPLY,
+    make_gate,
+    run_supervised,
+    status_callback,
+)
+from lyoko.application.notifications import (
+    RECOVERY_ACKNOWLEDGEMENT,
+    is_recovery_notification,
+)
+from lyoko.application.tool_gate import GateMode
+from lyoko.application.use_cases.retrieve_memory import RetrieveMemoryLessonsUseCase
+from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
+from lyoko.domain.interfaces.llm import LLMClientInterface
+from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
+
+logger = logging.getLogger("lyoko.application.use_cases.handle_chat")
+
+
+class HandleChatTurnUseCase:
+    """Orchestrates an interactive chat turn with memory recall and tool gating."""
+
+    def __init__(
+        self,
+        mcp_client: Any,
+        llm: LLMClientInterface | None,
+        supervisor: Any = None,
+        approval_manager: ApprovalManager | None = None,
+        chat_manager: ChatManager | None = None,
+        retrieve_memory_use_case: RetrieveMemoryLessonsUseCase | None = None,
+        memory_repository: MemoryRepositoryInterface | None = None,
+        embeddings_service: EmbeddingsServiceInterface | None = None,
+    ) -> None:
+        self.mcp_client = mcp_client
+        self.llm = llm
+        self.supervisor = supervisor
+        self.approval_manager = approval_manager
+        self.chat_manager = chat_manager
+        self.retrieve_memory_use_case = retrieve_memory_use_case or RetrieveMemoryLessonsUseCase(
+            memory_repository=memory_repository,
+            embeddings_service=embeddings_service,
+        )
+
+    async def execute(self, state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
+        """Answer the operator via supervised tool execution."""
+        text = state.get("text", "")
+        history_context = state.get("history_context", "")
+        if is_recovery_notification(text):
+            # A recovery notification has nothing to investigate; acknowledge it and stop.
+            logger.info("Recovery notification acknowledged without investigation.")
+            return {"reply": RECOVERY_ACKNOWLEDGEMENT}
+
+        if self.llm is None:
+            return {"reply": _NO_LLM_REPLY.format(text=text)}
+
+        lessons_context = await self.retrieve_memory_use_case.execute_for_chat(text)
+        prompt_with_memory = f"{text}{lessons_context}{history_context}"
+
+        gate = make_gate(
+            state,
+            GateMode.APPROVAL,
+            approval_manager=self.approval_manager,
+            chat_manager=self.chat_manager,
+            mcp_client=self.mcp_client,
+        )
+
+        on_status = status_callback(config)
+
+        try:
+            answer = await run_supervised(
+                state,
+                gate,
+                config,
+                mcp_client=self.mcp_client,
+                llm=self.llm,
+                supervisor=self.supervisor,
+                phase="chat",
+                prompt=prompt_with_memory,
+                system_prompt=None if self.supervisor is not None else CHAT_SYSTEM_PROMPT,
+                on_status=on_status,
+            )
+        except Exception as exc:
+            logger.error("Failed to generate LLM response: %s", exc)
+            return {"reply": f"⚠️ Error processing your question: {exc}"}
+        return {"reply": answer, "actions": [r.to_dict() for r in gate.records]}

@@ -5,9 +5,7 @@ from collections.abc import Callable
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from lyoko.application.nodes.helpers import is_message
-from lyoko.application.notifications import is_recovery_notification
-from lyoko.application.router import ROUTER_SYSTEM_PROMPT, Route, parse_route
+from lyoko.application.router import Route
 from lyoko.domain.interfaces.llm import LLMClientInterface
 
 logger = logging.getLogger("lyoko.workflow.router")
@@ -22,37 +20,12 @@ def create_route_node(
     llm: LLMClientInterface | None,
 ) -> Callable[[dict[str, Any], RunnableConfig], Any]:
     """Factory creating the route node handler with injected LLM client."""
+    from lyoko.application.use_cases.route_event import RouteEventUseCase
+
+    use_case = RouteEventUseCase(llm=llm)
 
     async def route_node(state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
         """Alerts are incidents. For a message, the LLM decides between chat and incident."""
-        if not is_message(state):
-            return {"route": Route.INCIDENT.value}
-
-        text = state.get("text", "")
-        if is_recovery_notification(text):
-            # A recovery needs no investigation; answer it in chat without an LLM call.
-            logger.info("Recovery notification detected; routing to chat.")
-            return {"route": Route.CHAT.value}
-        if llm is None:
-            return {"route": Route.CHAT.value}
-
-        history_context = state.get("history_context", "")
-        router_input = text if not history_context else f"{text}{history_context}"
-
-        try:
-            answer = await llm.chat(
-                prompt=router_input,
-                system_prompt=ROUTER_SYSTEM_PROMPT,
-                trace_name="route-llm",
-                tags=["phase:route"],
-                parent_config=config,
-            )
-        except Exception as exc:
-            logger.warning("Routing failed, answering in chat: %s", exc)
-            return {"route": Route.CHAT.value}
-
-        route = parse_route(answer)
-        logger.info("Routed message to %s", route.value)
-        return {"route": route.value}
+        return await use_case.execute(state, config=config)
 
     return route_node

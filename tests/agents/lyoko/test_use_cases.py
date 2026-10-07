@@ -1,0 +1,143 @@
+"""Unit tests for newly introduced application UseCase classes."""
+
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from lyoko.application.use_cases.notify_report import (
+    NotifyIncidentReportUseCase,
+)
+from lyoko.application.use_cases.record_feedback import RecordFeedbackUseCase
+from lyoko.application.use_cases.retrieve_memory import RetrieveMemoryLessonsUseCase
+from lyoko.application.use_cases.route_event import RouteEventUseCase
+from lyoko.domain.interfaces.llm import LLMClientInterface
+from lyoko.domain.models.memory import FeedbackRequest, MemoryEntry, MemoryQueryResult
+from sector5_mcp.application.use_cases.discover_tools import DiscoverToolsUseCase
+from sector5_mcp.application.use_cases.execute_tool import ExecuteToolUseCase
+from sector5_mcp.domain.models.upstream import ToolDefinition, ToolResult
+
+
+@pytest.mark.asyncio
+async def test_route_event_use_case():
+    use_case_no_llm = RouteEventUseCase(llm=None)
+    assert (await use_case_no_llm.execute({"event_type": "alert"})) == {"route": "incident"}
+    assert (await use_case_no_llm.execute({"event_type": "message", "text": "hello"})) == {
+        "route": "chat"
+    }
+
+    mock_llm = MagicMock(spec=LLMClientInterface)
+    mock_llm.chat = AsyncMock(return_value="INCIDENT")
+    use_case_llm = RouteEventUseCase(llm=mock_llm)
+    assert (await use_case_llm.execute({"event_type": "message", "text": "pod down"})) == {
+        "route": "incident"
+    }
+
+
+@pytest.mark.asyncio
+async def test_record_feedback_use_case():
+    mock_repo = AsyncMock()
+    mock_repo.save_memory.return_value = 42
+    mock_embeddings = AsyncMock()
+    mock_embeddings.embed_text.return_value = [0.1] * 1536
+
+    use_case = RecordFeedbackUseCase(mock_repo, mock_embeddings)
+
+    req = FeedbackRequest(
+        namespace="default",
+        service_name="web",
+        incident_pattern="CrashLoop",
+        operator_feedback="restart service first",
+    )
+    mem_id = await use_case.execute_from_request(req)
+    assert mem_id == 42
+    assert mock_repo.save_memory.called
+
+    chat_mem_id, svc, ns = await use_case.execute_from_chat_command(
+        feedback_content="compact logs first",
+        reply_to_text="Namespace: prod\nPod: web-api-1234\nAlert: HighMemory",
+    )
+    assert chat_mem_id == 42
+    assert svc == "web"
+    assert ns == "prod"
+
+
+@pytest.mark.asyncio
+async def test_retrieve_memory_use_case():
+    mock_repo = AsyncMock()
+    mem = MemoryEntry(
+        namespace="default",
+        service_name="app",
+        incident_pattern="OOM",
+        operator_feedback="raise limits",
+    )
+    mock_repo.search_memories.return_value = [MemoryQueryResult(memory=mem, similarity=0.85)]
+
+    use_case = RetrieveMemoryLessonsUseCase(mock_repo)
+    matched, lessons = await use_case.execute_for_incident(
+        {"alert_name": "OOM", "labels": {"namespace": "default"}}
+    )
+    assert len(matched) == 1
+    assert "raise limits" in lessons
+
+    chat_lessons = await use_case.execute_for_chat("app memory issues")
+    assert "raise limits" in chat_lessons
+
+
+@pytest.mark.asyncio
+async def test_notify_incident_report_use_case():
+    mock_chat_manager = AsyncMock()
+    use_case = NotifyIncidentReportUseCase(chat_manager=mock_chat_manager)
+
+    state = {
+        "event_type": "message",
+        "text": "test issue",
+        "root_cause": "cpu throttle",
+        "action_taken": "unthrottled",
+    }
+    result = await use_case.execute(state)
+    assert "reply" in result
+    assert "cpu throttle" in result["reply"]
+
+
+@pytest.mark.asyncio
+async def test_sector5_mcp_use_cases():
+    mock_registry = AsyncMock()
+    tool_def = ToolDefinition(name="k8s.get_pods", description="List pods")
+    mock_registry.discover_tools.return_value = [tool_def]
+    mock_registry.get_domain_tools.return_value = [tool_def]
+
+    discover_uc = DiscoverToolsUseCase(registry=mock_registry)
+    all_tools = await discover_uc.execute_all()
+    assert len(all_tools) == 1
+    domain_tools = await discover_uc.execute_for_domain("k8s")
+    assert len(domain_tools) == 1
+    single_def = await discover_uc.execute_get_definition("k8s.get_pods")
+    assert single_def is not None
+
+    mock_guardrail = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.call_tool.return_value = ToolResult(content=[{"text": "ok"}], status="success")
+    mock_registry.resolve_tool_routing = MagicMock(return_value=("k8s", mock_client))
+
+    exec_uc = ExecuteToolUseCase(registry=mock_registry, guardrail=mock_guardrail)
+    res = await exec_uc.execute("k8s.get_pods", {"namespace": "default"})
+    assert res.content[0]["text"] == "ok"
+    assert mock_guardrail.validate_tool_call.called
+
+
+@pytest.mark.asyncio
+async def test_triage_argocd_autosync_use_case():
+    from lyoko.application.use_cases.triage_argocd_autosync import (
+        TRIAGE_DIAGNOSE,
+        TriageArgoCDAutosyncUseCase,
+    )
+
+    # When no mcp_client or not a message
+    uc = TriageArgoCDAutosyncUseCase(mcp_client=None)
+    res = await uc.execute({"event_type": "alert"}, {})
+    assert res == {"triage": TRIAGE_DIAGNOSE}
+
+    mock_mcp = AsyncMock()
+    uc_mcp = TriageArgoCDAutosyncUseCase(mcp_client=mock_mcp)
+    # Message does not match Argo CD OutOfSync
+    res2 = await uc_mcp.execute({"event_type": "message", "text": "normal message"}, {})
+    assert res2 == {"triage": TRIAGE_DIAGNOSE}
