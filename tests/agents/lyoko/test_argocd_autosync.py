@@ -224,6 +224,20 @@ async def test_autosync_node_falls_through_when_not_applicable():
     )
     assert other == {"triage": TRIAGE_DIAGNOSE}
 
-    # An alert event (not a chat message) never enters the fast path.
-    alert = await node({"event_type": "alert", "text": _ALERT, "event_id": "e3"}, {})
-    assert alert == {"triage": TRIAGE_DIAGNOSE}
+    # An alert event with matching alert_name enters the fast path.
+    alert_matching = await node(
+        {
+            "event_type": "alert",
+            "alert_name": "ArgoCDAppOutOfSync",
+            "labels": {"name": "arr-stack"},
+            "event_id": "e3",
+        },
+        {},
+    )
+    # Since mock returns Synced & Healthy, it is not applicable for autosync enable and falls through to diagnose
+    assert alert_matching == {"triage": TRIAGE_DIAGNOSE}
+
+    # An unknown alert event falls through directly without checking
+    alert_other = await node({"event_type": "alert", "alert_name": "OtherAlert", "event_id": "e4"}, {})
+    assert alert_other == {"triage": TRIAGE_DIAGNOSE}
+
