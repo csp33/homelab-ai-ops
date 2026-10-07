@@ -14,6 +14,10 @@ It serves two roles:
 
 Both roles are one **LangGraph StateGraph**. They share the same supervisor, domain specialists, ToolGate approval policy, and Langfuse traces.
 
+<p align="center">
+  <img src="../../../assets/lyoko-tower-activation.gif" alt="Lyoko Tower Activation" width="420" />
+</p>
+
 ## How it works
  
 Every event enters the graph at `route` and takes one of two branches:

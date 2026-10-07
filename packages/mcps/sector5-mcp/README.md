@@ -6,6 +6,10 @@
 
 **`sector5-mcp`** is a unified **Model Context Protocol (MCP)** tool gateway and security harness. It aggregates upstream MCP servers for Kubernetes, Home Assistant, UniFi Network, Grafana, and GitHub, plus a built-in Telegram domain, into a single, authenticated, guardrail-protected endpoint accessible over **Streamable HTTP** (`/mcp`) and **stdio**.
 
+<p align="center">
+  <img src="../../../assets/sector5-interface-room.jpg" alt="Sector 5 Carthage Interface Console" width="100%" />
+</p>
+
 ## Architecture
 
 <p align="center">
