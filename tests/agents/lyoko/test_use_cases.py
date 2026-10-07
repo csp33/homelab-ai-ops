@@ -122,3 +122,22 @@ async def test_sector5_mcp_use_cases():
     res = await exec_uc.execute("k8s.get_pods", {"namespace": "default"})
     assert res.content[0]["text"] == "ok"
     assert mock_guardrail.validate_tool_call.called
+
+
+@pytest.mark.asyncio
+async def test_triage_argocd_autosync_use_case():
+    from lyoko.application.use_cases.triage_argocd_autosync import (
+        TRIAGE_DIAGNOSE,
+        TriageArgoCDAutosyncUseCase,
+    )
+
+    # When no mcp_client or not a message
+    uc = TriageArgoCDAutosyncUseCase(mcp_client=None)
+    res = await uc.execute({"event_type": "alert"}, {})
+    assert res == {"triage": TRIAGE_DIAGNOSE}
+
+    mock_mcp = AsyncMock()
+    uc_mcp = TriageArgoCDAutosyncUseCase(mcp_client=mock_mcp)
+    # Message does not match Argo CD OutOfSync
+    res2 = await uc_mcp.execute({"event_type": "message", "text": "normal message"}, {})
+    assert res2 == {"triage": TRIAGE_DIAGNOSE}
