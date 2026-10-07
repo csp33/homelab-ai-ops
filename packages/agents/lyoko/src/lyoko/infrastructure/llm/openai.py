@@ -7,6 +7,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableLambda
 from langchain_openai import ChatOpenAI
 from lyoko.domain.interfaces.llm import LLMClientInterface
+from lyoko.infrastructure.llm.content import extract_message_text
 from lyoko.infrastructure.llm.tool_loop import run_react_tool_loop
 from lyoko.infrastructure.llm.tracing import child_config
 from lyoko.infrastructure.observability.langfuse import get_langfuse_trace_config
@@ -109,4 +110,4 @@ class OpenAILLMAdapter(LLMClientInterface):
         messages.append(HumanMessage(content=prompt))
 
         response = await self.client.ainvoke(messages, config=config if config else None)
-        return str(response.content)
+        return extract_message_text(response.content)

@@ -10,6 +10,7 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from lyoko.config import settings
+from lyoko.infrastructure.llm.content import extract_message_text
 
 logger = logging.getLogger("lyoko.infrastructure.llm.openai")
 
@@ -90,7 +91,7 @@ async def run_react_tool_loop(
         messages.append(response)
 
         if not response.tool_calls:
-            return str(response.content)
+            return extract_message_text(response.content)
 
         current_tool_calls_sig = tuple(
             (tc.get("name", ""), json.dumps(tc.get("args") or {}, sort_keys=True))
@@ -221,4 +222,4 @@ async def run_react_tool_loop(
     if on_status is not None:
         await on_status("✍️ Writing the answer")
     final_response = await summary_client.ainvoke(messages)
-    return str(final_response.content)
+    return extract_message_text(final_response.content)

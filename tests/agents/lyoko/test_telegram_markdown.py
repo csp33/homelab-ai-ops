@@ -99,3 +99,17 @@ def test_markdown_to_telegram_html_expandable_blockquote():
     mixed = "> Quote header\n\nRegular text after quote"
     expected_mixed = "<blockquote expandable>Quote header</blockquote>\n\nRegular text after quote"
     assert markdown_to_telegram_html(mixed) == expected_mixed
+
+
+def test_markdown_to_telegram_html_cleans_stringified_content_blocks():
+    from lyoko.infrastructure.chat.formatting import markdown_to_telegram_html
+
+    raw_repr = (
+        "[{'type': 'text', 'text': 'Aquí están las temperaturas actuales de las CPUs:\\n\\n"
+        "1. Nodo: 192.168.33.48\\n - Sensor temp1: **50.85 °C**', 'annotations': [], 'id': 'msg_123'}]"
+    )
+    result = markdown_to_telegram_html(raw_repr)
+    assert not result.startswith("[{")
+    assert "'annotations'" not in result
+    assert "<b>50.85 °C</b>" in result
+    assert "Aquí están las temperaturas actuales" in result
