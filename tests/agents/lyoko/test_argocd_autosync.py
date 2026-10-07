@@ -12,7 +12,7 @@ from lyoko.application.argocd_outofsync import (
     is_synced_and_healthy,
     parse_outofsync_app,
 )
-from lyoko.application.nodes.argocd_autosync import (
+from lyoko.application.nodes.triage import (
     TRIAGE_DIAGNOSE,
     TRIAGE_HANDLED,
     choose_triage,

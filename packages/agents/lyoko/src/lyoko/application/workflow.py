@@ -34,11 +34,7 @@ from lyoko.application.nodes.incident_remediate import create_remediate_node
 from lyoko.application.nodes.incident_verify import create_verify_node
 from lyoko.application.nodes.notify import create_notify_node
 from lyoko.application.nodes.router import choose_branch, create_route_node
-from lyoko.application.triage.argocd_autosync import ArgoCDAutosyncHandler
-from lyoko.application.triage.argocd_sync_failed import ArgoCDSyncFailedHandler
-from lyoko.application.triage.cloudflare_tunnel import CloudflareTunnelHandler
-from lyoko.application.triage.dispatcher import choose_triage, create_triage_node
-from lyoko.application.triage.pod_crashloop import PodCrashLoopHandler
+from lyoko.application.nodes.triage import choose_triage, create_composite_triage_node
 from lyoko.config import settings
 from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
 from lyoko.domain.interfaces.llm import LLMClientInterface
@@ -113,33 +109,12 @@ def create_lyoko_graph(
     than the rest of the graph; both fall back to ``llm``/``supervisor`` when omitted.
     """
     route_node = create_route_node(llm=llm)
-    triage_handlers = [
-        ArgoCDAutosyncHandler(
-            mcp_client=mcp_client,
-            approval_manager=approval_manager,
-            chat_manager=chat_manager,
-            tracer=tracer,
-        ),
-        PodCrashLoopHandler(
-            mcp_client=mcp_client,
-            approval_manager=approval_manager,
-            chat_manager=chat_manager,
-            tracer=tracer,
-        ),
-        CloudflareTunnelHandler(
-            mcp_client=mcp_client,
-            approval_manager=approval_manager,
-            chat_manager=chat_manager,
-            tracer=tracer,
-        ),
-        ArgoCDSyncFailedHandler(
-            mcp_client=mcp_client,
-            approval_manager=approval_manager,
-            chat_manager=chat_manager,
-            tracer=tracer,
-        ),
-    ]
-    triage_node = create_triage_node(triage_handlers)
+    triage_node = create_composite_triage_node(
+        mcp_client=mcp_client,
+        approval_manager=approval_manager,
+        chat_manager=chat_manager,
+        tracer=tracer,
+    )
 
     chat_node = create_chat_node(
         mcp_client=mcp_client,
