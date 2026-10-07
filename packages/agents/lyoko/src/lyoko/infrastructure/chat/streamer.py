@@ -226,15 +226,15 @@ class TelegramStreamingReply:
     ) -> bool:
         if self.message_id is None:
             return False
+        markup = self._stop_markup() if reply_markup == "__keep__" else reply_markup
         kwargs: dict[str, Any] = {
             "chat_id": self.chat_id,
             "message_id": self.message_id,
             "text": text[:MAX_MESSAGE_LENGTH],
+            "reply_markup": markup,
         }
         if parse_mode:
             kwargs["parse_mode"] = parse_mode
-        if reply_markup != "__keep__":
-            kwargs["reply_markup"] = reply_markup
         try:
             await self.bot.edit_message_text(**kwargs)
             self._last_progress_edit = asyncio.get_event_loop().time()
