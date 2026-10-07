@@ -11,6 +11,11 @@ from lyoko.application.nodes.helpers import (
     _NO_LLM_REPLY,
     make_gate,
     run_supervised,
+    status_callback,
+)
+from lyoko.application.notifications import (
+    RECOVERY_ACKNOWLEDGEMENT,
+    is_recovery_notification,
 )
 from lyoko.application.tool_gate import GateMode
 from lyoko.application.use_cases.retrieve_memory import RetrieveMemoryLessonsUseCase
@@ -49,6 +54,11 @@ class HandleChatTurnUseCase:
         """Answer the operator via supervised tool execution."""
         text = state.get("text", "")
         history_context = state.get("history_context", "")
+        if is_recovery_notification(text):
+            # A recovery notification has nothing to investigate; acknowledge it and stop.
+            logger.info("Recovery notification acknowledged without investigation.")
+            return {"reply": RECOVERY_ACKNOWLEDGEMENT}
+
         if self.llm is None:
             return {"reply": _NO_LLM_REPLY.format(text=text)}
 
@@ -63,9 +73,7 @@ class HandleChatTurnUseCase:
             mcp_client=self.mcp_client,
         )
 
-        on_status = None
-        if isinstance(config, dict):
-            on_status = config.get("configurable", {}).get("on_status")
+        on_status = status_callback(config)
 
         try:
             answer = await run_supervised(

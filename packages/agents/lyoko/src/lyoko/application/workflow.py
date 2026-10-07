@@ -27,6 +27,10 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 from lyoko.application.chat_manager import ChatManager
 from lyoko.application.hitl import ApprovalManager
+from lyoko.application.nodes.argocd_autosync import (
+    choose_triage,
+    create_argocd_autosync_node,
+)
 from lyoko.application.nodes.chat import create_chat_node
 from lyoko.application.nodes.helpers import EVENT_ALERT, EVENT_MESSAGE
 from lyoko.application.nodes.incident_diagnose import create_diagnose_node
@@ -98,9 +102,22 @@ def create_lyoko_graph(
     specialists: dict[str, Any] | None = None,
     memory_repository: MemoryRepositoryInterface | None = None,
     embeddings_service: EmbeddingsServiceInterface | None = None,
+    diagnose_llm: LLMClientInterface | None = None,
+    diagnose_supervisor: Any = None,
+    tracer: Any = None,
 ) -> Any:
-    """Build the LangGraph StateGraph that routes, answers, investigates and remediates."""
+    """Build the LangGraph StateGraph that routes, answers, investigates and remediates.
+
+    ``diagnose_llm``/``diagnose_supervisor`` optionally give the diagnose phase a different model
+    than the rest of the graph; both fall back to ``llm``/``supervisor`` when omitted.
+    """
     route_node = create_route_node(llm=llm)
+    triage_node = create_argocd_autosync_node(
+        mcp_client=mcp_client,
+        approval_manager=approval_manager,
+        chat_manager=chat_manager,
+        tracer=tracer,
+    )
     chat_node = create_chat_node(
         mcp_client=mcp_client,
         llm=llm,
@@ -112,8 +129,8 @@ def create_lyoko_graph(
     )
     diagnose_node = create_diagnose_node(
         mcp_client=mcp_client,
-        llm=llm,
-        supervisor=supervisor,
+        llm=diagnose_llm or llm,
+        supervisor=diagnose_supervisor or supervisor,
         approval_manager=approval_manager,
         chat_manager=chat_manager,
         memory_repository=memory_repository,
@@ -137,6 +154,7 @@ def create_lyoko_graph(
 
     workflow = StateGraph(LyokoState)
     workflow.add_node("route", route_node)
+    workflow.add_node("triage", triage_node)
     workflow.add_node("chat", chat_node)
     workflow.add_node("diagnose", diagnose_node)
     workflow.add_node("remediate", remediate_node)
@@ -144,7 +162,10 @@ def create_lyoko_graph(
     workflow.add_node("notify", notify_node)
 
     workflow.add_edge(START, "route")
-    workflow.add_conditional_edges("route", choose_branch, {"chat": "chat", "diagnose": "diagnose"})
+    workflow.add_conditional_edges("route", choose_branch, {"chat": "chat", "diagnose": "triage"})
+    workflow.add_conditional_edges(
+        "triage", choose_triage, {"handled": "notify", "diagnose": "diagnose"}
+    )
     workflow.add_edge("chat", END)
     workflow.add_edge("diagnose", "remediate")
     workflow.add_edge("remediate", "verify")

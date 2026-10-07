@@ -181,9 +181,15 @@ async def test_chat_manager():
         chat_id="123",
     )
     await manager.broadcast_approval_request(req)
-    conn1.send_approval_request.assert_called_once_with(req, message_thread_id=None)
-    conn2.send_approval_request.assert_called_once_with(req, message_thread_id=None)
-    conn3.send_approval_request.assert_called_once_with(req, message_thread_id=None)
+    conn1.send_approval_request.assert_called_once_with(
+        req, message_thread_id=None, reply_to_message_id=None
+    )
+    conn2.send_approval_request.assert_called_once_with(
+        req, message_thread_id=None, reply_to_message_id=None
+    )
+    conn3.send_approval_request.assert_called_once_with(
+        req, message_thread_id=None, reply_to_message_id=None
+    )
 
     # Fault tolerance: one connector raises
     conn1.send_message.side_effect = RuntimeError("Network error")

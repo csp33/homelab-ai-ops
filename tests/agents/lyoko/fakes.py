@@ -96,7 +96,9 @@ class Operator:
         self._approve = approve
         self._reason = reason
 
-    async def broadcast_approval_request(self, request, message_thread_id=None) -> None:
+    async def broadcast_approval_request(
+        self, request, message_thread_id=None, reply_to_message_id=None
+    ) -> None:
         self.requests.append(request)
         self.thread_ids.append(message_thread_id)
         asyncio.get_running_loop().call_later(

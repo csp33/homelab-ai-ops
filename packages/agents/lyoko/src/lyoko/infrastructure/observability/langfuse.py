@@ -1,6 +1,7 @@
 """Langfuse implementation of tracer interface and callback handler factory."""
 
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from lyoko.config import settings
@@ -72,6 +73,27 @@ class LangfuseTracer(TracerInterface):
         except Exception as exc:
             logger.warning(f"Failed to create Langfuse callback handler: {exc}")
             return None
+
+    async def traced(self, name: str, run: Callable[[], Awaitable[Any]]) -> Any:
+        """Run a direct infrastructure call as a named child of the current graph node.
+
+        Langfuse's CallbackHandler links observations by parent run, not by OpenTelemetry context,
+        so a manual span would become a separate root trace. Executing the call through a named
+        LangChain runnable instead inherits the ambient callbacks and nests it correctly.
+        """
+        if not self._enabled:
+            return await run()
+
+        try:
+            from langchain_core.runnables import RunnableLambda
+        except Exception as exc:
+            logger.debug("RunnableLambda unavailable, running '%s' untraced: %s", name, exc)
+            return await run()
+
+        async def _invoke(_: Any) -> Any:
+            return await run()
+
+        return await RunnableLambda(_invoke, name=name).ainvoke(None)
 
     def get_trace_config(
         self,

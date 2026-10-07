@@ -10,6 +10,19 @@ from lyoko.application.tool_gate import GateMode, ToolGate, matches_any
 from lyoko.config import DEFAULT_READ_ONLY_TOOLS
 
 
+def test_format_arguments_shortens_a_large_resource_manifest():
+    """A full manifest argument must not flood the approval prompt with escaped YAML."""
+    from lyoko.application.approval_prompt import format_arguments
+
+    huge_manifest = "apiVersion: argoproj.io/v1alpha1\nkind: Application\n" * 50
+    text = format_arguments({"resource": huge_manifest, "name": "arr-stack"})
+
+    assert "truncated" in text
+    assert '"name": "arr-stack"' in text
+    # The preview collapses newlines so the manifest does not render as an unreadable \\n blob.
+    assert "\nkind:" not in text
+
+
 def _gate(mode: GateMode = GateMode.READ_ONLY, **kwargs) -> ToolGate:
     return ToolGate(
         mode=mode,
@@ -222,6 +235,50 @@ async def test_approval_request_is_sent_into_the_message_thread():
         ApprovalResponse(incident_id=req.incident_id, approved=False, user_id="123")
     )
     await task
+
+
+@pytest.mark.asyncio
+async def test_approval_omits_unreadable_arguments_and_names_the_resource():
+    """A huge manifest must not be dumped in the prompt; the Action names the resource instead."""
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from lyoko.application.hitl import ApprovalManager
+    from lyoko.domain.models.chat import ApprovalResponse
+
+    approval_manager = ApprovalManager()
+    chat_manager = AsyncMock()
+    gate = _gate(GateMode.APPROVAL, approval_manager=approval_manager, chat_manager=chat_manager)
+    manifest = (
+        "apiVersion: argoproj.io/v1alpha1\nkind: Application\nmetadata:\n  name: arr-stack\n"
+        "  namespace: argocd\n"
+    ) * 40
+
+    task = asyncio.create_task(
+        gate.authorize("k8s_resources_create_or_update", {"resource": manifest})
+    )
+    await asyncio.sleep(0.01)
+    req = chat_manager.broadcast_approval_request.call_args.args[0]
+
+    assert "Apply changes to Application 'arr-stack'." in req.details
+    assert "Arguments:" not in req.details
+
+    approval_manager.resolve_approval(
+        ApprovalResponse(incident_id=req.incident_id, approved=True, user_id="1")
+    )
+    await task
+
+
+def test_describe_action_falls_back_without_a_manifest():
+    from lyoko.application.approval_prompt import describe_action
+
+    assert (
+        describe_action(
+            "k8s_resources_create_or_update",
+            {"kind": "ConfigMap", "name": "cfg", "namespace": "media"},
+        )
+        == "Apply changes to ConfigMap 'cfg' in namespace 'media'."
+    )
 
 
 def test_matching_is_case_sensitive_so_lookalikes_do_not_slip_through():

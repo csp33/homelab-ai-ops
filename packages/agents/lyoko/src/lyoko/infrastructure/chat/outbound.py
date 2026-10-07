@@ -186,7 +186,10 @@ class TelegramOutboundMixin:
         )
 
     async def send_approval_request(
-        self, request: ApprovalRequest, message_thread_id: str | int | None = None
+        self,
+        request: ApprovalRequest,
+        message_thread_id: str | int | None = None,
+        reply_to_message_id: str | int | None = None,
     ) -> SentMessage | None:
         """Send interactive approval prompt with inline action buttons to chat or channel."""
         if not self._app or not self._app.bot:
@@ -196,6 +199,7 @@ class TelegramOutboundMixin:
             return None
 
         thread_id = int(message_thread_id) if message_thread_id is not None else None
+        reply_to_id = int(reply_to_message_id) if reply_to_message_id is not None else None
 
         buttons = []
         for act in request.actions:
@@ -211,6 +215,8 @@ class TelegramOutboundMixin:
                 reply_markup=keyboard,
                 parse_mode="HTML",
                 message_thread_id=thread_id,
+                reply_to_message_id=reply_to_id,
+                allow_sending_without_reply=True,
             )
         except Exception as exc:
             logger.warning("Failed to send approval request in HTML, falling back: %s", exc)
@@ -220,5 +226,13 @@ class TelegramOutboundMixin:
                 text=plain_text,
                 reply_markup=keyboard,
                 message_thread_id=thread_id,
+                reply_to_message_id=reply_to_id,
+                allow_sending_without_reply=True,
             )
+            text = plain_text
+            parse_mode: str | None = None
+        else:
+            parse_mode = "HTML"
+        if sent is not None:
+            self._approval_message_html[(str(target), int(sent.message_id))] = (text, parse_mode)
         return _to_sent_message(sent, str(target))

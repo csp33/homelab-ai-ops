@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+import lyoko.application.nodes.incident_diagnose as diagnose_module
 from langchain_core.runnables import RunnableConfig
 from lyoko.application.chat_manager import ChatManager
 from lyoko.application.hitl import ApprovalManager
@@ -16,7 +17,7 @@ from lyoko.application.nodes.helpers import (
     is_message,
     make_gate,
     origin,
-    run_supervised,
+    status_callback,
 )
 from lyoko.application.tool_gate import GateMode
 from lyoko.application.use_cases.retrieve_memory import RetrieveMemoryLessonsUseCase
@@ -93,7 +94,7 @@ class DiagnoseIncidentUseCase:
         )
         try:
             prompt_content = f"Investigate this.\n\n{incident_context(state)}{lessons_context}"
-            answer = await run_supervised(
+            answer = await diagnose_module.run_supervised(
                 state,
                 gate,
                 config,
@@ -103,6 +104,7 @@ class DiagnoseIncidentUseCase:
                 phase="diagnose",
                 system_prompt=DIAGNOSE_SYSTEM_PROMPT,
                 prompt=prompt_content,
+                on_status=status_callback(config),
             )
         except Exception as exc:
             logger.error("Investigation failed: %s", exc, exc_info=True)

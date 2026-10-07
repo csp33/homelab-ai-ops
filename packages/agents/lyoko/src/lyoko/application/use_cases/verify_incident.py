@@ -14,6 +14,7 @@ from lyoko.application.nodes.helpers import (
     incident_context,
     make_gate,
     run_supervised,
+    status_callback,
 )
 from lyoko.application.tool_gate import GateMode
 from lyoko.config import settings
@@ -71,6 +72,7 @@ class VerifyIncidentUseCase:
                     f"Root cause: {state.get('root_cause', 'Unknown')}\n\n"
                     f"Changes applied:\n{changes}"
                 ),
+                on_status=status_callback(config),
             )
         except Exception as exc:
             logger.error("Verification failed: %s", exc, exc_info=True)

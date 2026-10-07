@@ -45,7 +45,26 @@ class AgentSettings(BaseSettings):
 
     # LLM Provider
     openai_api_key: str = Field(default="", description="OpenAI API Key")
-    openai_model: str = Field(default="gpt-4o-mini", description="OpenAI Model name")
+    openai_model: str = Field(
+        default="gpt-4o-mini",
+        description="OpenAI model for chat, remediation, verification, and domain specialists.",
+    )
+    openai_diagnose_model: str = Field(
+        default="gpt-4.1",
+        description=(
+            "OpenAI model for the diagnose phase, which synthesizes the specialists' evidence and "
+            "decides whether the incident is actionable. A stronger model here pays off because "
+            "mis-synthesis is the main failure mode. Empty falls back to openai_model."
+        ),
+    )
+    openai_use_responses_api: bool = Field(
+        default=True,
+        description=(
+            "Use the OpenAI Responses API (/v1/responses) instead of Chat Completions. It keeps "
+            "reasoning and tool context across steps and uses prompt caching better. Set false to "
+            "fall back to Chat Completions."
+        ),
+    )
 
     # MCP Gateway connection
     mcp_server_url: str = Field(

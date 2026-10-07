@@ -98,6 +98,9 @@ class TelegramConnector(
         self._message_handlers: list[Callable[[IncomingMessage], Awaitable[str | None]]] = []
         self._approval_handlers: list[Callable[[ApprovalResponse], Awaitable[None]]] = []
         self._active_streamers: dict[tuple[str, int], TelegramStreamingReply] = {}
+        # Approval prompts must be edited back with their original markup, because Telegram
+        # returns an answered message's `text` unformatted, which would drop every bold label.
+        self._approval_message_html: dict[tuple[str, int], tuple[str, str | None]] = {}
         self._app: Application | None = None
 
     def is_user_authorized(self, user_id: str | int | None) -> bool:
