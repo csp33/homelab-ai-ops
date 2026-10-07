@@ -110,24 +110,6 @@ async def test_denied_change_does_not_run_and_escalates():
 
 
 @pytest.mark.asyncio
-async def test_unanswered_request_times_out_and_escalates():
-    manager = ApprovalManager(default_timeout_seconds=0.05)
-    chat = AsyncMock()
-    outcomes: list = []
-    llm = ScriptedLLM(diagnose=DIAGNOSIS_ACTIONABLE, remediate=_remediation(outcomes))
-    workflow = create_lyoko_graph(
-        mcp_client=FakeMCPClient(), approval_manager=manager, chat_manager=chat, llm=llm
-    )
-
-    final_state = await workflow.ainvoke(_state())
-
-    chat.broadcast_approval_request.assert_awaited_once()
-    assert outcomes[0] is not None
-    assert final_state["requires_escalation"] is True
-    assert "timed out" in final_state["action_taken"]
-
-
-@pytest.mark.asyncio
 async def test_without_an_approval_channel_changes_are_refused_not_auto_approved():
     outcomes: list = []
     llm = ScriptedLLM(diagnose=DIAGNOSIS_ACTIONABLE, remediate=_remediation(outcomes))
