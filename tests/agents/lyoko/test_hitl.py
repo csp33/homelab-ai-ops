@@ -6,8 +6,8 @@ from lyoko.domain.models.chat import ApprovalResponse
 
 
 @pytest.mark.asyncio
-async def test_approval_manager_resolve_and_timeout():
-    mgr = ApprovalManager(default_timeout_seconds=2)
+async def test_approval_manager_resolve_pending():
+    mgr = ApprovalManager()
     fut = mgr.create_pending_approval("inc-123")
 
     # Resolve
@@ -22,18 +22,8 @@ async def test_approval_manager_resolve_and_timeout():
 
 
 @pytest.mark.asyncio
-async def test_approval_manager_wait_timeout():
-    mgr = ApprovalManager(default_timeout_seconds=0.1)
-    res = await mgr.wait_for_approval("inc-456")
-    assert res.approved is False
-    assert "timeout" in res.reason.lower()
-    assert res.action_id == "timeout"
-    assert res.user_id == "system"
-
-
-@pytest.mark.asyncio
-async def test_approval_manager_wait_for_approval_resolved():
-    mgr = ApprovalManager(default_timeout_seconds=2.0)
+async def test_approval_manager_wait_indefinite_resolved():
+    mgr = ApprovalManager()
 
     async def _resolve_soon():
         await asyncio.sleep(0.05)
@@ -59,7 +49,7 @@ async def test_approval_manager_wait_for_approval_resolved():
 
 @pytest.mark.asyncio
 async def test_approval_manager_resolve_nonexistent_or_done():
-    mgr = ApprovalManager(default_timeout_seconds=1.0)
+    mgr = ApprovalManager()
     # Nonexistent
     assert (
         mgr.resolve_approval(ApprovalResponse(incident_id="unknown", approved=True, user_id="u1"))
