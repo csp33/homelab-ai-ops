@@ -12,11 +12,11 @@ from lyoko.application.argocd_outofsync import (
     is_synced_and_healthy,
     parse_outofsync_app,
 )
-from lyoko.application.nodes.argocd_autosync import (
+from lyoko.application.nodes.triage import create_argocd_autosync_node
+from lyoko.application.triage.dispatcher import (
     TRIAGE_DIAGNOSE,
     TRIAGE_HANDLED,
     choose_triage,
-    create_argocd_autosync_node,
 )
 from lyoko.config import settings
 

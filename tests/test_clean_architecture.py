@@ -127,3 +127,22 @@ def test_application_and_domain_file_size_limits():
         "Application and domain files must be modularized and kept under single-responsibility limits:\n"
         + "\n".join(oversized)
     )
+
+
+def test_no_all_attribute_definitions():
+    """Ensure __all__ is not defined anywhere in packages/ (anti-barrel & anti-wildcard rule)."""
+    violations: list[str] = []
+    for py_file in WORKSPACE_ROOT.glob("packages/**/*.py"):
+        try:
+            tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+        except Exception:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id == "__all__":
+                        violations.append(str(py_file.relative_to(WORKSPACE_ROOT)))
+    assert not violations, (
+        "Defining __all__ is strictly forbidden across all packages. Found in:\n"
+        + "\n".join(violations)
+    )

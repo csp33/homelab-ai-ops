@@ -22,36 +22,25 @@ Every agent run receives the node's run config, so one event produces one trace 
 node and each agent run is a named child span.
 """
 
+from collections.abc import Sequence
 from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from lyoko.application.chat_manager import ChatManager
 from lyoko.application.hitl import ApprovalManager
 from lyoko.application.nodes.chat import create_chat_node
-from lyoko.application.nodes.helpers import EVENT_ALERT, EVENT_MESSAGE
 from lyoko.application.nodes.incident_diagnose import create_diagnose_node
 from lyoko.application.nodes.incident_remediate import create_remediate_node
 from lyoko.application.nodes.incident_verify import create_verify_node
 from lyoko.application.nodes.notify import create_notify_node
 from lyoko.application.nodes.router import choose_branch, create_route_node
-from lyoko.application.triage.argocd_autosync import ArgoCDAutosyncHandler
-from lyoko.application.triage.argocd_sync_failed import ArgoCDSyncFailedHandler
-from lyoko.application.triage.cloudflare_tunnel import CloudflareTunnelHandler
-from lyoko.application.triage.dispatcher import choose_triage, create_triage_node
-from lyoko.application.triage.pod_crashloop import PodCrashLoopHandler
-from lyoko.config import settings
+from lyoko.application.nodes.triage import create_composite_triage_node
+from lyoko.application.triage.base import TriageHandler
+from lyoko.application.triage.dispatcher import choose_triage
+from lyoko.config import settings  # noqa: F401
 from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
-
-__all__ = [
-    "EVENT_ALERT",
-    "EVENT_MESSAGE",
-    "LyokoState",
-    "create_lyoko_graph",
-    "create_remediation_workflow",
-    "settings",
-]
 
 
 class LyokoState(TypedDict, total=False):
@@ -106,6 +95,7 @@ def create_lyoko_graph(
     diagnose_llm: LLMClientInterface | None = None,
     diagnose_supervisor: Any = None,
     tracer: Any = None,
+    triage_handlers: Sequence[TriageHandler] | None = None,
 ) -> Any:
     """Build the LangGraph StateGraph that routes, answers, investigates and remediates.
 
@@ -113,33 +103,18 @@ def create_lyoko_graph(
     than the rest of the graph; both fall back to ``llm``/``supervisor`` when omitted.
     """
     route_node = create_route_node(llm=llm)
-    triage_handlers = [
-        ArgoCDAutosyncHandler(
+    if triage_handlers is not None:
+        handlers = triage_handlers
+    else:
+        from lyoko.composition import build_triage_handlers
+
+        handlers = build_triage_handlers(
             mcp_client=mcp_client,
             approval_manager=approval_manager,
             chat_manager=chat_manager,
             tracer=tracer,
-        ),
-        PodCrashLoopHandler(
-            mcp_client=mcp_client,
-            approval_manager=approval_manager,
-            chat_manager=chat_manager,
-            tracer=tracer,
-        ),
-        CloudflareTunnelHandler(
-            mcp_client=mcp_client,
-            approval_manager=approval_manager,
-            chat_manager=chat_manager,
-            tracer=tracer,
-        ),
-        ArgoCDSyncFailedHandler(
-            mcp_client=mcp_client,
-            approval_manager=approval_manager,
-            chat_manager=chat_manager,
-            tracer=tracer,
-        ),
-    ]
-    triage_node = create_triage_node(triage_handlers)
+        )
+    triage_node = create_composite_triage_node(handlers=handlers)
 
     chat_node = create_chat_node(
         mcp_client=mcp_client,

@@ -50,10 +50,10 @@ async def test_build_chat_manager_enabled(monkeypatch):
 async def test_app_lifespan_lifecycle():
     with (
         patch(
-            "lyoko.infrastructure.chat.manager.ChatManager.start_all", new_callable=AsyncMock
+            "lyoko.application.chat_manager.ChatManager.start_all", new_callable=AsyncMock
         ) as mock_start,
         patch(
-            "lyoko.infrastructure.chat.manager.ChatManager.stop_all", new_callable=AsyncMock
+            "lyoko.application.chat_manager.ChatManager.stop_all", new_callable=AsyncMock
         ) as mock_stop,
     ):
         app = create_app()

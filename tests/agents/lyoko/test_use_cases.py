@@ -125,19 +125,20 @@ async def test_sector5_mcp_use_cases():
 
 
 @pytest.mark.asyncio
-async def test_triage_argocd_autosync_use_case():
-    from lyoko.application.use_cases.triage_argocd_autosync import (
+async def test_triage_incident_use_case():
+    from lyoko.application.use_cases.triage_incident import (
         TRIAGE_DIAGNOSE,
-        TriageArgoCDAutosyncUseCase,
+        TriageIncidentUseCase,
     )
 
-    # When no mcp_client or not a message
-    uc = TriageArgoCDAutosyncUseCase(mcp_client=None)
+    # When no matching handler
+    uc = TriageIncidentUseCase(handlers=[])
     res = await uc.execute({"event_type": "alert"}, {})
     assert res == {"triage": TRIAGE_DIAGNOSE}
 
-    mock_mcp = AsyncMock()
-    uc_mcp = TriageArgoCDAutosyncUseCase(mcp_client=mock_mcp)
-    # Message does not match Argo CD OutOfSync
-    res2 = await uc_mcp.execute({"event_type": "message", "text": "normal message"}, {})
+    handler = MagicMock()
+    handler.can_handle.return_value = False
+    uc_with_handlers = TriageIncidentUseCase(handlers=[handler])
+    # Message does not match any deterministic handler
+    res2 = await uc_with_handlers.execute({"event_type": "message", "text": "normal message"}, {})
     assert res2 == {"triage": TRIAGE_DIAGNOSE}

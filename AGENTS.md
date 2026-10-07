@@ -112,8 +112,9 @@ Every package in `lyoko-ai-ops` strictly adheres to **Clean Architecture** (Port
 4. **Composition Root (`main.py` / `server.py`)**:
    - The only place where concrete infrastructure adapters are instantiated, configuration is bound, and dependencies are injected into application services and workflow graphs.
 
-5. **Empty `__init__.py` Files & Explicit Imports (Strict Rule)**:
+5. **Empty `__init__.py` Files, No `__all__`, & Explicit Imports (Strict Rule)**:
    - All `__init__.py` files across all packages (`packages/`) must remain **completely empty** (0 bytes / no code, re-exports, or barrel imports).
+   - Wildcard exports and `__all__` definitions are strictly forbidden across all modules. All modules must export their symbols naturally, and callers must explicitly import specific symbols from the exact submodule where they are defined.
    - All imports across the codebase must explicitly target the specific submodule where the symbol is defined (e.g., `from lyoko.domain.models.memory import MemoryEntry` instead of `from lyoko.domain.models import MemoryEntry`).
 
 6. **Single Responsibility & Anti-God-File Policy (Strict Rule)**:
@@ -121,7 +122,7 @@ Every package in `lyoko-ai-ops` strictly adheres to **Clean Architecture** (Port
    - Never bundle distinct concerns in a single service file (e.g., domain alias dictionaries, relevance scoring heuristics, catalog caching, and tool execution routing must be separated into `domain/models/aliases.py`, `application/scoring.py`, `application/registry.py`, and `application/service.py`).
    - Graph workflows (`workflow.py`) must separate StateGraph wiring and topology from discrete node implementations (modularized under `application/nodes/*.py`).
 
-Automated AST architectural tests (`tests/test_clean_architecture.py`) run in CI to permanently prevent layer leakage, enforce empty `__init__.py` files, and enforce module size ceilings.
+Automated AST architectural tests (`tests/test_clean_architecture.py`) run in CI to permanently prevent layer leakage, enforce empty `__init__.py` files, forbid `__all__`, and enforce module size ceilings.
 
 ### Prompt Engineering & System Prompt Standards
 - **Declarative, Concise & Modular**: System prompts (stored under `packages/agents/lyoko/src/lyoko/application/prompts/*.md`) must define high-level roles, operational constraints, safety policies, and output formatting cleanly.

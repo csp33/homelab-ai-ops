@@ -10,7 +10,7 @@ from lyoko.application.chat_sessions import (
     DEFAULT_SESSION_IDLE_TIMEOUT_SECONDS,
     ChatSessionTracker,
 )
-from lyoko.application.workflow import EVENT_MESSAGE
+from lyoko.application.nodes.helpers import EVENT_MESSAGE
 from lyoko.domain.interfaces.tracer import TracerInterface
 from lyoko.domain.models.chat import IncomingMessage
 

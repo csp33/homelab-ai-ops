@@ -7,14 +7,12 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 from lyoko.application.chat_manager import ChatManager
 from lyoko.application.hitl import ApprovalManager
-from lyoko.application.nodes.helpers import run_supervised
+from lyoko.application.nodes.helpers import run_supervised  # noqa: F401
 from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
 
 logger = logging.getLogger("lyoko.workflow.incident")
-
-__all__ = ["create_diagnose_node", "run_supervised"]
 
 
 def create_diagnose_node(
