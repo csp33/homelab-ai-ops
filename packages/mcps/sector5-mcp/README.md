@@ -1,14 +1,22 @@
+<div align="center">
+
 # sector5-mcp
+
+### Unified FastMCP Gateway & Security Harness for Homelab Operations
 
 [![FastMCP](https://img.shields.io/badge/FastMCP-Gateway-009688.svg?style=flat)](https://github.com/jlowin/fastmcp)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**`sector5-mcp`** is a unified **Model Context Protocol (MCP)** tool gateway and security harness. It aggregates upstream MCP servers for Kubernetes, Home Assistant, UniFi Network, Grafana, and GitHub, plus a built-in Telegram domain, into a single, authenticated, guardrail-protected endpoint accessible over **Streamable HTTP** (`/mcp`) and **stdio**.
-
-<p align="center">
-  <img src="../../../assets/sector5-interface-room.jpg" alt="Sector 5 Carthage Interface Console" width="100%" />
+<p>
+  Unified <b>Model Context Protocol (MCP)</b> gateway aggregating upstream services across Kubernetes, Home Assistant, UniFi Network, Grafana, and GitHub behind authenticated guardrails over Streamable HTTP (<code>/mcp</code>) and stdio.
 </p>
+
+<img src="../../../assets/sector5-interface-room.jpg" alt="Sector 5 Carthage Interface Console" width="100%" />
+
+</div>
+
+---
 
 ## Architecture
 

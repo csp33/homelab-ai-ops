@@ -1,4 +1,8 @@
+<div align="center">
+
 # LYOKO
+
+### Event-Driven Hierarchical Multi-Agent Autonomous SRE Operator
 
 [![LangGraph](https://img.shields.io/badge/LangGraph-StateGraph-orange.svg?style=flat)](https://github.com/langchain-ai/langgraph)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Webhook-009688.svg?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
@@ -6,17 +10,21 @@
 [![Langfuse](https://img.shields.io/badge/Langfuse-Observability-black.svg?style=flat)](https://langfuse.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**LYOKO** (**L**ive **Y**aml **O**ptimization & **K**8s **O**rchestration) is an event-driven AI operator for the homelab, built with **LangGraph**, **FastAPI**, and **python-telegram-bot**. It acts through the `sector5-mcp` gateway, so it can work on anything the gateway exposes: Kubernetes, UniFi, Home Assistant, Grafana, and GitHub.
+<p>
+  <b>L</b>ive <b>Y</b>aml <b>O</b>ptimization & <b>K</b>8s <b>O</b>rchestration — LangGraph self-healing engine and Telegram operator interface operating through <code>sector5-mcp</code>.
+</p>
 
-It serves two roles:
+<img src="../../../assets/lyoko-tower-activation.gif" alt="Lyoko Tower Activation" width="420" />
+
+</div>
+
+---
+
+**LYOKO** acts through the `sector5-mcp` gateway across Kubernetes, UniFi, Home Assistant, Grafana, and GitHub in two core operating roles:
 1. **Autonomous incident remediation**: receives an alert (Prometheus Alertmanager webhook), diagnoses the root cause, proposes a fix, asks a human for approval unless the action is trusted, applies it, and verifies recovery.
 2. **Interactive chat assistant**: a Telegram interface through the same supervisor and specialists, to answer questions about the infrastructure and operate it, for example scale a workload, inspect a UniFi device, or change a Home Assistant entity.
 
-Both roles are one **LangGraph StateGraph**. They share the same supervisor, domain specialists, ToolGate approval policy, and Langfuse traces.
-
-<p align="center">
-  <img src="../../../assets/lyoko-tower-activation.gif" alt="Lyoko Tower Activation" width="420" />
-</p>
+Both roles are unified in a single **LangGraph StateGraph** sharing the same supervisor, domain specialists, ToolGate approval policy, and Langfuse traces.
 
 ## How it works
  
