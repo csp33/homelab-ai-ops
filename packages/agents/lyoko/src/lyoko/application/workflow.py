@@ -28,26 +28,17 @@ from langgraph.graph import END, START, StateGraph
 from lyoko.application.chat_manager import ChatManager
 from lyoko.application.hitl import ApprovalManager
 from lyoko.application.nodes.chat import create_chat_node
-from lyoko.application.nodes.helpers import EVENT_ALERT, EVENT_MESSAGE
 from lyoko.application.nodes.incident_diagnose import create_diagnose_node
 from lyoko.application.nodes.incident_remediate import create_remediate_node
 from lyoko.application.nodes.incident_verify import create_verify_node
 from lyoko.application.nodes.notify import create_notify_node
 from lyoko.application.nodes.router import choose_branch, create_route_node
-from lyoko.application.nodes.triage import choose_triage, create_composite_triage_node
-from lyoko.config import settings
+from lyoko.application.nodes.triage import create_composite_triage_node
+from lyoko.application.triage.dispatcher import choose_triage
+from lyoko.config import settings  # noqa: F401
 from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
-
-__all__ = [
-    "EVENT_ALERT",
-    "EVENT_MESSAGE",
-    "LyokoState",
-    "create_lyoko_graph",
-    "create_remediation_workflow",
-    "settings",
-]
 
 
 class LyokoState(TypedDict, total=False):

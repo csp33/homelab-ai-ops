@@ -14,8 +14,6 @@ from sector5_mcp.domain.models.upstream import ToolDefinition, ToolResult
 
 logger = logging.getLogger("sector5_mcp.gateway_service")
 
-__all__ = ["MCPGatewayService"]
-
 
 class MCPGatewayService:
     """Core application service managing upstream MCP routing and security guardrails."""

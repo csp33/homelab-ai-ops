@@ -1,11 +1,11 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from lyoko.application.chat_manager import ChatManager
 from lyoko.domain.models.chat import (
     ApprovalAction,
     ApprovalRequest,
 )
-from lyoko.infrastructure.chat.manager import ChatManager
 from lyoko.infrastructure.chat.telegram import TelegramConnector
 
 
