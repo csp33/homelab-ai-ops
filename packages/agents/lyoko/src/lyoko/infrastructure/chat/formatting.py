@@ -7,6 +7,8 @@ rewritten into that dialect before it is sent.
 import html
 import re
 
+from lyoko.infrastructure.llm.content import extract_message_text
+
 # Telegram has no table support. Tables narrower than this many characters are rendered as
 # aligned monospace blocks; wider ones wrap badly on phones, so they become per-row cards.
 MAX_TABLE_PRE_WIDTH = 42
@@ -122,6 +124,10 @@ def _convert_markdown_blockquotes(text: str) -> str:
 
 def markdown_to_telegram_html(text: str) -> str:
     """Convert standard Markdown output from LLMs to Telegram-compatible HTML formatting."""
+    if not text:
+        return ""
+
+    text = extract_message_text(text)
     if not text:
         return ""
 

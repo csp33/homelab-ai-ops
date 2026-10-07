@@ -49,12 +49,17 @@ async def test_set_status_appends_checklist_steps():
     await streamer.set_status("🧩 Consulting the kubernetes specialist")
     await streamer.set_status("🛰️ Calling <code>kubectl_get</code>")
 
-    last = bot.edit_message_text.call_args.kwargs["text"]
+    last_kwargs = bot.edit_message_text.call_args.kwargs
+    last = last_kwargs["text"]
     assert "🧩 Consulting the kubernetes specialist" in last
     assert last.count("✔") == 2
     assert last.count("⏳") == 1
     assert "🛰️ Calling <code>kubectl_get</code>" in last
-    assert bot.edit_message_text.call_args.kwargs["parse_mode"] == "HTML"
+    assert last_kwargs["parse_mode"] == "HTML"
+    assert last_kwargs["reply_markup"] is not None
+    button = last_kwargs["reply_markup"].inline_keyboard[0][0]
+    assert button.text == "⏹ Stop"
+    assert button.callback_data == f"stop:{streamer.draft_id}"
 
 
 @pytest.mark.asyncio
@@ -234,7 +239,12 @@ async def test_status_loop_refreshes_active_step_timer():
     await asyncio.sleep(0.05)
 
     assert bot.edit_message_text.call_count >= 1
-    assert "Progress" in bot.edit_message_text.call_args.kwargs["text"]
+    call_kwargs = bot.edit_message_text.call_args.kwargs
+    assert "Progress" in call_kwargs["text"]
+    assert call_kwargs["reply_markup"] is not None
+    button = call_kwargs["reply_markup"].inline_keyboard[0][0]
+    assert button.text == "⏹ Stop"
+    assert button.callback_data == f"stop:{streamer.draft_id}"
     await streamer.finalize("<b>done</b>")
 
 

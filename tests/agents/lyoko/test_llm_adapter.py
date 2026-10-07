@@ -391,3 +391,42 @@ async def test_openai_llm_adapter_breaks_on_repeated_tool_errors():
     tool_messages = [m for m in last_messages if isinstance(m, ToolMessage)]
     assert any("This tool keeps failing" in m.content for m in tool_messages)
     assert any("gateway_get_tool_schema" in m.content for m in tool_messages)
+
+
+@pytest.mark.asyncio
+async def test_openai_llm_adapter_extracts_list_content_blocks():
+    """Verify chat extracts clean text when provider returns list of content blocks."""
+    adapter = OpenAILLMAdapter(api_key="sk-test", model_name="gpt-4o-mini")
+    mock_client = AsyncMock()
+    mock_response = MagicMock()
+    mock_response.content = [
+        {"type": "text", "text": "Node temperatures: 50.85 °C", "id": "msg_abc"}
+    ]
+    mock_client.ainvoke.return_value = mock_response
+    adapter._client = mock_client
+
+    result = await adapter.chat(prompt="Check temperature")
+    assert result == "Node temperatures: 50.85 °C"
+
+
+@pytest.mark.asyncio
+async def test_react_tool_loop_extracts_list_content_blocks():
+    """Verify ReAct tool loop extracts clean text when final response has list of content blocks."""
+    adapter = OpenAILLMAdapter(api_key="sk-test", model_name="gpt-4o-mini")
+    mock_client = MagicMock()
+    adapter._client = mock_client
+
+    mock_bound_client = AsyncMock()
+    mock_final_response = MagicMock()
+    mock_final_response.tool_calls = []
+    mock_final_response.content = [
+        {"type": "text", "text": "CPUs are at 50 °C.", "annotations": []}
+    ]
+    mock_bound_client.ainvoke.return_value = mock_final_response
+    mock_client.bind_tools.return_value = mock_bound_client
+
+    mock_tool = MagicMock()
+    mock_tool.name = "dummy_tool"
+
+    result = await adapter.chat(prompt="temp", tools=[mock_tool])
+    assert result == "CPUs are at 50 °C."

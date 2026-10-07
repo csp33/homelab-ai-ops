@@ -64,7 +64,7 @@ lyoko-ai-ops/
 │   │               │   ├── models/     # k8s.py, homeassistant.py, unifi.py, auth.py, guardrail.py
 │   │               │   ├── exceptions/ # base.py, auth.py, upstream.py, tool.py, guardrail.py
 │   │               │   └── interfaces/ # upstream.py, auth.py
-│   │               ├── application/    # MCPGatewayService, GuardrailEngine
+│   │               ├── application/    # MCPGatewayService, GuardrailEngine, use_cases/
 │   │               ├── infrastructure/ # FastMCP, upstream clients, Google Auth
 │   │               ├── config.py
 │   │               └── server.py       # Composition root
@@ -79,7 +79,7 @@ lyoko-ai-ops/
 │                   │   ├── models/     # incident.py
 │                   │   ├── exceptions/ # base.py, incident.py
 │                   │   └── interfaces/ # mcp.py, llm.py
-│                   ├── application/    # StateGraph workflow, supervisor, specialists, prompts
+│                   ├── application/    # StateGraph workflow, use_cases/, supervisor, specialists, prompts
 │                   ├── infrastructure/ # FastAPI webhook controller & MCP client
 │                   ├── config.py
 │                   └── main.py         # Composition root
@@ -99,7 +99,9 @@ Every package in `lyoko-ai-ops` strictly adheres to **Clean Architecture** (Port
    - Domain layers must only depend on standard Python libraries or shared domain primitives.
 
 2. **`application/` (Use Cases & Workflow Orchestration)**:
-   - Contains use-case services (`MCPGatewayService`, `GuardrailEngine`, `ApprovalManager`, `ChatManager`, `SupervisorAgent`, `DomainSpecialistAgent`) and workflow definitions (`workflow.py`).
+   - Encapsulates discrete application workflows and operations into dedicated **`UseCase` classes** under `application/use_cases/` (e.g. `DiagnoseIncidentUseCase`, `RemediateIncidentUseCase`, `VerifyIncidentUseCase`, `NotifyIncidentReportUseCase`, `RouteEventUseCase`, `HandleChatTurnUseCase`, `ProcessChatMessageUseCase`, `RecordFeedbackUseCase`, `RetrieveMemoryLessonsUseCase`, `DiscoverToolsUseCase`, `ExecuteToolUseCase`).
+   - Workflow nodes (`application/nodes/*.py`), web controllers, and chat connectors act as thin callers/adapters that delegate execution to their corresponding `UseCase` instances.
+   - Contains use-case services (`MCPGatewayService`, `GuardrailEngine`, `ApprovalManager`, `ChatManager`, `SupervisorAgent`, `DomainSpecialistAgent`) and workflow topology definitions (`workflow.py`).
    - Coordinates domain models and interacts with external capabilities **exclusively through domain interfaces / ports** (`LLMClientInterface`, `MCPClientInterface`, `ChatConnector`, `AuthVerifierInterface`).
    - **ZERO infrastructure imports allowed**: Strictly forbidden to import concrete infrastructure classes or vendor SDKs (e.g., `ChatOpenAI`, `OpenAILLMAdapter`, `FastMCPClient`, `TelegramConnector`, `AsyncConnectionPool`, `LangfuseTracer`). All external services must be injected into application constructors.
 

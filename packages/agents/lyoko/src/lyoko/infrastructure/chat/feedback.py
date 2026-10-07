@@ -6,12 +6,10 @@ incident context from the message being replied to when present.
 
 import html
 import logging
-import re
 from typing import Any
 
 from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
 from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
-from lyoko.domain.models.memory import MemoryEntry
 
 logger = logging.getLogger("lyoko.chat.telegram")
 
@@ -51,45 +49,21 @@ class TelegramFeedbackMixin:
             )
             return
 
-        # Extract context if replying to an incident alert/report
-        namespace = "default"
-        service_name = "general"
-        alert_name = "OperatorRule"
-        incident_pattern = feedback_content
+        from lyoko.application.use_cases.record_feedback import RecordFeedbackUseCase
 
-        reply_to = getattr(msg, "reply_to_message", None)
-        if reply_to and getattr(reply_to, "text", None):
-            quoted_text = reply_to.text
-            ns_match = re.search(r"Namespace:?\s*`?([a-zA-Z0-9_\-]+)`?", quoted_text, re.IGNORECASE)
-            pod_match = re.search(r"Pod:?\s*`?([a-zA-Z0-9_\-]+)`?", quoted_text, re.IGNORECASE)
-            alert_match = re.search(r"Alert:?\s*`?([a-zA-Z0-9_\-]+)`?", quoted_text, re.IGNORECASE)
-
-            if ns_match:
-                namespace = ns_match.group(1)
-            if pod_match:
-                pod_name = pod_match.group(1)
-                service_name = pod_name.rsplit("-", 2)[0]
-            if alert_match:
-                alert_name = alert_match.group(1)
-            incident_pattern = f"Context: {quoted_text[:200]}..."
-
-        embedding = None
-        if self.embeddings_service:
-            text_to_embed = (
-                f"{alert_name} {service_name} {namespace} {incident_pattern} {feedback_content}"
-            )
-            embedding = await self.embeddings_service.embed_text(text_to_embed)
-
-        entry = MemoryEntry(
-            namespace=namespace,
-            service_name=service_name,
-            alert_name=alert_name,
-            incident_pattern=incident_pattern,
-            operator_feedback=feedback_content,
-            action_rule=feedback_content,
+        use_case = RecordFeedbackUseCase(
+            memory_repository=self.memory_repository,
+            embeddings_service=self.embeddings_service,
         )
 
-        memory_id = await self.memory_repository.save_memory(entry, embedding=embedding)
+        reply_to = getattr(msg, "reply_to_message", None)
+        reply_to_text = getattr(reply_to, "text", None) if reply_to else None
+
+        memory_id, service_name, namespace = await use_case.execute_from_chat_command(
+            feedback_content=feedback_content,
+            reply_to_text=reply_to_text,
+        )
+
         success_msg = (
             f"🧠 <b>Rule learned and stored in PostgreSQL</b> (ID: <code>{memory_id}</code>)\n\n"
             f"• <b>Service:</b> <code>{html.escape(service_name)}</code> ({html.escape(namespace)})\n"

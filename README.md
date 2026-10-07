@@ -40,6 +40,10 @@ When incidents occur, the system diagnoses root causes using read-only specialis
 >
 > In this repository, **LYOKO** stands for **L**ive **Y**aml **O**ptimization & **K**8s **O**rchestration: your homelab's virtual defender that investigates alerts, neutralizes failures, and safely restores stability before downtime strikes.
 
+<p align="center">
+  <img src="assets/virtual-sectors-map.jpg" alt="LYOKO Virtual Sectores & Sector 5 MCP Gateway" width="100%" />
+</p>
+
 ---
 
 ## Key Capabilities
