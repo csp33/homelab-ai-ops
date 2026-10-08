@@ -8,7 +8,7 @@ from langchain_core.runnables import RunnableLambda
 from langchain_openai import ChatOpenAI
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.infrastructure.llm.content import extract_message_text
-from lyoko.infrastructure.llm.tool_loop import run_react_tool_loop
+from lyoko.infrastructure.llm.harness_runner import ReActHarnessRunner
 from lyoko.infrastructure.llm.tracing import child_config
 from lyoko.infrastructure.observability.langfuse import get_langfuse_trace_config
 
@@ -24,12 +24,14 @@ class OpenAILLMAdapter(LLMClientInterface):
         model_name: str = "gpt-4o-mini",
         temperature: float = 0.0,
         use_responses_api: bool = True,
+        harness_runner: ReActHarnessRunner | None = None,
     ) -> None:
         self.model_name = model_name
         self.temperature = temperature
         self.use_responses_api = use_responses_api
         self._api_key = api_key
         self._client: ChatOpenAI | None = None
+        self._harness_runner = harness_runner or ReActHarnessRunner()
 
     @property
     def client(self) -> ChatOpenAI:
@@ -85,13 +87,14 @@ class OpenAILLMAdapter(LLMClientInterface):
             max_iterations = max_steps or 10
 
             async def _react_loop(prompt_text: str) -> str:
-                return await run_react_tool_loop(
+                return await self._harness_runner.run(
                     prompt_text,
                     system_prompt=system_prompt,
                     model_with_tools=model_with_tools,
                     summary_client=self.client,
                     tools_by_name=tools_by_name,
                     max_iterations=max_iterations,
+                    session_id=session_id,
                     on_status=on_status,
                 )
 

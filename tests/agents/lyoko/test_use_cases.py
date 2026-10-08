@@ -196,3 +196,40 @@ async def test_coordinate_workflow_use_case():
     alert_res = await coordinator.execute({"event_type": "alert"}, {})
     assert alert_res["root_cause"] == "OOM"
     assert mock_diagnose_uc.execute.called
+
+
+@pytest.mark.asyncio
+async def test_diagnose_incident_use_case_with_skill_matcher():
+    from lyoko.application.use_cases.diagnose_incident import DiagnoseIncidentUseCase
+
+    mock_llm = MagicMock(spec=LLMClientInterface)
+    mock_runner = AsyncMock(
+        return_value="ROOT_CAUSE: Container crashed\nACTIONABLE: yes\nPLAN: Inspect container logs"
+    )
+    mock_matcher = MagicMock()
+    mock_matcher.format_matched_skills_context = AsyncMock(
+        return_value="\n\n--- RELEVANT OPERATIONAL RUNBOOKS ---\nPod CrashLoop Guide\n---"
+    )
+
+    uc = DiagnoseIncidentUseCase(
+        mcp_client=None,
+        llm=mock_llm,
+        skill_matcher_service=mock_matcher,
+        runner=mock_runner,
+    )
+
+    state = {
+        "event_type": "alert",
+        "alert_name": "KubePodCrashLooping",
+        "labels": {"reason": "CrashLoopBackOff"},
+        "annotations": {},
+    }
+    result = await uc.execute(state, config={})
+
+    assert result["root_cause"] == "Container crashed"
+    assert result["plan"] == "Inspect container logs"
+    assert not result["requires_escalation"]
+
+    # Verify that runner was called with prompt containing matched skill runbook
+    called_prompt = mock_runner.call_args.kwargs["prompt"]
+    assert "Pod CrashLoop Guide" in called_prompt

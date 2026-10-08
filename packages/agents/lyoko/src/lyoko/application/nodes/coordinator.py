@@ -53,6 +53,7 @@ def create_coordinator_node(
     embeddings_service: EmbeddingsServiceInterface | None = None,
     diagnose_llm: LLMClientInterface | None = None,
     diagnose_supervisor: SupervisorInterface | None = None,
+    skill_matcher_service: Any = None,
 ) -> Callable[[dict[str, Any], RunnableConfig], Any]:
     """Factory creating the unified coordinator node handler."""
     use_case = CoordinateWorkflowUseCase(
@@ -65,6 +66,7 @@ def create_coordinator_node(
         embeddings_service=embeddings_service,
         diagnose_llm=diagnose_llm,
         diagnose_supervisor=diagnose_supervisor,
+        skill_matcher_service=skill_matcher_service,
     )
 
     async def coordinator_node(state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:

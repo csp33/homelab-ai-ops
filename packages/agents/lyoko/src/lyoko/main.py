@@ -16,6 +16,7 @@ from lyoko.composition import (
     build_chat_manager,
     build_domain_specialists,
     build_llm_adapter,
+    build_skill_matcher,
     build_supervisor,
     build_tracer,
     build_triage_handlers,
@@ -121,6 +122,8 @@ async def lifespan(app: FastAPI):
         tracer=getattr(app.state, "tracer", None),
     )
 
+    skill_matcher = getattr(app.state, "skill_matcher", None) or build_skill_matcher()
+
     # Rebuilt now that the checkpointer exists. Everything reads the graph from app.state.
     workflow_engine = create_lyoko_graph(
         mcp_client,
@@ -136,9 +139,11 @@ async def lifespan(app: FastAPI):
         diagnose_supervisor=diagnose_supervisor,
         tracer=getattr(app.state, "tracer", None),
         triage_handlers=triage_handlers,
+        skill_matcher_service=skill_matcher,
     )
 
     app.state.triage_handlers = triage_handlers
+    app.state.skill_matcher = skill_matcher
     app.state.llm = llm
     app.state.diagnose_llm = diagnose_llm
     app.state.specialists = specialists

@@ -5,6 +5,7 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 from lyoko.application.nodes.helpers import is_message
+from lyoko.application.skills.matcher import SkillMatcherService
 from lyoko.application.use_cases.diagnose_incident import DiagnoseIncidentUseCase
 from lyoko.application.use_cases.handle_chat import HandleChatTurnUseCase
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
@@ -32,6 +33,7 @@ class CoordinateWorkflowUseCase:
         embeddings_service: EmbeddingsServiceInterface | None = None,
         diagnose_llm: LLMClientInterface | None = None,
         diagnose_supervisor: SupervisorInterface | None = None,
+        skill_matcher_service: SkillMatcherService | None = None,
         chat_use_case: HandleChatTurnUseCase | None = None,
         diagnose_use_case: DiagnoseIncidentUseCase | None = None,
     ) -> None:
@@ -52,6 +54,7 @@ class CoordinateWorkflowUseCase:
             chat_manager=chat_manager,
             memory_repository=memory_repository,
             embeddings_service=embeddings_service,
+            skill_matcher_service=skill_matcher_service,
         )
 
     async def execute(self, state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:

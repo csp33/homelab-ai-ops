@@ -64,6 +64,7 @@ def create_lyoko_graph(
     diagnose_supervisor: SupervisorInterface | None = None,
     tracer: Any = None,
     triage_handlers: Sequence[TriageHandler] | None = None,
+    skill_matcher_service: Any = None,
 ) -> Any:
     """Build the LangGraph StateGraph that routes, answers, investigates and remediates.
 
@@ -84,6 +85,7 @@ def create_lyoko_graph(
         embeddings_service=embeddings_service,
         diagnose_llm=diagnose_llm,
         diagnose_supervisor=diagnose_supervisor,
+        skill_matcher_service=skill_matcher_service,
     )
     remediate_node = create_remediate_node(
         mcp_client=mcp_client,

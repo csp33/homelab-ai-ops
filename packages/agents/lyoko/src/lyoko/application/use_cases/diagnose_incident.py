@@ -15,6 +15,7 @@ from lyoko.application.nodes.helpers import (
     run_supervised,
     status_callback,
 )
+from lyoko.application.skills.matcher import SkillMatcherService
 from lyoko.application.tool_gate import GateMode
 from lyoko.application.use_cases.retrieve_memory import RetrieveMemoryLessonsUseCase
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
@@ -41,6 +42,7 @@ class DiagnoseIncidentUseCase:
         retrieve_memory_use_case: RetrieveMemoryLessonsUseCase | None = None,
         memory_repository: MemoryRepositoryInterface | None = None,
         embeddings_service: EmbeddingsServiceInterface | None = None,
+        skill_matcher_service: SkillMatcherService | None = None,
         runner: Any = None,
         default_chat_id: str | None = None,
     ) -> None:
@@ -49,6 +51,7 @@ class DiagnoseIncidentUseCase:
         self.supervisor = supervisor
         self.approval_manager = approval_manager
         self.chat_manager = chat_manager
+        self.skill_matcher_service = skill_matcher_service
         self.runner = runner or run_supervised
         self.retrieve_memory_use_case = retrieve_memory_use_case or RetrieveMemoryLessonsUseCase(
             memory_repository=memory_repository,
@@ -101,7 +104,16 @@ class DiagnoseIncidentUseCase:
             mcp_client=self.mcp_client,
         )
         try:
-            prompt_content = f"Investigate this.\n\n{incident_context(state)}{lessons_context}"
+            skills_context = ""
+            if self.skill_matcher_service is not None:
+                skills_context = await self.skill_matcher_service.format_matched_skills_context(
+                    alert_name=state.get("alert_name", ""),
+                    labels=state.get("labels"),
+                    annotations=state.get("annotations"),
+                )
+            prompt_content = (
+                f"Investigate this.\n\n{incident_context(state)}{lessons_context}{skills_context}"
+            )
             answer = await self.runner(
                 state,
                 gate,
