@@ -1,12 +1,7 @@
-"""Use case for investigating and diagnosing incidents in read-only mode."""
-
 import logging
 from typing import Any
 
-import lyoko.application.nodes.incident_diagnose as diagnose_module
 from langchain_core.runnables import RunnableConfig
-from lyoko.application.chat_manager import ChatManager
-from lyoko.application.hitl import ApprovalManager
 from lyoko.application.incident_prompts import DIAGNOSE_SYSTEM_PROMPT, parse_diagnosis
 from lyoko.application.incident_status import (
     format_diagnosing_status,
@@ -17,14 +12,18 @@ from lyoko.application.nodes.helpers import (
     is_message,
     make_gate,
     origin,
+    run_supervised,
     status_callback,
 )
 from lyoko.application.tool_gate import GateMode
 from lyoko.application.use_cases.retrieve_memory import RetrieveMemoryLessonsUseCase
-from lyoko.config import settings
+from lyoko.domain.interfaces.approval import ApprovalManagerInterface
+from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
 from lyoko.domain.interfaces.llm import LLMClientInterface
+from lyoko.domain.interfaces.mcp import MCPClientInterface
 from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
+from lyoko.domain.interfaces.supervisor import SupervisorInterface
 
 logger = logging.getLogger("lyoko.application.use_cases.diagnose_incident")
 
@@ -34,24 +33,33 @@ class DiagnoseIncidentUseCase:
 
     def __init__(
         self,
-        mcp_client: Any,
+        mcp_client: MCPClientInterface | None,
         llm: LLMClientInterface | None,
-        supervisor: Any = None,
-        approval_manager: ApprovalManager | None = None,
-        chat_manager: ChatManager | None = None,
+        supervisor: SupervisorInterface | None = None,
+        approval_manager: ApprovalManagerInterface | None = None,
+        chat_manager: ChatServiceInterface | None = None,
         retrieve_memory_use_case: RetrieveMemoryLessonsUseCase | None = None,
         memory_repository: MemoryRepositoryInterface | None = None,
         embeddings_service: EmbeddingsServiceInterface | None = None,
+        runner: Any = None,
+        default_chat_id: str | None = None,
     ) -> None:
         self.mcp_client = mcp_client
         self.llm = llm
         self.supervisor = supervisor
         self.approval_manager = approval_manager
         self.chat_manager = chat_manager
+        self.runner = runner or run_supervised
         self.retrieve_memory_use_case = retrieve_memory_use_case or RetrieveMemoryLessonsUseCase(
             memory_repository=memory_repository,
             embeddings_service=embeddings_service,
         )
+        if default_chat_id is not None:
+            self.default_chat_id = default_chat_id
+        else:
+            from lyoko.config import settings
+
+            self.default_chat_id = getattr(settings, "telegram_default_chat_id", "") or ""
 
     async def execute(self, state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
         """Investigate read-only and decide whether a fix is possible."""
@@ -73,7 +81,7 @@ class DiagnoseIncidentUseCase:
         progress_chat_id: str | None = state.get("progress_chat_id")
 
         if self.chat_manager is not None and not is_message(state) and not progress_msg_id:
-            chat_id = state.get("chat_id") or settings.telegram_default_chat_id or ""
+            chat_id = state.get("chat_id") or self.default_chat_id
             if chat_id:
                 status_text = format_diagnosing_status(state)
                 sent_list = await self.chat_manager.broadcast_message(
@@ -94,7 +102,7 @@ class DiagnoseIncidentUseCase:
         )
         try:
             prompt_content = f"Investigate this.\n\n{incident_context(state)}{lessons_context}"
-            answer = await diagnose_module.run_supervised(
+            answer = await self.runner(
                 state,
                 gate,
                 config,

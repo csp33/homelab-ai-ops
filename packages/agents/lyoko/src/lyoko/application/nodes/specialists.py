@@ -5,19 +5,21 @@ from collections.abc import Callable
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from lyoko.application.chat_manager import ChatManager
-from lyoko.application.hitl import ApprovalManager
 from lyoko.application.use_cases.execute_specialist_task import ExecuteSpecialistTaskUseCase
+from lyoko.domain.interfaces.approval import ApprovalManagerInterface
+from lyoko.domain.interfaces.chat_service import ChatServiceInterface
+from lyoko.domain.interfaces.mcp import MCPClientInterface
+from lyoko.domain.interfaces.specialist import SpecialistAgentInterface
 
 logger = logging.getLogger("lyoko.workflow.specialist")
 
 
 def create_specialist_node(
     domain: str,
-    specialist: Any,
-    mcp_client: Any = None,
-    approval_manager: ApprovalManager | None = None,
-    chat_manager: ChatManager | None = None,
+    specialist: SpecialistAgentInterface,
+    mcp_client: MCPClientInterface | None = None,
+    approval_manager: ApprovalManagerInterface | None = None,
+    chat_manager: ChatServiceInterface | None = None,
 ) -> Callable[[dict[str, Any], RunnableConfig], Any]:
     """Factory creating an inline graph node for a specific domain specialist."""
     use_case = ExecuteSpecialistTaskUseCase(

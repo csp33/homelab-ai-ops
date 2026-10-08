@@ -7,11 +7,11 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from lyoko.application.chat_manager import ChatManager
-from lyoko.application.hitl import ApprovalManager
 from lyoko.application.triage.argocd_autosync import ArgoCDAutosyncHandler
 from lyoko.application.triage.base import TriageHandler
 from lyoko.application.use_cases.triage_incident import TriageIncidentUseCase
+from lyoko.domain.interfaces.approval import ApprovalManagerInterface
+from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 from lyoko.domain.interfaces.mcp import MCPClientInterface
 
 
@@ -37,8 +37,8 @@ def create_composite_triage_node(
 
 def create_argocd_autosync_node(
     mcp_client: MCPClientInterface | None,
-    approval_manager: ApprovalManager | None = None,
-    chat_manager: ChatManager | None = None,
+    approval_manager: ApprovalManagerInterface | None = None,
+    chat_manager: ChatServiceInterface | None = None,
     tracer: Any = None,
 ) -> Callable[[dict[str, Any], RunnableConfig], Any]:
     """Backward-compatibility alias creating a single-handler autosync triage node."""

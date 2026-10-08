@@ -8,6 +8,7 @@ from lyoko.application.context.loader import build_agent_context
 from lyoko.application.prompts.loader import load_prompt
 from lyoko.config import settings
 from lyoko.domain.interfaces.llm import LLMClientInterface
+from lyoko.domain.interfaces.supervisor import SupervisorInterface
 
 logger = logging.getLogger("lyoko.supervisor")
 
@@ -30,7 +31,7 @@ _DOMAIN_DESCRIPTIONS = {
 }
 
 
-class SupervisorAgent:
+class SupervisorAgent(SupervisorInterface):
     """Orchestrates domain specialist subagents and plans multi-step cross-domain tasks."""
 
     def __init__(
