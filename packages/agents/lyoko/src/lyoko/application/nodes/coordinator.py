@@ -7,9 +7,8 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 from lyoko.application.chat_manager import ChatManager
 from lyoko.application.hitl import ApprovalManager
-from lyoko.application.nodes.chat import create_chat_node
 from lyoko.application.nodes.helpers import is_message
-from lyoko.application.nodes.incident_diagnose import create_diagnose_node
+from lyoko.application.use_cases.coordinate_workflow import CoordinateWorkflowUseCase
 from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
@@ -23,8 +22,8 @@ def choose_coordinator_next(state: dict[str, Any]) -> str:
     """Determine the next node after coordinator execution.
 
     - If a specialist delegation is pending, route to that specialist node.
-    - If event is chat (message) or incident is non-actionable/resolved, route to notify.
-    - If incident is actionable and needs fixing, route to remediate.
+    - If event is chat (message), route to END.
+    - If incident, route to remediate.
     """
     pending = state.get("pending_delegation")
     if pending and isinstance(pending, dict):
@@ -53,7 +52,7 @@ def create_coordinator_node(
     diagnose_supervisor: Any = None,
 ) -> Callable[[dict[str, Any], RunnableConfig], Any]:
     """Factory creating the unified coordinator node handler."""
-    chat_handler = create_chat_node(
+    use_case = CoordinateWorkflowUseCase(
         mcp_client=mcp_client,
         llm=llm,
         supervisor=supervisor,
@@ -61,26 +60,12 @@ def create_coordinator_node(
         chat_manager=chat_manager,
         memory_repository=memory_repository,
         embeddings_service=embeddings_service,
-    )
-    diagnose_handler = create_diagnose_node(
-        mcp_client=mcp_client,
-        llm=diagnose_llm or llm,
-        supervisor=diagnose_supervisor or supervisor,
-        approval_manager=approval_manager,
-        chat_manager=chat_manager,
-        memory_repository=memory_repository,
-        embeddings_service=embeddings_service,
+        diagnose_llm=diagnose_llm,
+        diagnose_supervisor=diagnose_supervisor,
     )
 
     async def coordinator_node(state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
-        """Execute coordinator turn for either chat or incident investigation."""
-        logger.info(
-            "Executing coordinator node for event_type='%s', route='%s'",
-            state.get("event_type"),
-            state.get("route"),
-        )
-        if is_message(state) and state.get("route") != "incident":
-            return await chat_handler(state, config)
-        return await diagnose_handler(state, config)
+        """Thin adapter delegating execution to CoordinateWorkflowUseCase."""
+        return await use_case.execute(state, config=config)
 
     return coordinator_node

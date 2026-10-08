@@ -142,3 +142,57 @@ async def test_triage_incident_use_case():
     # Message does not match any deterministic handler
     res2 = await uc_with_handlers.execute({"event_type": "message", "text": "normal message"}, {})
     assert res2 == {"triage": TRIAGE_DIAGNOSE}
+
+
+@pytest.mark.asyncio
+async def test_execute_specialist_task_use_case():
+    from lyoko.application.use_cases.execute_specialist_task import (
+        ExecuteSpecialistTaskUseCase,
+    )
+
+    specialist = MagicMock()
+    specialist.run = AsyncMock(return_value="K8s pod restarted")
+    uc = ExecuteSpecialistTaskUseCase(domain="kubernetes", specialist=specialist)
+
+    # Without matching pending delegation
+    res_none = await uc.execute({"pending_delegation": None}, {})
+    assert res_none == {"pending_delegation": None}
+
+    # With matching pending delegation
+    res_match = await uc.execute(
+        {
+            "pending_delegation": {"domain": "kubernetes", "task": "Check pod"},
+            "delegation_history": [],
+        },
+        {},
+    )
+    assert res_match["pending_delegation"] is None
+    assert len(res_match["delegation_history"]) == 1
+    assert res_match["delegation_history"][0]["response"] == "K8s pod restarted"
+
+
+@pytest.mark.asyncio
+async def test_coordinate_workflow_use_case():
+    from lyoko.application.use_cases.coordinate_workflow import (
+        CoordinateWorkflowUseCase,
+    )
+
+    mock_chat_uc = MagicMock()
+    mock_chat_uc.execute = AsyncMock(return_value={"reply": "Hello!"})
+    mock_diagnose_uc = MagicMock()
+    mock_diagnose_uc.execute = AsyncMock(return_value={"root_cause": "OOM"})
+
+    coordinator = CoordinateWorkflowUseCase(
+        mcp_client=None,
+        llm=None,
+        chat_use_case=mock_chat_uc,
+        diagnose_use_case=mock_diagnose_uc,
+    )
+
+    chat_res = await coordinator.execute({"event_type": "message", "route": "chat"}, {})
+    assert chat_res["reply"] == "Hello!"
+    assert mock_chat_uc.execute.called
+
+    alert_res = await coordinator.execute({"event_type": "alert"}, {})
+    assert alert_res["root_cause"] == "OOM"
+    assert mock_diagnose_uc.execute.called
