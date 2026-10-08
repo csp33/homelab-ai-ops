@@ -27,18 +27,18 @@ def create_diagnose_node(
     """Factory creating the diagnose node handler."""
     from lyoko.application.use_cases.diagnose_incident import DiagnoseIncidentUseCase
 
-    use_case = DiagnoseIncidentUseCase(
-        mcp_client=mcp_client,
-        llm=llm,
-        supervisor=supervisor,
-        approval_manager=approval_manager,
-        chat_manager=chat_manager,
-        memory_repository=memory_repository,
-        embeddings_service=embeddings_service,
-    )
-
     async def diagnose_node(state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
         """Investigate read-only and decide whether a fix is possible."""
+        use_case = DiagnoseIncidentUseCase(
+            mcp_client=mcp_client,
+            llm=llm,
+            supervisor=supervisor,
+            approval_manager=approval_manager,
+            chat_manager=chat_manager,
+            memory_repository=memory_repository,
+            embeddings_service=embeddings_service,
+            runner=run_supervised,
+        )
         return await use_case.execute(state, config=config)
 
     return diagnose_node

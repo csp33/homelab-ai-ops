@@ -5,6 +5,8 @@ from typing import Any
 
 from sector5_mcp.application.guardrail import GuardrailEngine
 from sector5_mcp.application.registry import ToolRegistry
+from sector5_mcp.application.use_cases.discover_tools import DiscoverToolsUseCase
+from sector5_mcp.application.use_cases.execute_tool import ExecuteToolUseCase
 from sector5_mcp.config import settings
 from sector5_mcp.domain.interfaces.auth import AuthVerifierInterface
 from sector5_mcp.domain.interfaces.upstream import UpstreamMCPInterface
@@ -42,9 +44,6 @@ class MCPGatewayService:
             upstreams=self.upstreams,
             guardrail=self.guardrail,
         )
-        from sector5_mcp.application.use_cases.discover_tools import DiscoverToolsUseCase
-        from sector5_mcp.application.use_cases.execute_tool import ExecuteToolUseCase
-
         self._discover_use_case = DiscoverToolsUseCase(registry=self.registry)
         self._execute_use_case = ExecuteToolUseCase(
             registry=self.registry,

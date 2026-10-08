@@ -6,6 +6,7 @@ from typing import Any
 from lyoko.config import settings
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.mcp import MCPClientInterface
+from lyoko.domain.interfaces.specialist import SpecialistAgentInterface
 
 logger = logging.getLogger("lyoko.specialists")
 
@@ -49,7 +50,7 @@ def _format_catalog(catalog: list[Any]) -> str:
     )
 
 
-class DomainSpecialistAgent:
+class DomainSpecialistAgent(SpecialistAgentInterface):
     """Specialist subagent focused on a single domain (e.g. unifi, kubernetes, homeassistant, grafana)."""
 
     def __init__(
@@ -61,13 +62,21 @@ class DomainSpecialistAgent:
         mcp_client: MCPClientInterface | None = None,
         tools: list[Any] | None = None,
     ) -> None:
-        self.name = name
-        self.domain = domain
+        self._name = name
+        self._domain = domain
         self.system_prompt = system_prompt
         self.llm = llm
         self.mcp_client = mcp_client
         self.tools = tools or []
         self._cached_tool_index: str | None = None
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def domain(self) -> str:
+        return self._domain
 
     async def get_tools(self, authorizer: Any = None) -> list[Any]:
         """Resolve tools scoped to this specialist's domain."""

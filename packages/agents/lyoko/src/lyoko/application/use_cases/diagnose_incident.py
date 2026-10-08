@@ -1,9 +1,6 @@
-"""Use case for investigating and diagnosing incidents in read-only mode."""
-
 import logging
 from typing import Any
 
-import lyoko.application.nodes.incident_diagnose as diagnose_module
 from langchain_core.runnables import RunnableConfig
 from lyoko.application.chat_manager import ChatManager
 from lyoko.application.hitl import ApprovalManager
@@ -17,6 +14,7 @@ from lyoko.application.nodes.helpers import (
     is_message,
     make_gate,
     origin,
+    run_supervised,
     status_callback,
 )
 from lyoko.application.tool_gate import GateMode
@@ -24,7 +22,9 @@ from lyoko.application.use_cases.retrieve_memory import RetrieveMemoryLessonsUse
 from lyoko.config import settings
 from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
 from lyoko.domain.interfaces.llm import LLMClientInterface
+from lyoko.domain.interfaces.mcp import MCPClientInterface
 from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
+from lyoko.domain.interfaces.supervisor import SupervisorInterface
 
 logger = logging.getLogger("lyoko.application.use_cases.diagnose_incident")
 
@@ -34,20 +34,22 @@ class DiagnoseIncidentUseCase:
 
     def __init__(
         self,
-        mcp_client: Any,
+        mcp_client: MCPClientInterface | None,
         llm: LLMClientInterface | None,
-        supervisor: Any = None,
+        supervisor: SupervisorInterface | None = None,
         approval_manager: ApprovalManager | None = None,
         chat_manager: ChatManager | None = None,
         retrieve_memory_use_case: RetrieveMemoryLessonsUseCase | None = None,
         memory_repository: MemoryRepositoryInterface | None = None,
         embeddings_service: EmbeddingsServiceInterface | None = None,
+        runner: Any = None,
     ) -> None:
         self.mcp_client = mcp_client
         self.llm = llm
         self.supervisor = supervisor
         self.approval_manager = approval_manager
         self.chat_manager = chat_manager
+        self.runner = runner or run_supervised
         self.retrieve_memory_use_case = retrieve_memory_use_case or RetrieveMemoryLessonsUseCase(
             memory_repository=memory_repository,
             embeddings_service=embeddings_service,
@@ -94,7 +96,7 @@ class DiagnoseIncidentUseCase:
         )
         try:
             prompt_content = f"Investigate this.\n\n{incident_context(state)}{lessons_context}"
-            answer = await diagnose_module.run_supervised(
+            answer = await self.runner(
                 state,
                 gate,
                 config,

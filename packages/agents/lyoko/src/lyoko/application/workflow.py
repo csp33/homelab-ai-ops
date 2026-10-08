@@ -28,10 +28,15 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 from lyoko.application.chat_manager import ChatManager
 from lyoko.application.hitl import ApprovalManager
+from lyoko.application.nodes.coordinator import (
+    choose_coordinator_next,
+    create_coordinator_node,
+)
 from lyoko.application.nodes.incident_remediate import create_remediate_node
 from lyoko.application.nodes.incident_verify import create_verify_node
 from lyoko.application.nodes.notify import create_notify_node
 from lyoko.application.nodes.router import choose_branch, create_route_node
+from lyoko.application.nodes.specialists import create_specialist_node
 from lyoko.application.nodes.triage import create_composite_triage_node
 from lyoko.application.triage.base import TriageHandler
 from lyoko.application.triage.dispatcher import choose_triage
@@ -102,24 +107,8 @@ def create_lyoko_graph(
     than the rest of the graph; both fall back to ``llm``/``supervisor`` when omitted.
     """
     route_node = create_route_node(llm=llm)
-    if triage_handlers is not None:
-        handlers = triage_handlers
-    else:
-        from lyoko.composition import build_triage_handlers
-
-        handlers = build_triage_handlers(
-            mcp_client=mcp_client,
-            approval_manager=approval_manager,
-            chat_manager=chat_manager,
-            tracer=tracer,
-        )
+    handlers = triage_handlers if triage_handlers is not None else []
     triage_node = create_composite_triage_node(handlers=handlers)
-
-    from lyoko.application.nodes.coordinator import (
-        choose_coordinator_next,
-        create_coordinator_node,
-    )
-    from lyoko.application.nodes.specialists import create_specialist_node
 
     coordinator_node = create_coordinator_node(
         mcp_client=mcp_client,

@@ -8,6 +8,8 @@ from lyoko.application.chat_manager import ChatManager
 from lyoko.application.hitl import ApprovalManager
 from lyoko.application.nodes.helpers import make_gate, status_callback
 from lyoko.application.tool_gate import GateMode
+from lyoko.domain.interfaces.mcp import MCPClientInterface
+from lyoko.domain.interfaces.specialist import SpecialistAgentInterface
 
 logger = logging.getLogger("lyoko.application.use_cases.execute_specialist_task")
 
@@ -18,8 +20,8 @@ class ExecuteSpecialistTaskUseCase:
     def __init__(
         self,
         domain: str,
-        specialist: Any,
-        mcp_client: Any = None,
+        specialist: SpecialistAgentInterface,
+        mcp_client: MCPClientInterface | None = None,
         approval_manager: ApprovalManager | None = None,
         chat_manager: ChatManager | None = None,
     ) -> None:

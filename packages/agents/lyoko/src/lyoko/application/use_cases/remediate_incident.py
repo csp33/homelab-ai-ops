@@ -20,6 +20,8 @@ from lyoko.application.nodes.helpers import (
 )
 from lyoko.application.tool_gate import CallOutcome, GateMode, ToolCallRecord
 from lyoko.domain.interfaces.llm import LLMClientInterface
+from lyoko.domain.interfaces.mcp import MCPClientInterface
+from lyoko.domain.interfaces.supervisor import SupervisorInterface
 
 logger = logging.getLogger("lyoko.application.use_cases.remediate_incident")
 
@@ -53,9 +55,9 @@ class RemediateIncidentUseCase:
 
     def __init__(
         self,
-        mcp_client: Any,
+        mcp_client: MCPClientInterface | None,
         llm: LLMClientInterface | None,
-        supervisor: Any = None,
+        supervisor: SupervisorInterface | None = None,
         approval_manager: ApprovalManager | None = None,
         chat_manager: ChatManager | None = None,
     ) -> None:

@@ -21,7 +21,9 @@ from lyoko.application.tool_gate import GateMode
 from lyoko.application.use_cases.retrieve_memory import RetrieveMemoryLessonsUseCase
 from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
 from lyoko.domain.interfaces.llm import LLMClientInterface
+from lyoko.domain.interfaces.mcp import MCPClientInterface
 from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
+from lyoko.domain.interfaces.supervisor import SupervisorInterface
 
 logger = logging.getLogger("lyoko.application.use_cases.handle_chat")
 
@@ -31,9 +33,9 @@ class HandleChatTurnUseCase:
 
     def __init__(
         self,
-        mcp_client: Any,
+        mcp_client: MCPClientInterface | None,
         llm: LLMClientInterface | None,
-        supervisor: Any = None,
+        supervisor: SupervisorInterface | None = None,
         approval_manager: ApprovalManager | None = None,
         chat_manager: ChatManager | None = None,
         retrieve_memory_use_case: RetrieveMemoryLessonsUseCase | None = None,
