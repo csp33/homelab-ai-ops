@@ -1,7 +1,11 @@
 """Parsing of the router's one-word answer."""
 
 import pytest
-from lyoko.application.router import ROUTER_SYSTEM_PROMPT, Route, parse_route
+from lyoko.application.prompts.router import ROUTER_SYSTEM_PROMPT
+from lyoko.application.routing.classifier import RouteClassifier
+from lyoko.domain.models.routing import Route
+
+parse_route = RouteClassifier.parse_route
 
 
 @pytest.mark.parametrize(

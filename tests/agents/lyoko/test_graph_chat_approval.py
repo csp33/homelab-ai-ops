@@ -3,7 +3,7 @@
 from unittest.mock import AsyncMock
 
 import pytest
-from lyoko.application.hitl import ApprovalManager
+from lyoko.application.hitl.manager import ApprovalManager
 from lyoko.application.workflow import create_lyoko_graph
 from lyoko.domain.interfaces.mcp import ToolAuthorizer
 

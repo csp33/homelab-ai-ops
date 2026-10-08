@@ -1,21 +1,21 @@
 """Unit tests for markdown prompt loading and prompt integrity."""
 
 import pytest
-from lyoko.application.chat_prompts import CHAT_SYSTEM_PROMPT
-from lyoko.application.incident_prompts import (
+from lyoko.application.prompts.chat import CHAT_SYSTEM_PROMPT
+from lyoko.application.prompts.incident import (
     DIAGNOSE_SYSTEM_PROMPT,
     REMEDIATE_SYSTEM_PROMPT,
     VERIFY_SYSTEM_PROMPT,
 )
 from lyoko.application.prompts.loader import load_prompt
-from lyoko.application.router import ROUTER_SYSTEM_PROMPT
-from lyoko.application.specialists.prompts import (
-    K8S_SPECIALIST_PROMPT,
-    NETWORK_SPECIALIST_PROMPT,
-    OBSERVABILITY_SPECIALIST_PROMPT,
-    SMARTHOME_SPECIALIST_PROMPT,
-)
+from lyoko.application.prompts.router import ROUTER_SYSTEM_PROMPT
+from lyoko.application.specialists.prompts import SpecialistPromptProvider
 from lyoko.application.supervisor import SUPERVISOR_SYSTEM_PROMPT
+
+K8S_SPECIALIST_PROMPT = SpecialistPromptProvider.get_prompt("k8s")
+NETWORK_SPECIALIST_PROMPT = SpecialistPromptProvider.get_prompt("network")
+SMARTHOME_SPECIALIST_PROMPT = SpecialistPromptProvider.get_prompt("smarthome")
+OBSERVABILITY_SPECIALIST_PROMPT = SpecialistPromptProvider.get_prompt("observability")
 
 
 def test_load_prompt_success():

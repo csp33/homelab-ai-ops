@@ -1,10 +1,10 @@
 """Unit tests for live incident status formatting."""
 
-from lyoko.application.incident_status import (
-    format_diagnosing_status,
-    format_remediating_status,
-    format_verifying_status,
-)
+from lyoko.application.incident.status import IncidentStatusFormatter
+
+format_diagnosing_status = IncidentStatusFormatter.format_diagnosing_status
+format_remediating_status = IncidentStatusFormatter.format_remediating_status
+format_verifying_status = IncidentStatusFormatter.format_verifying_status
 
 
 def test_format_diagnosing_status_alert():

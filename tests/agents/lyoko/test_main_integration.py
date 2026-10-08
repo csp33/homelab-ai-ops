@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from lyoko.application.hitl import ApprovalManager
+from lyoko.application.hitl.manager import ApprovalManager
 from lyoko.composition import build_chat_manager
 from lyoko.main import create_app
 
@@ -50,10 +50,10 @@ async def test_build_chat_manager_enabled(monkeypatch):
 async def test_app_lifespan_lifecycle():
     with (
         patch(
-            "lyoko.application.chat_manager.ChatManager.start_all", new_callable=AsyncMock
+            "lyoko.infrastructure.chat.manager.ChatManager.start_all", new_callable=AsyncMock
         ) as mock_start,
         patch(
-            "lyoko.application.chat_manager.ChatManager.stop_all", new_callable=AsyncMock
+            "lyoko.infrastructure.chat.manager.ChatManager.stop_all", new_callable=AsyncMock
         ) as mock_stop,
     ):
         app = create_app()
@@ -90,7 +90,7 @@ async def test_webhook_and_chat_use_the_graph_stored_in_app_state(monkeypatch):
     replacement.ainvoke.reset_mock()
     chat_manager = app.state.chat_manager
     assert chat_manager.session_tracker is not None
-    from lyoko.application.chat_agent import InteractiveChatAgent
+    from lyoko.application.chat.agent import InteractiveChatAgent
     from lyoko.composition import wire_chat_agent
 
     class _Connector:

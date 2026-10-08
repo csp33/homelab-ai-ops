@@ -3,9 +3,11 @@
 import logging
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
 from lyoko.application.context.loader import build_agent_context
 from lyoko.application.prompts.loader import load_prompt
+from lyoko.application.safety.tool_gate import ToolGate
 from lyoko.config import settings
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.supervisor import SupervisorInterface
@@ -170,3 +172,90 @@ class SupervisorAgent(SupervisorInterface):
             parent_config=parent_config,
             on_status=on_status,
         )
+
+
+class SupervisedAgentRunner:
+    """Orchestrates agent execution through a supervisor or standalone agent with ToolGate."""
+
+    @staticmethod
+    def extract_status_callback(config: Any) -> Any:
+        """Return the streaming status callback carried by the run config, if any."""
+        if not isinstance(config, dict):
+            return None
+        return config.get("configurable", {}).get("on_status")
+
+    @classmethod
+    async def run_agent(
+        cls,
+        state: dict[str, Any],
+        gate: ToolGate,
+        config: RunnableConfig,
+        mcp_client: Any,
+        llm: LLMClientInterface | None,
+        *,
+        phase: str,
+        system_prompt: str,
+        prompt: str,
+        on_status: Any = None,
+    ) -> str:
+        """Run one tool-using agent with every tool call going through ``gate``."""
+        assert llm is not None
+        kwargs: dict[str, Any] = {
+            "prompt": prompt,
+            "system_prompt": system_prompt,
+            "tools": mcp_client.get_langchain_tools(authorizer=gate.authorize),
+            "session_id": state.get("session_id"),
+            "trace_name": f"{phase}-agent",
+            "tags": [f"phase:{phase}"],
+            "max_steps": settings.max_agent_steps,
+            "parent_config": config,
+        }
+        if on_status is not None:
+            kwargs["on_status"] = on_status
+        return await llm.chat(**kwargs)
+
+    @classmethod
+    async def run_supervised(
+        cls,
+        state: dict[str, Any],
+        gate: ToolGate,
+        config: RunnableConfig,
+        mcp_client: Any,
+        llm: LLMClientInterface | None,
+        supervisor: Any,
+        *,
+        phase: str,
+        prompt: str,
+        system_prompt: str | None = None,
+        on_status: Any = None,
+    ) -> str:
+        """Run through the supervisor + specialists when available; otherwise fall back."""
+        if supervisor is None:
+            if system_prompt is None:
+                raise ValueError("system_prompt is required when no supervisor is configured")
+            return await cls.run_agent(
+                state,
+                gate,
+                config,
+                mcp_client=mcp_client,
+                llm=llm,
+                phase=phase,
+                system_prompt=system_prompt,
+                prompt=prompt,
+                on_status=on_status,
+            )
+        return await supervisor.coordinate(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            session_id=state.get("session_id"),
+            tags=[f"phase:{phase}"],
+            authorizer=gate.authorize,
+            parent_config=config,
+            max_steps=settings.max_agent_steps,
+            on_status=on_status,
+        )
+
+
+run_supervised = SupervisedAgentRunner.run_supervised
+run_agent = SupervisedAgentRunner.run_agent
+status_callback = SupervisedAgentRunner.extract_status_callback

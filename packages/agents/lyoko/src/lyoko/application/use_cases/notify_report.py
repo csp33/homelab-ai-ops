@@ -3,12 +3,11 @@
 import logging
 from typing import Any
 
-from lyoko.application.nodes.helpers import (
-    describe_call,
-    is_message,
-)
+from langchain_core.runnables import RunnableConfig
+from lyoko.application.context.formatter import IncidentContextFormatter
 from lyoko.config import settings
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
+from lyoko.domain.models.state import is_message
 
 logger = logging.getLogger("lyoko.application.use_cases.notify_report")
 
@@ -30,7 +29,10 @@ def format_incident_report(state: dict[str, Any]) -> str:
         lines.append(f"**Memories Applied:** {len(state['matched_memories'])}")
     actions = state.get("actions") or []
     if actions:
-        lines.append("**Tool Calls:** " + ", ".join(describe_call(a) for a in actions))
+        lines.append(
+            "**Tool Calls:** "
+            + ", ".join(IncidentContextFormatter.describe_call(a) for a in actions)
+        )
     if state.get("verification"):
         lines.append(f"**Verification:** {state['verification']}")
     return "\n".join(lines)
@@ -42,7 +44,9 @@ class NotifyIncidentReportUseCase:
     def __init__(self, chat_manager: ChatServiceInterface | None = None) -> None:
         self.chat_manager = chat_manager
 
-    async def execute(self, state: dict[str, Any]) -> dict[str, Any]:
+    async def execute(
+        self, state: dict[str, Any], config: RunnableConfig | None = None
+    ) -> dict[str, Any]:
         """Build the incident report. Alerts broadcast it; a message gets it as the reply."""
         summary = format_incident_report(state)
         logger.info(summary)

@@ -5,16 +5,11 @@ import logging
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from lyoko.application.incident_prompts import VERIFY_SYSTEM_PROMPT, parse_verdict
-from lyoko.application.nodes.helpers import (
-    _EXECUTED_OUTCOMES,
-    describe_call,
-    incident_context,
-    make_gate,
-    run_supervised,
-    status_callback,
-)
-from lyoko.application.tool_gate import GateMode
+from lyoko.application.context.formatter import IncidentContextFormatter
+from lyoko.application.incident.parser import IncidentOutputParser
+from lyoko.application.prompts.incident import VERIFY_SYSTEM_PROMPT
+from lyoko.application.safety.tool_gate import CallOutcome, GateMode, make_gate
+from lyoko.application.supervisor import run_supervised, status_callback
 from lyoko.config import settings
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
@@ -23,6 +18,8 @@ from lyoko.domain.interfaces.mcp import MCPClientInterface
 from lyoko.domain.interfaces.supervisor import SupervisorInterface
 
 logger = logging.getLogger("lyoko.application.use_cases.verify_incident")
+
+_EXECUTED_OUTCOMES = frozenset({CallOutcome.AUTO_APPROVED.value, CallOutcome.APPROVED.value})
 
 
 class VerifyIncidentUseCase:
@@ -48,7 +45,9 @@ class VerifyIncidentUseCase:
             else getattr(settings, "verification_delay_seconds", 10)
         )
 
-    async def execute(self, state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
+    async def execute(
+        self, state: dict[str, Any], config: RunnableConfig | None = None
+    ) -> dict[str, Any]:
         """Check, read-only, that the incident is actually resolved."""
         executed = [a for a in state.get("actions", []) if a["outcome"] in _EXECUTED_OUTCOMES]
         if state.get("requires_escalation") or not executed or self.llm is None:
@@ -64,7 +63,9 @@ class VerifyIncidentUseCase:
             chat_manager=self.chat_manager,
             mcp_client=self.mcp_client,
         )
-        changes = "\n".join(f"- {describe_call(a)} {a['arguments']}" for a in executed)
+        changes = "\n".join(
+            f"- {IncidentContextFormatter.describe_call(a)} {a['arguments']}" for a in executed
+        )
         try:
             answer = await run_supervised(
                 state,
@@ -76,7 +77,7 @@ class VerifyIncidentUseCase:
                 phase="verify",
                 system_prompt=VERIFY_SYSTEM_PROMPT,
                 prompt=(
-                    f"Verify this incident is resolved.\n\n{incident_context(state)}\n\n"
+                    f"Verify this incident is resolved.\n\n{IncidentContextFormatter.format_context(state)}\n\n"
                     f"Root cause: {state.get('root_cause', 'Unknown')}\n\n"
                     f"Changes applied:\n{changes}"
                 ),
@@ -86,5 +87,5 @@ class VerifyIncidentUseCase:
             logger.error("Verification failed: %s", exc, exc_info=True)
             return {"is_resolved": False, "verification": f"Verification failed: {exc}"}
 
-        resolved, evidence = parse_verdict(answer)
+        resolved, evidence = IncidentOutputParser.parse_verdict(answer)
         return {"is_resolved": resolved, "verification": evidence}

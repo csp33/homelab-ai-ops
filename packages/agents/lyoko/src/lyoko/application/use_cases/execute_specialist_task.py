@@ -4,8 +4,8 @@ import logging
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from lyoko.application.nodes.helpers import make_gate, status_callback
-from lyoko.application.tool_gate import GateMode
+from lyoko.application.safety.tool_gate import GateMode, make_gate
+from lyoko.application.supervisor import status_callback
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 from lyoko.domain.interfaces.mcp import MCPClientInterface
@@ -31,7 +31,9 @@ class ExecuteSpecialistTaskUseCase:
         self.approval_manager = approval_manager
         self.chat_manager = chat_manager
 
-    async def execute(self, state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
+    async def execute(
+        self, state: dict[str, Any], config: RunnableConfig | None = None
+    ) -> dict[str, Any]:
         """Execute specialist task if there is a pending delegation for this domain."""
         pending = state.get("pending_delegation")
         if not pending or pending.get("domain") != self.domain:

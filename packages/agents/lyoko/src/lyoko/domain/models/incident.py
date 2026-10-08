@@ -78,3 +78,10 @@ class IncidentState:
     verification_success: bool = False
     error_message: str | None = None
     retry_count: int = 0
+
+
+@dataclass(frozen=True)
+class Diagnosis:
+    root_cause: str
+    actionable: bool
+    plan: str

@@ -83,7 +83,7 @@ def create_webhook_router(
 
         guard = alert_guard or getattr(request.app.state, "alert_guard", None)
         if guard is None:
-            from lyoko.application.alert_guard import AlertStormProtector
+            from lyoko.application.safety.alert_guard import AlertStormProtector
 
             chat_mgr = getattr(request.app.state, "chat_manager", None)
             guard = AlertStormProtector(

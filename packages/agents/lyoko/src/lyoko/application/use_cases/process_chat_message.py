@@ -5,14 +5,14 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
-from lyoko.application.chat_history import ChatHistoryTracker
-from lyoko.application.chat_sessions import (
+from lyoko.application.chat.history import ChatHistoryTracker
+from lyoko.application.chat.sessions import (
     DEFAULT_SESSION_IDLE_TIMEOUT_SECONDS,
     ChatSessionTracker,
 )
-from lyoko.application.nodes.helpers import EVENT_MESSAGE
 from lyoko.domain.interfaces.tracer import TracerInterface
 from lyoko.domain.models.chat import IncomingMessage
+from lyoko.domain.models.state import EVENT_MESSAGE
 
 logger = logging.getLogger("lyoko.application.use_cases.process_chat_message")
 

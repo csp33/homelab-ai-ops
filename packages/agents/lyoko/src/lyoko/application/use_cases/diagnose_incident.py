@@ -1,21 +1,13 @@
 import logging
 from typing import Any
 
-from langchain_core.runnables import RunnableConfig
-from lyoko.application.incident_prompts import DIAGNOSE_SYSTEM_PROMPT, parse_diagnosis
-from lyoko.application.incident_status import (
-    format_diagnosing_status,
-    format_remediating_status,
-)
-from lyoko.application.nodes.helpers import (
-    incident_context,
-    is_message,
-    make_gate,
-    origin,
-    run_supervised,
-    status_callback,
-)
-from lyoko.application.tool_gate import GateMode
+from lyoko.application.context.formatter import IncidentContextFormatter
+from lyoko.application.incident.parser import IncidentOutputParser
+from lyoko.application.incident.status import IncidentStatusFormatter
+from lyoko.application.prompts.incident import DIAGNOSE_SYSTEM_PROMPT
+from lyoko.application.safety.tool_gate import GateMode, make_gate
+from lyoko.application.skills.matcher import SkillMatcherService
+from lyoko.application.supervisor import run_supervised, status_callback
 from lyoko.application.use_cases.retrieve_memory import RetrieveMemoryLessonsUseCase
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
@@ -24,6 +16,7 @@ from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.mcp import MCPClientInterface
 from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
 from lyoko.domain.interfaces.supervisor import SupervisorInterface
+from lyoko.domain.models.state import is_message
 
 logger = logging.getLogger("lyoko.application.use_cases.diagnose_incident")
 
@@ -41,6 +34,7 @@ class DiagnoseIncidentUseCase:
         retrieve_memory_use_case: RetrieveMemoryLessonsUseCase | None = None,
         memory_repository: MemoryRepositoryInterface | None = None,
         embeddings_service: EmbeddingsServiceInterface | None = None,
+        skill_matcher_service: SkillMatcherService | None = None,
         runner: Any = None,
         default_chat_id: str | None = None,
     ) -> None:
@@ -49,6 +43,7 @@ class DiagnoseIncidentUseCase:
         self.supervisor = supervisor
         self.approval_manager = approval_manager
         self.chat_manager = chat_manager
+        self.skill_matcher_service = skill_matcher_service
         self.runner = runner or run_supervised
         self.retrieve_memory_use_case = retrieve_memory_use_case or RetrieveMemoryLessonsUseCase(
             memory_repository=memory_repository,
@@ -61,7 +56,7 @@ class DiagnoseIncidentUseCase:
 
             self.default_chat_id = getattr(settings, "telegram_default_chat_id", "") or ""
 
-    async def execute(self, state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
+    async def execute(self, state: dict[str, Any], config: Any = None) -> dict[str, Any]:
         """Investigate read-only and decide whether a fix is possible."""
         if self.llm is None:
             return {
@@ -76,14 +71,14 @@ class DiagnoseIncidentUseCase:
             state=state,
         )
 
-        logger.info("Diagnosing %s...", origin(state))
+        logger.info("Diagnosing %s...", IncidentContextFormatter.format_origin(state))
         progress_msg_id: str | None = state.get("progress_message_id")
         progress_chat_id: str | None = state.get("progress_chat_id")
 
         if self.chat_manager is not None and not is_message(state) and not progress_msg_id:
             chat_id = state.get("chat_id") or self.default_chat_id
             if chat_id:
-                status_text = format_diagnosing_status(state)
+                status_text = IncidentStatusFormatter.format_diagnosing_status(state)
                 sent_list = await self.chat_manager.broadcast_message(
                     chat_id=chat_id,
                     text=status_text,
@@ -101,7 +96,14 @@ class DiagnoseIncidentUseCase:
             mcp_client=self.mcp_client,
         )
         try:
-            prompt_content = f"Investigate this.\n\n{incident_context(state)}{lessons_context}"
+            skills_context = ""
+            if self.skill_matcher_service is not None:
+                skills_context = await self.skill_matcher_service.format_matched_skills_context(
+                    alert_name=state.get("alert_name", ""),
+                    labels=state.get("labels"),
+                    annotations=state.get("annotations"),
+                )
+            prompt_content = f"Investigate this.\n\n{IncidentContextFormatter.format_context(state)}{lessons_context}{skills_context}"
             answer = await self.runner(
                 state,
                 gate,
@@ -118,9 +120,9 @@ class DiagnoseIncidentUseCase:
             logger.error("Investigation failed: %s", exc, exc_info=True)
             return {"root_cause": f"Investigation failed: {exc}", "requires_escalation": True}
 
-        diagnosis = parse_diagnosis(answer)
+        diagnosis = IncidentOutputParser.parse_diagnosis(answer)
         if self.chat_manager is not None and progress_msg_id and progress_chat_id:
-            status_text = format_remediating_status(
+            status_text = IncidentStatusFormatter.format_remediating_status(
                 state,
                 diagnosis.root_cause,
                 requires_escalation=not diagnosis.actionable,

@@ -4,10 +4,12 @@ import logging
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from lyoko.application.nodes.helpers import is_message
-from lyoko.application.notifications import is_recovery_notification
-from lyoko.application.router import ROUTER_SYSTEM_PROMPT, Route, parse_route
+from lyoko.application.prompts.router import ROUTER_SYSTEM_PROMPT
+from lyoko.application.routing.classifier import RouteClassifier
+from lyoko.application.routing.recovery import RecoveryNotificationDetector
 from lyoko.domain.interfaces.llm import LLMClientInterface
+from lyoko.domain.models.routing import Route
+from lyoko.domain.models.state import is_message
 
 logger = logging.getLogger("lyoko.application.use_cases.route_event")
 
@@ -26,7 +28,7 @@ class RouteEventUseCase:
             return {"route": Route.INCIDENT.value}
 
         text = state.get("text", "")
-        if is_recovery_notification(text):
+        if RecoveryNotificationDetector.is_recovery_notification(text):
             # A recovery needs no investigation; answer it in chat without an LLM call.
             logger.info("Recovery notification detected; routing to chat.")
             return {"route": Route.CHAT.value}
@@ -49,6 +51,6 @@ class RouteEventUseCase:
             logger.warning("Routing failed, answering in chat: %s", exc)
             return {"route": Route.CHAT.value}
 
-        route = parse_route(answer)
+        route = RouteClassifier.parse_route(answer)
         logger.info("Routed message to %s", route.value)
         return {"route": route.value}

@@ -17,7 +17,9 @@ class TriageIncidentUseCase:
     def __init__(self, handlers: Sequence[TriageHandler] | None = None) -> None:
         self.handlers = list(handlers) if handlers is not None else []
 
-    async def execute(self, state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
+    async def execute(
+        self, state: dict[str, Any], config: RunnableConfig | None = None
+    ) -> dict[str, Any]:
         """Iterate through handlers and return early if any handler resolves the incident."""
         for handler in self.handlers:
             try:

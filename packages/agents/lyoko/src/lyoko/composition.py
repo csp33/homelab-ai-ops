@@ -8,17 +8,14 @@ import logging
 
 from fastapi import FastAPI
 
-from lyoko.application.chat_agent import ChatHistoryTracker, InteractiveChatAgent
-from lyoko.application.chat_manager import ChatManager
-from lyoko.application.chat_sessions import ChatSessionTracker
-from lyoko.application.hitl import ApprovalManager
+from lyoko.application.chat.agent import InteractiveChatAgent
+from lyoko.application.chat.history import ChatHistoryTracker
+from lyoko.application.chat.sessions import ChatSessionTracker
+from lyoko.application.harness.buffer import SmartOutputBufferService
+from lyoko.application.hitl.manager import ApprovalManager
+from lyoko.application.skills.matcher import SkillMatcherService
 from lyoko.application.specialists.agent import DomainSpecialistAgent
-from lyoko.application.specialists.prompts import (
-    K8S_SPECIALIST_PROMPT,
-    NETWORK_SPECIALIST_PROMPT,
-    OBSERVABILITY_SPECIALIST_PROMPT,
-    SMARTHOME_SPECIALIST_PROMPT,
-)
+from lyoko.application.specialists.prompts import SpecialistPromptProvider
 from lyoko.application.supervisor import SupervisorAgent
 from lyoko.application.triage.argocd_autosync import ArgoCDAutosyncHandler
 from lyoko.application.triage.argocd_sync_failed import ArgoCDSyncFailedHandler
@@ -29,11 +26,15 @@ from lyoko.config import settings
 from lyoko.domain.exceptions.mcp import MCPGatewayError
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.mcp import MCPClientInterface
+from lyoko.infrastructure.chat.manager import ChatManager
 from lyoko.infrastructure.chat.telegram import TelegramConnector
 from lyoko.infrastructure.db.memory_repository import PostgresMemoryRepository
 from lyoko.infrastructure.embeddings import EmbeddingsService
+from lyoko.infrastructure.llm.harness_runner import ReActHarnessRunner
 from lyoko.infrastructure.llm.openai import OpenAILLMAdapter
 from lyoko.infrastructure.observability.langfuse import LangfuseTracer
+from lyoko.infrastructure.skills.markdown_skill_repository import MarkdownSkillRepository
+from lyoko.infrastructure.storage.scratchpad_file_storage import ScratchpadFileStorage
 
 logger = logging.getLogger("lyoko")
 
@@ -43,6 +44,12 @@ def _secret(value: object) -> str:
     if value and hasattr(value, "get_secret_value"):
         return value.get_secret_value()
     return str(value) if value else ""
+
+
+def build_skill_matcher() -> SkillMatcherService:
+    """Instantiate skill matcher backed by the markdown runbooks repository."""
+    repo = MarkdownSkillRepository()
+    return SkillMatcherService(repository=repo)
 
 
 def build_llm_adapter(
@@ -58,10 +65,16 @@ def build_llm_adapter(
         return None
     if use_responses_api is None:
         use_responses_api = settings.openai_use_responses_api
+
+    storage = ScratchpadFileStorage()
+    buffer_service = SmartOutputBufferService(storage=storage)
+    harness_runner = ReActHarnessRunner(buffer_service=buffer_service)
+
     return OpenAILLMAdapter(
         api_key=_secret(settings.openai_api_key),
         model_name=model_name or settings.openai_model,
         use_responses_api=use_responses_api,
+        harness_runner=harness_runner,
     )
 
 
@@ -74,28 +87,28 @@ def build_domain_specialists(
         "kubernetes": DomainSpecialistAgent(
             name="k8s_specialist",
             domain="kubernetes",
-            system_prompt=K8S_SPECIALIST_PROMPT,
+            system_prompt=SpecialistPromptProvider.get_prompt("kubernetes"),
             llm=llm,
             mcp_client=mcp_client,
         ),
         "unifi": DomainSpecialistAgent(
             name="network_specialist",
             domain="unifi",
-            system_prompt=NETWORK_SPECIALIST_PROMPT,
+            system_prompt=SpecialistPromptProvider.get_prompt("unifi"),
             llm=llm,
             mcp_client=mcp_client,
         ),
         "homeassistant": DomainSpecialistAgent(
             name="smarthome_specialist",
             domain="homeassistant",
-            system_prompt=SMARTHOME_SPECIALIST_PROMPT,
+            system_prompt=SpecialistPromptProvider.get_prompt("homeassistant"),
             llm=llm,
             mcp_client=mcp_client,
         ),
         "grafana": DomainSpecialistAgent(
             name="observability_specialist",
             domain="grafana",
-            system_prompt=OBSERVABILITY_SPECIALIST_PROMPT,
+            system_prompt=SpecialistPromptProvider.get_prompt("grafana"),
             llm=llm,
             mcp_client=mcp_client,
         ),
