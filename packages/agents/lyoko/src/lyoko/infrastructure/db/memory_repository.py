@@ -183,3 +183,21 @@ class PostgresMemoryRepository(MemoryRepositoryInterface):
                 )
                 for row in rows
             ]
+
+    async def delete_memory(self, memory_id: int) -> bool:
+        """Delete a memory entry by its primary key ID."""
+        async with self.pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                """
+                DELETE FROM agent_memory
+                WHERE id = %s
+                RETURNING id;
+                """,
+                (memory_id,),
+            )
+            row = await cur.fetchone()
+            if row:
+                logger.info(f"Deleted memory {memory_id}")
+                return True
+            logger.info(f"Memory {memory_id} not found for deletion")
+            return False

@@ -160,3 +160,34 @@ async def test_list_recent_memories():
     assert len(memories) == 1
     assert memories[0].id == 10
     assert memories[0].service_name == "web"
+
+
+@pytest.mark.asyncio
+async def test_delete_memory_found():
+    """Verify delete_memory returns True when row is deleted."""
+    mock_cur = AsyncMock()
+    mock_cur.fetchone = AsyncMock(return_value={"id": 42})
+    mock_pool = _create_mock_pool(mock_cur)
+
+    repo = PostgresMemoryRepository(mock_pool)
+    result = await repo.delete_memory(42)
+
+    assert result is True
+    assert mock_cur.execute.called
+    query_str = mock_cur.execute.call_args[0][0]
+    assert "DELETE FROM agent_memory" in query_str
+    assert mock_cur.execute.call_args[0][1] == (42,)
+
+
+@pytest.mark.asyncio
+async def test_delete_memory_not_found():
+    """Verify delete_memory returns False when no row matches."""
+    mock_cur = AsyncMock()
+    mock_cur.fetchone = AsyncMock(return_value=None)
+    mock_pool = _create_mock_pool(mock_cur)
+
+    repo = PostgresMemoryRepository(mock_pool)
+    result = await repo.delete_memory(999)
+
+    assert result is False
+    assert mock_cur.execute.called
