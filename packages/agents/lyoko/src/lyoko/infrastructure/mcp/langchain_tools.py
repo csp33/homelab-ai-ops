@@ -111,11 +111,11 @@ def _build_discovery_trio(
     if domain is None:
         domain_description = (
             f"List the tools available in one upstream domain ({_DOMAIN_ARG_HELP}). Use it to "
-            "discover capabilities, then gateway_get_tool_schema and gateway_call_tool."
+            "discover capabilities, then gateway_call_tool to execute them."
         )
         schema_description = (
-            "Get the exact parameter schema of a specific tool before calling it "
-            "with gateway_call_tool."
+            "Inspect the parameter schema of a specific tool only when needed or if a call "
+            "was rejected. Do not call this before trying gateway_call_tool."
         )
         call_description = (
             "Execute any operational homelab tool by name with arguments to fetch live status, "
@@ -125,11 +125,13 @@ def _build_discovery_trio(
     else:
         domain_description = (
             f"List the tools of the '{domain}' domain with a one-line description. "
-            "Paginate with 'limit' (max 100) and 'offset'; follow 'has_more'. Call this to "
-            "discover what you can do, then gateway_get_tool_schema for the arguments and "
-            "gateway_call_tool to run it. Do not invent tools outside this list."
+            "Paginate with 'limit' (max 100) and 'offset'; follow 'has_more'. "
+            "Call gateway_call_tool directly to run a tool. Do not invent tools outside this list."
         )
-        schema_description = f"Get the parameter schema of one '{domain}' tool before calling it."
+        schema_description = (
+            f"Inspect the parameter schema of one '{domain}' tool only if a call was rejected "
+            "for invalid arguments. Do not call this upfront."
+        )
         call_description = (
             f"Execute a '{domain}' domain tool by exact name with arguments. Put the target "
             "tool's parameters in the `arguments` object."

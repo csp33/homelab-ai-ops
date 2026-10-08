@@ -40,10 +40,10 @@ def _format_catalog(catalog: list[Any]) -> str:
     body = "\n".join(lines)
     return (
         "--- AVAILABLE TOOLS IN YOUR DOMAIN ---\n"
-        "Call them by exact name with `gateway_call_tool(tool_name, arguments)`. The signature "
-        "after each name shows its exact argument names ('?' = optional). If a call is rejected "
-        "for its arguments, read the tool schema again with `gateway_get_tool_schema` and retry "
-        "once.\n"
+        "Call them directly by exact name with `gateway_call_tool(tool_name, arguments)`. The signature "
+        "after each name shows its exact argument names ('?' = optional). Do NOT call "
+        "`gateway_get_tool_schema` upfront; all argument names are already listed below. Only call "
+        "`gateway_get_tool_schema` if a `gateway_call_tool` invocation fails or is rejected.\n"
         f"{body}\n"
         "---------------------------------------"
     )

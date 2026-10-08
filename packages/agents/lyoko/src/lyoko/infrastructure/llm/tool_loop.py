@@ -55,6 +55,24 @@ def _tool_status(tool_call: dict[str, Any]) -> str:
     return f"🛰️ Calling <code>{name}</code>"
 
 
+def _detect_cycle(history: list[tuple[tuple[str, str], ...]]) -> int | None:
+    """Detect if the last steps in history repeat a cycle of length L in (1, 2, 3).
+
+    Returns the cycle length L if a cycle is detected, or None.
+    - L=1: 3 consecutive identical step signatures (A, A, A)
+    - L=2: 2 full periods of an alternating cycle (A, B, A, B)
+    - L=3: 2 full periods of a 3-step cycle (A, B, C, A, B, C)
+    """
+    n = len(history)
+    if n >= 3 and history[-1] == history[-2] == history[-3]:
+        return 1
+    if n >= 4 and history[-4:-2] == history[-2:]:
+        return 2
+    if n >= 6 and history[-6:-3] == history[-3:]:
+        return 3
+    return None
+
+
 async def run_react_tool_loop(
     prompt_text: str,
     *,
@@ -73,8 +91,7 @@ async def run_react_tool_loop(
 
     tool_call_budget = settings.max_tool_calls_per_run
     executed_tool_calls = 0
-    previous_tool_calls_sig: tuple[tuple[str, str], ...] | None = None
-    consecutive_repeat_count = 0
+    call_history: list[tuple[tuple[str, str], ...]] = []
     consecutive_tool_errors = 0
     last_error_fingerprint: str | None = None
     repeated_error_count = 0
@@ -97,19 +114,27 @@ async def run_react_tool_loop(
             for tc in response.tool_calls
         )
 
-        if current_tool_calls_sig == previous_tool_calls_sig:
-            consecutive_repeat_count += 1
-        else:
-            consecutive_repeat_count = 0
-        previous_tool_calls_sig = current_tool_calls_sig
+        history_with_current = [*call_history, current_tool_calls_sig]
+        cycle_len = _detect_cycle(history_with_current)
+        call_occurrences = call_history.count(current_tool_calls_sig)
 
-        if consecutive_repeat_count >= 2:
+        if cycle_len is not None:
             logger.warning(
-                "ReAct agent repeated identical tool calls %d times consecutively. "
+                "ReAct agent repeated a cycle of length %d. "
                 "Breaking loop to prevent runaway token cost.",
-                consecutive_repeat_count + 1,
+                cycle_len,
             )
             break
+
+        if call_occurrences >= 2:
+            logger.warning(
+                "ReAct agent repeated the same tool calls %d times across the run. "
+                "Breaking loop to prevent runaway token cost.",
+                call_occurrences + 1,
+            )
+            break
+
+        call_history.append(current_tool_calls_sig)
 
         budget_exceeded = False
         for tool_call in response.tool_calls:
@@ -159,11 +184,12 @@ async def run_react_tool_loop(
                     tool_output = f"Error executing tool '{tool_name}': {exc}"
 
             output_str = _bound_tool_output(tool_output)
-            if consecutive_repeat_count == 1:
+            if call_occurrences >= 1:
                 output_str += (
                     "\n\n[System Note: This tool was called with the exact same "
-                    "arguments in the previous step. If no resources were returned, "
-                    "conclude that they do not exist instead of repeating identical queries.]"
+                    "arguments earlier in this run. If no resources were returned or "
+                    "information was already gathered, conclude that they do not exist "
+                    "or synthesize your findings instead of repeating identical queries or oscillating.]"
                 )
 
             if _is_tool_error(output_str):
