@@ -6,7 +6,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from lyoko.application.safety.hitl.manager import ApprovalManager
 from lyoko.composition import build_chat_manager
-from lyoko.main import create_app
+from lyoko.infrastructure.web.server import create_app
 
 
 @pytest.mark.asyncio
