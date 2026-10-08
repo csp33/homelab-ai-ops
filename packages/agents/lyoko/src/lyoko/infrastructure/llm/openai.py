@@ -6,6 +6,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableLambda
 from langchain_openai import ChatOpenAI
+from lyoko.domain.interfaces.harness import HarnessRunnerInterface
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.infrastructure.llm.content import extract_message_text
 from lyoko.infrastructure.llm.harness_runner import ReActHarnessRunner
@@ -24,7 +25,7 @@ class OpenAILLMAdapter(LLMClientInterface):
         model_name: str = "gpt-4o-mini",
         temperature: float = 0.0,
         use_responses_api: bool = True,
-        harness_runner: ReActHarnessRunner | None = None,
+        harness_runner: HarnessRunnerInterface | None = None,
     ) -> None:
         self.model_name = model_name
         self.temperature = temperature

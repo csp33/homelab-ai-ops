@@ -7,6 +7,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from lyoko.application.harness.buffer import SmartOutputBufferService
 from lyoko.config import settings
+from lyoko.domain.interfaces.harness import HarnessRunnerInterface
 from lyoko.infrastructure.llm.content import extract_message_text
 
 logger = logging.getLogger("lyoko.infrastructure.llm.harness_runner")
@@ -22,8 +23,8 @@ _ERROR_MARKERS = (
 )
 
 
-class ReActHarnessRunner:
-    """Bounded, error-aware ReAct execution harness."""
+class ReActHarnessRunner(HarnessRunnerInterface):
+    """Bounded, error-aware ReAct execution harness implementing HarnessRunnerInterface."""
 
     def __init__(
         self,
