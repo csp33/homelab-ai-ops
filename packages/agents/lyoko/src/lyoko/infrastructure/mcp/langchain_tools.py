@@ -55,43 +55,11 @@ def _authorized_call(
     return _run
 
 
-def _build_discovery_trio(
+def _build_call_tool(
     client: MCPClientInterface,
     authorizer: ToolAuthorizer | None,
-    domain: str | None,
-) -> list[Any]:
-    """Build the three tools: discover, read a schema, execute. ``domain`` locks the surface."""
-
-    if domain is None:
-
-        async def _get_domain_tools(domain: str, limit: int = 50, offset: int = 0) -> str:
-            """List one page of the tools of one upstream domain.
-
-            Args:
-                domain: Upstream domain, e.g. 'kubernetes', 'unifi', 'homeassistant', 'grafana', 'github', 'telegram'.
-                limit: Maximum tools to return in this page (max 100).
-                offset: Number of tools to skip for pagination.
-            """
-            try:
-                return str(await client.get_domain_tools_page(domain, limit=limit, offset=offset))
-            except MCPGatewayError as exc:
-                raise ToolException(str(exc)) from exc
-
-    else:
-
-        async def _get_domain_tools(limit: int = 50, offset: int = 0) -> str:
-            """List one page of the tools of this specialist's locked domain."""
-            try:
-                return str(await client.get_domain_tools_page(domain, limit=limit, offset=offset))
-            except MCPGatewayError as exc:
-                raise ToolException(str(exc)) from exc
-
-    async def _get_tool_schema(tool_name: str) -> str:
-        try:
-            return str(await client.get_tool_schema(tool_name))
-        except MCPGatewayError as exc:
-            raise ToolException(str(exc)) from exc
-
+    description: str,
+) -> StructuredTool:
     async def _call_tool(tool_name: str, arguments: Any = None, **extra: Any) -> str:
         # Models often flatten the target tool's parameters to the top level. Merge both shapes
         # so the intended call executes regardless of how the arguments were nested.
@@ -108,67 +76,102 @@ def _build_discovery_trio(
             name=f"mcp:{tool_name}",
         ).ainvoke(merged)
 
-    if domain is None:
-        domain_description = (
-            f"List the tools available in one upstream domain ({_DOMAIN_ARG_HELP}). Use it to "
-            "discover capabilities, then gateway_call_tool to execute them."
-        )
-        schema_description = (
-            "Inspect the parameter schema of a specific tool only when needed or if a call "
-            "was rejected. Do not call this before trying gateway_call_tool."
-        )
-        call_description = (
-            "Execute any operational homelab tool by name with arguments to fetch live status, "
-            "manage devices, query metrics, or perform operations. Put the target tool's "
-            "parameters in the `arguments` object."
-        )
-    else:
-        domain_description = (
-            f"List the tools of the '{domain}' domain with a one-line description. "
-            "Paginate with 'limit' (max 100) and 'offset'; follow 'has_more'. "
-            "Call gateway_call_tool directly to run a tool. Do not invent tools outside this list."
-        )
-        schema_description = (
-            f"Inspect the parameter schema of one '{domain}' tool only if a call was rejected "
-            "for invalid arguments. Do not call this upfront."
-        )
-        call_description = (
-            f"Execute a '{domain}' domain tool by exact name with arguments. Put the target "
-            "tool's parameters in the `arguments` object."
-        )
+    return StructuredTool.from_function(
+        coroutine=_call_tool,
+        name="gateway_call_tool",
+        description=description,
+        args_schema=_CallToolArgs,
+        handle_tool_error=True,
+    )
 
-    return [
-        StructuredTool.from_function(
-            coroutine=_get_domain_tools,
-            name="gateway_get_domain_tools",
-            description=domain_description,
-            handle_tool_error=True,
-        ),
-        StructuredTool.from_function(
-            coroutine=_get_tool_schema,
-            name="gateway_get_tool_schema",
-            description=schema_description,
-            handle_tool_error=True,
-        ),
-        StructuredTool.from_function(
-            coroutine=_call_tool,
-            name="gateway_call_tool",
-            description=call_description,
-            args_schema=_CallToolArgs,
-            handle_tool_error=True,
-        ),
-    ]
+
+def _build_schema_tool(
+    client: MCPClientInterface,
+    description: str,
+) -> StructuredTool:
+    async def _get_tool_schema(tool_name: str) -> str:
+        try:
+            return str(await client.get_tool_schema(tool_name))
+        except MCPGatewayError as exc:
+            raise ToolException(str(exc)) from exc
+
+    return StructuredTool.from_function(
+        coroutine=_get_tool_schema,
+        name="gateway_get_tool_schema",
+        description=description,
+        handle_tool_error=True,
+    )
 
 
 def build_gateway_tools(
     client: MCPClientInterface, authorizer: ToolAuthorizer | None = None
 ) -> list[Any]:
     """Tools to discover and execute homelab tools across every upstream domain."""
-    return _build_discovery_trio(client, authorizer, domain=None)
+
+    async def _get_domain_tools(domain: str, limit: int = 50, offset: int = 0) -> str:
+        """List one page of the tools of one upstream domain.
+
+        Args:
+            domain: Upstream domain, e.g. 'kubernetes', 'unifi', 'homeassistant', 'grafana', 'github', 'telegram'.
+            limit: Maximum tools to return in this page (max 100).
+            offset: Number of tools to skip for pagination.
+        """
+        try:
+            return str(await client.get_domain_tools_page(domain, limit=limit, offset=offset))
+        except MCPGatewayError as exc:
+            raise ToolException(str(exc)) from exc
+
+    domain_tool = StructuredTool.from_function(
+        coroutine=_get_domain_tools,
+        name="gateway_get_domain_tools",
+        description=(
+            f"List the tools available in one upstream domain ({_DOMAIN_ARG_HELP}). Use it to "
+            "discover capabilities, then gateway_get_tool_schema and gateway_call_tool."
+        ),
+        handle_tool_error=True,
+    )
+    schema_tool = _build_schema_tool(
+        client,
+        description=(
+            "Get the exact parameter schema of a specific tool before calling it "
+            "with gateway_call_tool."
+        ),
+    )
+    call_tool = _build_call_tool(
+        client,
+        authorizer,
+        description=(
+            "Execute any operational homelab tool by name with arguments to fetch live status, "
+            "manage devices, query metrics, or perform operations. Put the target tool's "
+            "parameters in the `arguments` object."
+        ),
+    )
+    return [domain_tool, schema_tool, call_tool]
 
 
 def build_domain_tools(
     client: MCPClientInterface, domain: str, authorizer: ToolAuthorizer | None = None
 ) -> list[Any]:
-    """Domain-locked discovery trio so a specialist can never reach another upstream."""
-    return _build_discovery_trio(client, authorizer, domain=domain)
+    """Domain-locked execution and schema tools for a specialist agent.
+
+    The specialist's system prompt already injects the full domain catalog with argument
+    signatures. Discovery is intentionally omitted so the model executes directly instead
+    of wasting turns paginating.
+    """
+    call_tool = _build_call_tool(
+        client,
+        authorizer,
+        description=(
+            f"Execute a '{domain}' domain tool by exact name with arguments. The available tools "
+            "and their argument names are listed in your system prompt under 'AVAILABLE TOOLS IN YOUR DOMAIN'. "
+            "Put the target tool's parameters in the `arguments` object."
+        ),
+    )
+    schema_tool = _build_schema_tool(
+        client,
+        description=(
+            f"Get the parameter schema of one '{domain}' tool. Call only if a previous call was "
+            "rejected for invalid arguments to inspect its parameters."
+        ),
+    )
+    return [call_tool, schema_tool]

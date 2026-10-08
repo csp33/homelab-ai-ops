@@ -289,11 +289,11 @@ class FastMCPClient(MCPClientInterface):
         domain: str,
         authorizer: ToolAuthorizer | None = None,
     ) -> list[Any]:
-        """Return the domain-locked discovery trio for a specialist agent.
+        """Return domain-locked execution and schema tools for a specialist agent.
 
-        Every specialist uses the same mechanism: discover its own domain catalog, read a tool
-        schema, and execute through the single guarded ``gateway_call_tool``. The specialist
-        can never reach another upstream.
+        Every specialist executes through the single guarded ``gateway_call_tool`` with
+        ``gateway_get_tool_schema`` available as fallback. The domain tool catalog is
+        already injected into the prompt, so discovery is omitted to prevent looping.
         """
         return build_domain_tools(self, domain, authorizer)
 

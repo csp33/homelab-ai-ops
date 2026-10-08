@@ -249,14 +249,13 @@ async def test_domain_discovery_tool_is_never_gated():
 
 
 @pytest.mark.asyncio
-async def test_domain_tools_are_the_scoped_discovery_trio():
-    """Specialists keep discovery; the domain list carries schemas so args are never guessed."""
+async def test_domain_tools_are_scoped_execution_and_schema():
+    """Specialists receive call and schema tools; discovery is in the prompt so it is omitted."""
     client = FastMCPClient(server_url="http://x/mcp", token="")
 
     tools = {t.name: t for t in await client.get_domain_langchain_tools("grafana")}
 
     assert set(tools) == {
-        "gateway_get_domain_tools",
         "gateway_get_tool_schema",
         "gateway_call_tool",
     }
