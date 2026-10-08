@@ -6,10 +6,10 @@ from typing import Any
 
 import yaml
 from langchain_core.runnables import RunnableConfig
-from lyoko.application.chat_manager import ChatManager
-from lyoko.application.hitl import ApprovalManager
 from lyoko.application.supervisor import status_callback
 from lyoko.application.triage.base import TriageResult
+from lyoko.domain.interfaces.approval import ApprovalManagerInterface
+from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 from lyoko.domain.interfaces.mcp import MCPClientInterface
 from lyoko.domain.models.state import is_message
 
@@ -86,8 +86,8 @@ class ArgoCDSyncFailedHandler:
     def __init__(
         self,
         mcp_client: MCPClientInterface | None,
-        approval_manager: ApprovalManager | None = None,
-        chat_manager: ChatManager | None = None,
+        approval_manager: ApprovalManagerInterface | None = None,
+        chat_manager: ChatServiceInterface | None = None,
         tracer: Any = None,
     ) -> None:
         self.mcp_client = mcp_client

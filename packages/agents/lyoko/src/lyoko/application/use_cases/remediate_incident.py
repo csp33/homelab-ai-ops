@@ -64,7 +64,9 @@ class RemediateIncidentUseCase:
         self.approval_manager = approval_manager
         self.chat_manager = chat_manager
 
-    async def execute(self, state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
+    async def execute(
+        self, state: dict[str, Any], config: RunnableConfig | None = None
+    ) -> dict[str, Any]:
         """Carry out the plan. State-changing tools wait for operator approval."""
         if state.get("requires_escalation") or self.llm is None:
             return {"action_taken": _NO_FIX_MESSAGE, "requires_escalation": True}

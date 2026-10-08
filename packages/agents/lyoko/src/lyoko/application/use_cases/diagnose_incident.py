@@ -1,7 +1,6 @@
 import logging
 from typing import Any
 
-from langchain_core.runnables import RunnableConfig
 from lyoko.application.context.formatter import incident_context, origin
 from lyoko.application.incident_prompts import DIAGNOSE_SYSTEM_PROMPT, parse_diagnosis
 from lyoko.application.incident_status import (
@@ -59,7 +58,7 @@ class DiagnoseIncidentUseCase:
 
             self.default_chat_id = getattr(settings, "telegram_default_chat_id", "") or ""
 
-    async def execute(self, state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
+    async def execute(self, state: dict[str, Any], config: Any = None) -> dict[str, Any]:
         """Investigate read-only and decide whether a fix is possible."""
         if self.llm is None:
             return {

@@ -12,13 +12,30 @@ from lyoko.application.argocd_outofsync import (
     is_synced_and_healthy,
     parse_outofsync_app,
 )
-from lyoko.application.nodes.triage import create_argocd_autosync_node
+from lyoko.application.triage.argocd_autosync import ArgoCDAutosyncHandler
 from lyoko.application.triage.dispatcher import (
     TRIAGE_DIAGNOSE,
     TRIAGE_HANDLED,
     choose_triage,
 )
+from lyoko.application.use_cases.triage_incident import TriageIncidentUseCase
 from lyoko.config import settings
+
+
+def create_argocd_autosync_node(
+    mcp_client=None,
+    approval_manager=None,
+    chat_manager=None,
+    tracer=None,
+):
+    handler = ArgoCDAutosyncHandler(
+        mcp_client=mcp_client,
+        approval_manager=approval_manager,
+        chat_manager=chat_manager,
+        tracer=tracer,
+    )
+    return TriageIncidentUseCase(handlers=[handler]).execute
+
 
 _ALERT = "🔔 Alert· Argo CD application arr-stack has sync status OutOfSync for more than 15m."
 

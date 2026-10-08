@@ -3,7 +3,6 @@
 import logging
 from typing import Any
 
-from langchain_core.runnables import RunnableConfig
 from lyoko.application.chat_prompts import CHAT_SYSTEM_PROMPT
 from lyoko.application.notifications import (
     RECOVERY_ACKNOWLEDGEMENT,
@@ -49,7 +48,7 @@ class HandleChatTurnUseCase:
             embeddings_service=embeddings_service,
         )
 
-    async def execute(self, state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
+    async def execute(self, state: dict[str, Any], config: Any = None) -> dict[str, Any]:
         """Answer the operator via supervised tool execution."""
         text = state.get("text", "")
         history_context = state.get("history_context", "")

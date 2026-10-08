@@ -11,43 +11,47 @@ from lyoko.domain.interfaces.specialist import SpecialistAgentInterface
 logger = logging.getLogger("lyoko.specialists")
 
 
-def _format_signature(name: str, parameters: Any) -> str:
-    """Render a compact call signature (name + argument names, optional marked with ?)."""
-    if not isinstance(parameters, dict):
-        return f"{name}()"
-    properties = parameters.get("properties")
-    if not isinstance(properties, dict) or not properties:
-        return f"{name}()"
-    required = parameters.get("required")
-    required = set(required) if isinstance(required, list) else set()
-    args = [arg if arg in required else f"{arg}?" for arg in properties]
-    return f"{name}({', '.join(args)})"
+class SpecialistToolCatalogFormatter:
+    """Formats upstream domain tool catalogs for injection into specialist system prompts."""
 
+    @staticmethod
+    def format_signature(name: str, parameters: Any) -> str:
+        """Render a compact call signature (name + argument names, optional marked with ?)."""
+        if not isinstance(parameters, dict):
+            return f"{name}()"
+        properties = parameters.get("properties")
+        if not isinstance(properties, dict) or not properties:
+            return f"{name}()"
+        required = parameters.get("required")
+        required = set(required) if isinstance(required, list) else set()
+        args = [arg if arg in required else f"{arg}?" for arg in properties]
+        return f"{name}({', '.join(args)})"
 
-def _format_catalog(catalog: list[Any]) -> str:
-    """Render a domain tool index as a prompt section, or an empty string when unavailable."""
-    lines: list[str] = []
-    for entry in catalog:
-        if not isinstance(entry, dict):
-            continue
-        name = entry.get("name")
-        if not name:
-            continue
-        signature = _format_signature(str(name), entry.get("parameters"))
-        description = str(entry.get("description") or "").strip()
-        lines.append(f"- {signature}: {description}" if description else f"- {signature}")
-    if not lines:
-        return ""
-    body = "\n".join(lines)
-    return (
-        "--- AVAILABLE TOOLS IN YOUR DOMAIN ---\n"
-        "Call them directly by exact name with `gateway_call_tool(tool_name, arguments)`. The signature "
-        "after each name shows its exact argument names ('?' = optional). Do NOT call "
-        "`gateway_get_tool_schema` upfront; all argument names are already listed below. Only call "
-        "`gateway_get_tool_schema` if a `gateway_call_tool` invocation fails or is rejected.\n"
-        f"{body}\n"
-        "---------------------------------------"
-    )
+    @classmethod
+    def format_catalog(cls, catalog: list[Any]) -> str:
+        """Render a domain tool index as a prompt section, or an empty string when unavailable."""
+        lines: list[str] = []
+        for entry in catalog:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("name")
+            if not name:
+                continue
+            signature = cls.format_signature(str(name), entry.get("parameters"))
+            description = str(entry.get("description") or "").strip()
+            lines.append(f"- {signature}: {description}" if description else f"- {signature}")
+        if not lines:
+            return ""
+        body = "\n".join(lines)
+        return (
+            "--- AVAILABLE TOOLS IN YOUR DOMAIN ---\n"
+            "Call them directly by exact name with `gateway_call_tool(tool_name, arguments)`. The signature "
+            "after each name shows its exact argument names ('?' = optional). Do NOT call "
+            "`gateway_get_tool_schema` upfront; all argument names are already listed below. Only call "
+            "`gateway_get_tool_schema` if a `gateway_call_tool` invocation fails or is rejected.\n"
+            f"{body}\n"
+            "---------------------------------------"
+        )
 
 
 class DomainSpecialistAgent(SpecialistAgentInterface):
@@ -61,6 +65,7 @@ class DomainSpecialistAgent(SpecialistAgentInterface):
         llm: LLMClientInterface | None = None,
         mcp_client: MCPClientInterface | None = None,
         tools: list[Any] | None = None,
+        max_steps: int | None = None,
     ) -> None:
         self._name = name
         self._domain = domain
@@ -68,6 +73,7 @@ class DomainSpecialistAgent(SpecialistAgentInterface):
         self.llm = llm
         self.mcp_client = mcp_client
         self.tools = tools or []
+        self._max_steps = max_steps or settings.max_agent_steps
         self._cached_tool_index: str | None = None
 
     @property
@@ -90,12 +96,7 @@ class DomainSpecialistAgent(SpecialistAgentInterface):
         return []
 
     async def get_system_prompt(self) -> str:
-        """Return the base prompt with this domain's tool index injected dynamically.
-
-        The index makes the specialist aware of its tools without a discovery round-trip. It is
-        cached after the first fetch. A gateway failure is not fatal: the tools themselves
-        surface the error when called, so the prompt just omits the index.
-        """
+        """Return the base prompt with this domain's tool index injected dynamically."""
         index = await self._domain_tool_index()
         if not index:
             return self.system_prompt
@@ -113,7 +114,7 @@ class DomainSpecialistAgent(SpecialistAgentInterface):
             logger.warning("Could not load tool catalog for domain '%s': %s", self.domain, exc)
             self._cached_tool_index = ""
             return ""
-        self._cached_tool_index = _format_catalog(catalog)
+        self._cached_tool_index = SpecialistToolCatalogFormatter.format_catalog(catalog)
         return self._cached_tool_index
 
     async def run(
@@ -147,7 +148,12 @@ class DomainSpecialistAgent(SpecialistAgentInterface):
             trace_name=f"specialist-{self.domain}",
             tags=specialist_tags,
             metadata=metadata or {},
-            max_steps=settings.max_agent_steps,
+            max_steps=self._max_steps,
             parent_config=parent_config,
             on_status=on_status,
         )
+
+
+# Functional delegates for backward compatibility
+_format_signature = SpecialistToolCatalogFormatter.format_signature
+_format_catalog = SpecialistToolCatalogFormatter.format_catalog

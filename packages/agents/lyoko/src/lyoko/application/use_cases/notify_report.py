@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from lyoko.application.context.formatter import describe_call
 from lyoko.config import settings
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
@@ -40,7 +41,9 @@ class NotifyIncidentReportUseCase:
     def __init__(self, chat_manager: ChatServiceInterface | None = None) -> None:
         self.chat_manager = chat_manager
 
-    async def execute(self, state: dict[str, Any]) -> dict[str, Any]:
+    async def execute(
+        self, state: dict[str, Any], config: RunnableConfig | None = None
+    ) -> dict[str, Any]:
         """Build the incident report. Alerts broadcast it; a message gets it as the reply."""
         summary = format_incident_report(state)
         logger.info(summary)

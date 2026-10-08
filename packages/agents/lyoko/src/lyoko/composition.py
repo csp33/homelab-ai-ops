@@ -9,7 +9,6 @@ import logging
 from fastapi import FastAPI
 
 from lyoko.application.chat_agent import ChatHistoryTracker, InteractiveChatAgent
-from lyoko.application.chat_manager import ChatManager
 from lyoko.application.chat_sessions import ChatSessionTracker
 from lyoko.application.harness.buffer import SmartOutputBufferService
 from lyoko.application.hitl import ApprovalManager
@@ -31,6 +30,7 @@ from lyoko.config import settings
 from lyoko.domain.exceptions.mcp import MCPGatewayError
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.mcp import MCPClientInterface
+from lyoko.infrastructure.chat.manager import ChatManager
 from lyoko.infrastructure.chat.telegram import TelegramConnector
 from lyoko.infrastructure.db.memory_repository import PostgresMemoryRepository
 from lyoko.infrastructure.embeddings import EmbeddingsService

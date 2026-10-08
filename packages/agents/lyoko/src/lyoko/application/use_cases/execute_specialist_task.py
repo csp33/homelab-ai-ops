@@ -31,7 +31,9 @@ class ExecuteSpecialistTaskUseCase:
         self.approval_manager = approval_manager
         self.chat_manager = chat_manager
 
-    async def execute(self, state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
+    async def execute(
+        self, state: dict[str, Any], config: RunnableConfig | None = None
+    ) -> dict[str, Any]:
         """Execute specialist task if there is a pending delegation for this domain."""
         pending = state.get("pending_delegation")
         if not pending or pending.get("domain") != self.domain:

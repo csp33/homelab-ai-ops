@@ -3,9 +3,11 @@
 import re
 from pathlib import Path
 
+import yaml
 from lyoko.domain.interfaces.skill import SkillRepositoryInterface
 from lyoko.domain.models.skill import SkillDocument
 
+_FRONTMATTER_REGEX = re.compile(r"^---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
 _DESC_REGEX = re.compile(r"<!--\s*description:\s*(.*?)\s*-->", re.IGNORECASE)
 _PATTERNS_REGEX = re.compile(r"<!--\s*patterns:\s*(.*?)\s*-->", re.IGNORECASE)
 
@@ -26,14 +28,33 @@ class MarkdownSkillRepository(SkillRepositoryInterface):
         name = file_path.stem
         raw_text = file_path.read_text(encoding="utf-8")
 
-        desc_match = _DESC_REGEX.search(raw_text)
-        description = desc_match.group(1).strip() if desc_match else ""
-
+        description = ""
         patterns: list[str] = []
-        pats_match = _PATTERNS_REGEX.search(raw_text)
-        if pats_match:
-            raw_pats = pats_match.group(1)
-            patterns = [p.strip() for p in raw_pats.split(",") if p.strip()]
+
+        frontmatter_match = _FRONTMATTER_REGEX.match(raw_text)
+        if frontmatter_match:
+            try:
+                meta = yaml.safe_load(frontmatter_match.group(1)) or {}
+                if isinstance(meta, dict):
+                    name = meta.get("name") or name
+                    description = meta.get("description", "")
+                    raw_patterns = meta.get("patterns", [])
+                    if isinstance(raw_patterns, list):
+                        patterns = [str(p).strip() for p in raw_patterns if str(p).strip()]
+                    elif isinstance(raw_patterns, str):
+                        patterns = [p.strip() for p in raw_patterns.split(",") if p.strip()]
+            except Exception:
+                pass
+
+        if not description:
+            desc_match = _DESC_REGEX.search(raw_text)
+            description = desc_match.group(1).strip() if desc_match else ""
+
+        if not patterns:
+            pats_match = _PATTERNS_REGEX.search(raw_text)
+            if pats_match:
+                raw_pats = pats_match.group(1)
+                patterns = [p.strip() for p in raw_pats.split(",") if p.strip()]
 
         return SkillDocument(
             name=name,

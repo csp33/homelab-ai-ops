@@ -9,15 +9,25 @@ from lyoko.application.context.formatter import (
     origin,
     truncate,
 )
-from lyoko.application.nodes.chat import create_chat_node
-from lyoko.application.nodes.notify import format_incident_report
-from lyoko.application.nodes.router import choose_branch, create_route_node
 from lyoko.application.notifications import (
     RECOVERY_ACKNOWLEDGEMENT,
     is_recovery_notification,
 )
+from lyoko.application.use_cases.diagnose_incident import DiagnoseIncidentUseCase
+from lyoko.application.use_cases.handle_chat import HandleChatTurnUseCase
+from lyoko.application.use_cases.notify_report import format_incident_report
+from lyoko.application.use_cases.route_event import RouteEventUseCase
+from lyoko.application.workflow_routing import choose_branch
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.models.state import is_message
+
+
+def create_chat_node(**kwargs):
+    return HandleChatTurnUseCase(**kwargs).execute
+
+
+def create_route_node(**kwargs):
+    return RouteEventUseCase(**kwargs).execute
 
 
 def test_workflow_node_helpers():
@@ -105,19 +115,17 @@ def test_status_callback_reads_only_config_configurable():
 
 
 @pytest.mark.asyncio
-async def test_diagnose_node_forwards_streaming_status_callback(monkeypatch):
+async def test_diagnose_node_forwards_streaming_status_callback():
     """The incident branch must forward on_status so the placeholder shows steps, not 'Thinking…'."""
-    import lyoko.application.nodes.incident_diagnose as diagnose_module
-
     captured: dict[str, object] = {}
 
     async def fake_run_supervised(*args, **kwargs):  # noqa: ANN002, ANN003
         captured.update(kwargs)
         return "ROOT_CAUSE: drift\nACTIONABLE: no\nPLAN: check"
 
-    monkeypatch.setattr(diagnose_module, "run_supervised", fake_run_supervised)
-
-    node = diagnose_module.create_diagnose_node(mcp_client=object(), llm=object())
+    node = DiagnoseIncidentUseCase(
+        mcp_client=object(), llm=object(), runner=fake_run_supervised
+    ).execute
     sentinel = object()
     state = {"event_type": "message", "text": "hi", "event_id": "evt-1", "session_id": "s1"}
     await node(state, {"configurable": {"on_status": sentinel}})

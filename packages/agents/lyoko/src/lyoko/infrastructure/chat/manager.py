@@ -1,3 +1,5 @@
+"""Chat manager composite adapter implementing ChatServiceInterface."""
+
 import logging
 
 from lyoko.application.chat_sessions import ChatSessionTracker
@@ -9,7 +11,7 @@ from lyoko.domain.interfaces.chat_connector import (
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 from lyoko.domain.models.chat import ApprovalRequest, SentMessage
 
-logger = logging.getLogger("lyoko.application.chat_manager")
+logger = logging.getLogger("lyoko.infrastructure.chat.manager")
 
 
 class ChatManager(ChatServiceInterface):

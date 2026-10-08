@@ -44,7 +44,9 @@ class VerifyIncidentUseCase:
             else getattr(settings, "verification_delay_seconds", 10)
         )
 
-    async def execute(self, state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
+    async def execute(
+        self, state: dict[str, Any], config: RunnableConfig | None = None
+    ) -> dict[str, Any]:
         """Check, read-only, that the incident is actually resolved."""
         executed = [a for a in state.get("actions", []) if a["outcome"] in _EXECUTED_OUTCOMES]
         if state.get("requires_escalation") or not executed or self.llm is None:

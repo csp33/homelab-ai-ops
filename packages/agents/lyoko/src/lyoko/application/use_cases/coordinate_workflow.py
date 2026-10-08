@@ -57,7 +57,9 @@ class CoordinateWorkflowUseCase:
             skill_matcher_service=skill_matcher_service,
         )
 
-    async def execute(self, state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
+    async def execute(
+        self, state: dict[str, Any], config: RunnableConfig | None = None
+    ) -> dict[str, Any]:
         """Execute coordinator turn for either chat or incident investigation."""
         logger.info(
             "Executing coordinator use case for event_type='%s', route='%s'",
