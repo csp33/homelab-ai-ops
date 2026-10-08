@@ -33,10 +33,10 @@ class MCPClientInterface(ABC):
     ) -> list[Any]:
         """Return LangChain tools scoped to one upstream domain for a specialist agent.
 
-        Every specialist gets the same domain-locked discovery trio (discover the domain
-        catalog, read one tool schema, execute through the guarded call tool), so it can never
-        reach another upstream. The domain list already carries each tool's argument schema, so
-        the schema round-trip is only a fallback when a call is rejected.
+        Specialists receive the execution and schema inspection tools (``gateway_call_tool``
+        and ``gateway_get_tool_schema``) scoped to their domain. The domain tool catalog is
+        already injected into the specialist's prompt via ``get_domain_catalog``, so discovery
+        is omitted to prevent redundant paginated loops.
         """
 
     @abstractmethod
