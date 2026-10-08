@@ -276,6 +276,43 @@ async def test_openai_llm_adapter_breaks_identical_tool_call_loop():
 
 
 @pytest.mark.asyncio
+async def test_openai_llm_adapter_breaks_oscillating_tool_call_loop():
+    """Oscillating tool calls (A -> B -> A -> B) break the loop early to prevent runaway cost."""
+    call_a = MagicMock()
+    call_a.tool_calls = [{"name": "tool_a", "args": {"id": 1}, "id": "call_1"}]
+    call_b = MagicMock()
+    call_b.tool_calls = [{"name": "tool_b", "args": {"id": 2}, "id": "call_2"}]
+
+    mock_bound_client = AsyncMock()
+    mock_bound_client.ainvoke.side_effect = [call_a, call_b, call_a, call_b]
+
+    adapter = OpenAILLMAdapter(api_key="sk-test")
+    mock_client = MagicMock()
+    mock_client.bind_tools.return_value = mock_bound_client
+    mock_summary_response = MagicMock()
+    mock_summary_response.content = "Summary after oscillation break."
+    mock_client.ainvoke = AsyncMock(return_value=mock_summary_response)
+    adapter._client = mock_client
+
+    mock_tool_a = MagicMock()
+    mock_tool_a.name = "tool_a"
+    mock_tool_a.ainvoke = AsyncMock(return_value="result_a")
+
+    mock_tool_b = MagicMock()
+    mock_tool_b.name = "tool_b"
+    mock_tool_b.ainvoke = AsyncMock(return_value="result_b")
+
+    result = await adapter.chat(
+        prompt="Test oscillation", tools=[mock_tool_a, mock_tool_b], max_steps=15
+    )
+
+    # Breaks on turn 4 when A -> B -> A -> B completes cycle length 2
+    assert mock_bound_client.ainvoke.await_count == 4
+    mock_client.ainvoke.assert_awaited_once()
+    assert result == "Summary after oscillation break."
+
+
+@pytest.mark.asyncio
 async def test_openai_llm_adapter_truncates_large_tool_output():
     """A single tool result longer than the budget is truncated before entering the context."""
     tool_call_msg = MagicMock()
