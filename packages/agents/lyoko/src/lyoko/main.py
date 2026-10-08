@@ -5,7 +5,7 @@ import logging
 import uvicorn
 
 from lyoko.config import settings
-from lyoko.infrastructure.web.server import create_app
+from lyoko.infrastructure.api.server import create_app
 from lyoko.logging_config import configure_logging
 
 configure_logging()

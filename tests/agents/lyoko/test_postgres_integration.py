@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 from lyoko.domain.interfaces.llm import LLMClientInterface
-from lyoko.infrastructure.web.server import create_app, lifespan
+from lyoko.infrastructure.api.server import create_app, lifespan
 
 
 @pytest.mark.asyncio
@@ -26,11 +26,11 @@ async def test_postgres_checkpointer_integration_with_local_container():
 
     with (
         patch(
-            "lyoko.infrastructure.web.server.settings.postgres_uri",
+            "lyoko.infrastructure.api.server.settings.postgres_uri",
             "postgresql://lyoko:lyoko@127.0.0.1:5432/lyoko",
         ),
-        patch("lyoko.infrastructure.web.server.FastMCPClient", return_value=mock_mcp),
-        patch("lyoko.infrastructure.web.server.build_llm_adapter", return_value=mock_llm),
+        patch("lyoko.infrastructure.api.server.FastMCPClient", return_value=mock_mcp),
+        patch("lyoko.infrastructure.api.server.build_llm_adapter", return_value=mock_llm),
     ):
         try:
             async with lifespan(app):

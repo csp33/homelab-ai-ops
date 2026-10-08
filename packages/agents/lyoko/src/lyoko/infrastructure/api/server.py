@@ -22,10 +22,10 @@ from lyoko.composition import (
 )
 from lyoko.config import settings
 from lyoko.domain.exceptions.mcp import MCPGatewayError
+from lyoko.infrastructure.api.controller import create_feedback_router, create_webhook_router
 from lyoko.infrastructure.db.memory_repository import PostgresMemoryRepository
 from lyoko.infrastructure.embeddings import EmbeddingsService
 from lyoko.infrastructure.mcp.client import FastMCPClient
-from lyoko.infrastructure.web.controller import create_feedback_router, create_webhook_router
 from psycopg_pool import AsyncConnectionPool
 
 logger = logging.getLogger("lyoko.web.server")
