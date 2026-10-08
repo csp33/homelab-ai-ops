@@ -14,7 +14,7 @@ from lyoko.domain.interfaces.tracer import TracerInterface
 from lyoko.domain.models.chat import IncomingMessage
 from lyoko.domain.models.state import EVENT_MESSAGE
 
-logger = logging.getLogger("lyoko.application.use_cases.process_chat_message")
+logger = logging.getLogger("lyoko.application.chat.use_cases.process_message")
 
 NEW_SESSION_COMMAND = "/new"
 TRACE_NAME = "telegram-chat-interaction"

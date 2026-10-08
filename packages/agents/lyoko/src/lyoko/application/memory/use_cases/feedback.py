@@ -7,7 +7,7 @@ from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
 from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
 from lyoko.domain.models.memory import FeedbackRequest, MemoryEntry
 
-logger = logging.getLogger("lyoko.application.use_cases.record_feedback")
+logger = logging.getLogger("lyoko.application.memory.use_cases.feedback")
 
 
 class RecordFeedbackUseCase:

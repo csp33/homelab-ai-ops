@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from lyoko.application.hitl.manager import ApprovalManager
+from lyoko.application.safety.hitl.manager import ApprovalManager
 from lyoko.composition import build_chat_manager
 from lyoko.main import create_app
 

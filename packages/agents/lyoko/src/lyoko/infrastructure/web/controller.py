@@ -116,7 +116,7 @@ def create_feedback_router() -> APIRouter:
                 detail="PostgreSQL memory repository is not available or configured.",
             )
 
-        from lyoko.application.use_cases.record_feedback import RecordFeedbackUseCase
+        from lyoko.application.memory.use_cases.feedback import RecordFeedbackUseCase
 
         embeddings_service = getattr(request.app.state, "embeddings_service", None)
         use_case = RecordFeedbackUseCase(

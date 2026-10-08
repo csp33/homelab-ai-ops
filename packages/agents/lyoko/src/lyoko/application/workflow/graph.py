@@ -26,16 +26,16 @@ from collections.abc import Sequence
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
-from lyoko.application.routing.edges import WorkflowRouteSelector
-from lyoko.application.triage.base import TriageHandler
-from lyoko.application.triage.dispatcher import choose_triage
-from lyoko.application.use_cases.coordinate_workflow import CoordinateWorkflowUseCase
-from lyoko.application.use_cases.execute_specialist_task import ExecuteSpecialistTaskUseCase
-from lyoko.application.use_cases.notify_report import NotifyIncidentReportUseCase
-from lyoko.application.use_cases.remediate_incident import RemediateIncidentUseCase
-from lyoko.application.use_cases.route_event import RouteEventUseCase
-from lyoko.application.use_cases.triage_incident import TriageIncidentUseCase
-from lyoko.application.use_cases.verify_incident import VerifyIncidentUseCase
+from lyoko.application.agents.task_runner import ExecuteSpecialistTaskUseCase
+from lyoko.application.incidents.triage.base import TriageHandler
+from lyoko.application.incidents.triage.dispatcher import choose_triage
+from lyoko.application.incidents.use_cases.notify import NotifyIncidentReportUseCase
+from lyoko.application.incidents.use_cases.remediate import RemediateIncidentUseCase
+from lyoko.application.incidents.use_cases.triage import TriageIncidentUseCase
+from lyoko.application.incidents.use_cases.verify import VerifyIncidentUseCase
+from lyoko.application.workflow.coordinator import CoordinateWorkflowUseCase
+from lyoko.application.workflow.routing.edges import WorkflowRouteSelector
+from lyoko.application.workflow.routing.route_event import RouteEventUseCase
 from lyoko.config import settings  # noqa: F401
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface

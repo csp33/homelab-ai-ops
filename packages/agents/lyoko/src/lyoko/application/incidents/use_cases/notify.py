@@ -9,7 +9,7 @@ from lyoko.config import settings
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 from lyoko.domain.models.state import is_message
 
-logger = logging.getLogger("lyoko.application.use_cases.notify_report")
+logger = logging.getLogger("lyoko.application.incidents.use_cases.notify")
 
 
 def format_incident_report(state: dict[str, Any]) -> str:

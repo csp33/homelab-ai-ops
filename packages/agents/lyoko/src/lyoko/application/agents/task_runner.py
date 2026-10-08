@@ -4,14 +4,14 @@ import logging
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
+from lyoko.application.agents.supervisor import status_callback
 from lyoko.application.safety.tool_gate import GateMode, make_gate
-from lyoko.application.supervisor import status_callback
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 from lyoko.domain.interfaces.mcp import MCPClientInterface
 from lyoko.domain.interfaces.specialist import SpecialistAgentInterface
 
-logger = logging.getLogger("lyoko.application.use_cases.execute_specialist_task")
+logger = logging.getLogger("lyoko.application.agents.task_runner")
 
 
 class ExecuteSpecialistTaskUseCase:

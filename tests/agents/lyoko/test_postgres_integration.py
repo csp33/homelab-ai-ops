@@ -43,7 +43,9 @@ async def test_postgres_checkpointer_integration_with_local_container():
 
                 # Test workflow invocation through state engine
                 engine = app.state.workflow_engine
-                with patch("lyoko.application.workflow.settings.verification_delay_seconds", 0):
+                with patch(
+                    "lyoko.application.workflow.graph.settings.verification_delay_seconds", 0
+                ):
                     config = {"configurable": {"thread_id": "test-integration-incident-001"}}
                     initial_state = {
                         "event_id": "media-sonarr-test",

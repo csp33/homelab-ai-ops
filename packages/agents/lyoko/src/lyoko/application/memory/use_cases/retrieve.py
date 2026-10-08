@@ -7,7 +7,7 @@ from lyoko.config import settings
 from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
 from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
 
-logger = logging.getLogger("lyoko.application.use_cases.retrieve_memory")
+logger = logging.getLogger("lyoko.application.memory.use_cases.retrieve")
 
 
 class RetrieveMemoryLessonsUseCase:

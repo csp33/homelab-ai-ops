@@ -3,14 +3,14 @@
 import logging
 from typing import Any
 
+from lyoko.application.agents.supervisor import run_supervised, status_callback
+from lyoko.application.memory.use_cases.retrieve import RetrieveMemoryLessonsUseCase
 from lyoko.application.prompts.chat import CHAT_SYSTEM_PROMPT
-from lyoko.application.routing.recovery import (
+from lyoko.application.safety.tool_gate import GateMode, make_gate
+from lyoko.application.workflow.routing.recovery import (
     RECOVERY_ACKNOWLEDGEMENT,
     RecoveryNotificationDetector,
 )
-from lyoko.application.safety.tool_gate import GateMode, make_gate
-from lyoko.application.supervisor import run_supervised, status_callback
-from lyoko.application.use_cases.retrieve_memory import RetrieveMemoryLessonsUseCase
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
@@ -19,7 +19,7 @@ from lyoko.domain.interfaces.mcp import MCPClientInterface
 from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
 from lyoko.domain.interfaces.supervisor import SupervisorInterface
 
-logger = logging.getLogger("lyoko.application.use_cases.handle_chat")
+logger = logging.getLogger("lyoko.application.chat.use_cases.handle_turn")
 
 _NO_LLM_REPLY = "Received message: '{text}'. (LLM provider not configured)"
 

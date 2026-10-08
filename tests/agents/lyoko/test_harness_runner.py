@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from langchain_core.messages import ToolMessage
-from lyoko.application.harness.buffer import SmartOutputBufferService
+from lyoko.application.context.buffer import SmartOutputBufferService
 from lyoko.domain.models.scratchpad import SmartBufferConfig
 from lyoko.infrastructure.llm.harness_runner import ReActHarnessRunner
 from lyoko.infrastructure.storage.scratchpad_file_storage import ScratchpadFileStorage
