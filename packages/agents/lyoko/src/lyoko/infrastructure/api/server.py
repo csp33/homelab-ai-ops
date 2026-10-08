@@ -6,8 +6,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from lyoko.application.incidents.recovery import OrphanRecoveryService
 from lyoko.application.safety.alert_guard import AlertStormProtector
 from lyoko.application.safety.hitl.manager import ApprovalManager
+from lyoko.application.safety.task_tracker import TaskTracker
 from lyoko.application.workflow.graph import create_lyoko_graph
 from lyoko.composition import (
     build_chat_manager,
@@ -23,6 +25,7 @@ from lyoko.composition import (
 from lyoko.config import settings
 from lyoko.domain.exceptions.mcp import MCPGatewayError
 from lyoko.infrastructure.api.controller import create_feedback_router, create_webhook_router
+from lyoko.infrastructure.db.lock import PostgresAdvisoryLock
 from lyoko.infrastructure.db.memory_repository import PostgresMemoryRepository
 from lyoko.infrastructure.embeddings import EmbeddingsService
 from lyoko.infrastructure.mcp.client import FastMCPClient
@@ -92,10 +95,12 @@ async def lifespan(app: FastAPI):
         if pool:
             await pool.close()
         raise
+    lock = PostgresAdvisoryLock(pool=pool) if pool else None
     chat_manager = build_chat_manager(
         approval_manager,
         memory_repo=memory_repo,
         embeddings_service=embeddings_service,
+        lock=lock,
     )
     app.state.chat_manager = chat_manager
     wire_chat_agent(app, chat_manager)
@@ -108,7 +113,10 @@ async def lifespan(app: FastAPI):
         specialists, diagnose_llm
     )
 
-    alert_guard = AlertStormProtector(chat_manager=chat_manager)
+    task_tracker = getattr(app.state, "task_tracker", None) or TaskTracker()
+    app.state.task_tracker = task_tracker
+
+    alert_guard = AlertStormProtector(chat_manager=chat_manager, task_tracker=task_tracker)
     chat_manager.register_approval_handler(alert_guard.handle_force_approval)
     app.state.alert_guard = alert_guard
 
@@ -152,10 +160,17 @@ async def lifespan(app: FastAPI):
     app.state.memory_repository = memory_repo
     app.state.embeddings_service = embeddings_service
 
+    if checkpointer is not None:
+        recovery_svc = OrphanRecoveryService(
+            workflow_engine=workflow_engine, checkpointer=checkpointer
+        )
+        task_tracker.track(asyncio.create_task(recovery_svc.recover_orphaned_incidents()))
+
     await chat_manager.start_all()
     yield
     logger.info("Shutting down LYOKO Agent...")
     await chat_manager.stop_all()
+    await task_tracker.drain(timeout=settings.shutdown_drain_timeout_seconds)
     if pool:
         await pool.close()
 
@@ -168,10 +183,11 @@ def create_app() -> FastAPI:
     approval_manager = ApprovalManager()
     chat_manager = build_chat_manager(approval_manager)
     tracer = build_tracer()
+    task_tracker = TaskTracker()
     specialists = build_domain_specialists(mcp_client, llm)
     supervisor = build_supervisor(specialists, llm)
     diagnose_supervisor = build_supervisor(specialists, diagnose_llm)
-    alert_guard = AlertStormProtector(chat_manager=chat_manager)
+    alert_guard = AlertStormProtector(chat_manager=chat_manager, task_tracker=task_tracker)
     chat_manager.register_approval_handler(alert_guard.handle_force_approval)
 
     app = FastAPI(title="LYOKO Auto-Remediation Agent", lifespan=lifespan)
@@ -197,6 +213,7 @@ def create_app() -> FastAPI:
     app.state.approval_manager = approval_manager
     app.state.chat_manager = chat_manager
     app.state.alert_guard = alert_guard
+    app.state.task_tracker = task_tracker
     app.state.workflow_engine = workflow_engine
     app.state.tracer = tracer
     app.state.checkpointer = None
@@ -206,7 +223,9 @@ def create_app() -> FastAPI:
 
     wire_chat_agent(app, chat_manager)
 
-    app.include_router(create_webhook_router(tracer=tracer, alert_guard=alert_guard))
+    app.include_router(
+        create_webhook_router(tracer=tracer, alert_guard=alert_guard, task_tracker=task_tracker)
+    )
     app.include_router(create_feedback_router())
 
     @app.get("/healthz")

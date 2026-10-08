@@ -95,6 +95,11 @@ class AgentSettings(BaseSettings):
     verification_delay_seconds: int = Field(
         default=10, description="Seconds to wait before verifying pod health"
     )
+    shutdown_drain_timeout_seconds: float = Field(
+        default=25.0,
+        ge=0.0,
+        description="Seconds to wait for in-flight incident tasks to drain during graceful shutdown",
+    )
     read_only_tools: list[str] | str = Field(
         default_factory=lambda: list(DEFAULT_READ_ONLY_TOOLS),
         description=(
