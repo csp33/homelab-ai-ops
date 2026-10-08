@@ -3,12 +3,12 @@
 import logging
 from typing import Any
 
-from lyoko.application.chat_manager import ChatManager
 from lyoko.application.nodes.helpers import (
     describe_call,
     is_message,
 )
 from lyoko.config import settings
+from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 
 logger = logging.getLogger("lyoko.application.use_cases.notify_report")
 
@@ -39,7 +39,7 @@ def format_incident_report(state: dict[str, Any]) -> str:
 class NotifyIncidentReportUseCase:
     """Formats and publishes incident reports across active channels."""
 
-    def __init__(self, chat_manager: ChatManager | None = None) -> None:
+    def __init__(self, chat_manager: ChatServiceInterface | None = None) -> None:
         self.chat_manager = chat_manager
 
     async def execute(self, state: dict[str, Any]) -> dict[str, Any]:

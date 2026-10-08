@@ -4,8 +4,6 @@ import logging
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from lyoko.application.chat_manager import ChatManager
-from lyoko.application.hitl import ApprovalManager
 from lyoko.application.incident_prompts import REMEDIATE_SYSTEM_PROMPT, parse_result
 from lyoko.application.incident_status import (
     format_remediating_status,
@@ -19,6 +17,8 @@ from lyoko.application.nodes.helpers import (
     status_callback,
 )
 from lyoko.application.tool_gate import CallOutcome, GateMode, ToolCallRecord
+from lyoko.domain.interfaces.approval import ApprovalManagerInterface
+from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.mcp import MCPClientInterface
 from lyoko.domain.interfaces.supervisor import SupervisorInterface
@@ -58,8 +58,8 @@ class RemediateIncidentUseCase:
         mcp_client: MCPClientInterface | None,
         llm: LLMClientInterface | None,
         supervisor: SupervisorInterface | None = None,
-        approval_manager: ApprovalManager | None = None,
-        chat_manager: ChatManager | None = None,
+        approval_manager: ApprovalManagerInterface | None = None,
+        chat_manager: ChatServiceInterface | None = None,
     ) -> None:
         self.mcp_client = mcp_client
         self.llm = llm

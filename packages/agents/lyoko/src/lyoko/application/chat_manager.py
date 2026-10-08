@@ -6,12 +6,13 @@ from lyoko.domain.interfaces.chat_connector import (
     ChatConnector,
     MessageHandler,
 )
+from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 from lyoko.domain.models.chat import ApprovalRequest, SentMessage
 
 logger = logging.getLogger("lyoko.application.chat_manager")
 
 
-class ChatManager:
+class ChatManager(ChatServiceInterface):
     """Manages active chat connectors and orchestrates broadcast messaging.
 
     When a ``session_tracker`` is provided, outgoing incident messages are linked to their

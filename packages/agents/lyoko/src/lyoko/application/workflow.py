@@ -23,11 +23,9 @@ node and each agent run is a named child span.
 """
 
 from collections.abc import Sequence
-from typing import Any, TypedDict
+from typing import Any
 
 from langgraph.graph import END, START, StateGraph
-from lyoko.application.chat_manager import ChatManager
-from lyoko.application.hitl import ApprovalManager
 from lyoko.application.nodes.coordinator import (
     choose_coordinator_next,
     create_coordinator_node,
@@ -41,63 +39,29 @@ from lyoko.application.nodes.triage import create_composite_triage_node
 from lyoko.application.triage.base import TriageHandler
 from lyoko.application.triage.dispatcher import choose_triage
 from lyoko.config import settings  # noqa: F401
+from lyoko.domain.interfaces.approval import ApprovalManagerInterface
+from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
 from lyoko.domain.interfaces.llm import LLMClientInterface
+from lyoko.domain.interfaces.mcp import MCPClientInterface
 from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
+from lyoko.domain.interfaces.supervisor import SupervisorInterface
 from lyoko.domain.models.incident import CoordinatorNext, SpecialistDomain
-
-
-class LyokoState(TypedDict, total=False):
-    # What happened. ``event_type`` is "alert" (the default) or "message".
-    event_type: str
-    event_id: str
-    """Short id of this run. It prefixes approval ids, which end up in Telegram callback data."""
-    session_id: str
-    """Observability session the run belongs to (a chat session, or the incident)."""
-    chat_id: str
-    message_thread_id: str | None
-    """Telegram forum topic / thread of the originating message, for threaded replies."""
-    text: str
-    """The operator's message, for ``event_type == "message"``."""
-    history_context: str
-    """Recent conversation context injected into the chat prompt for short-term memory."""
-    alert_name: str
-    labels: dict[str, str]
-    annotations: dict[str, str]
-
-    # Routing and chat branch
-    route: str
-    reply: str
-    """The text to send back to the operator, set by ``chat`` and, for messages, by ``notify``."""
-
-    # Incident branch
-    root_cause: str
-    plan: str
-    action_taken: str
-    actions: list[dict[str, Any]]
-    verification: str
-    is_resolved: bool
-    requires_escalation: bool
-    matched_memories: list[dict[str, Any]]
-    lessons_context: str
-    correlated_alerts: list[dict[str, Any]]
-    progress_message_id: str | None
-    progress_chat_id: str | None
-    """Reference to the live status message that is edited as the incident advances."""
+from lyoko.domain.models.state import LyokoState
 
 
 def create_lyoko_graph(
-    mcp_client: Any,
-    approval_manager: ApprovalManager | None = None,
-    chat_manager: ChatManager | None = None,
+    mcp_client: MCPClientInterface | None = None,
+    approval_manager: ApprovalManagerInterface | None = None,
+    chat_manager: ChatServiceInterface | None = None,
     checkpointer: Any = None,
     llm: LLMClientInterface | None = None,
-    supervisor: Any = None,
+    supervisor: SupervisorInterface | None = None,
     specialists: dict[str, Any] | None = None,
     memory_repository: MemoryRepositoryInterface | None = None,
     embeddings_service: EmbeddingsServiceInterface | None = None,
     diagnose_llm: LLMClientInterface | None = None,
-    diagnose_supervisor: Any = None,
+    diagnose_supervisor: SupervisorInterface | None = None,
     tracer: Any = None,
     triage_handlers: Sequence[TriageHandler] | None = None,
 ) -> Any:

@@ -4,11 +4,12 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from lyoko.application.chat_manager import ChatManager
 from lyoko.application.nodes.helpers import (
     describe_call,
     is_message,
 )
+from lyoko.application.use_cases.notify_report import NotifyIncidentReportUseCase
+from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 
 logger = logging.getLogger("lyoko.workflow.notify")
 
@@ -36,10 +37,10 @@ def format_incident_report(state: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def create_notify_node(chat_manager: ChatManager | None = None) -> Callable[[dict[str, Any]], Any]:
+def create_notify_node(
+    chat_manager: ChatServiceInterface | None = None,
+) -> Callable[[dict[str, Any]], Any]:
     """Factory creating the notify node handler."""
-    from lyoko.application.use_cases.notify_report import NotifyIncidentReportUseCase
-
     use_case = NotifyIncidentReportUseCase(chat_manager=chat_manager)
 
     async def notify_node(state: dict[str, Any]) -> dict[str, Any]:

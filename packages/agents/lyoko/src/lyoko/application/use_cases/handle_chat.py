@@ -4,9 +4,7 @@ import logging
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from lyoko.application.chat_manager import ChatManager
 from lyoko.application.chat_prompts import CHAT_SYSTEM_PROMPT
-from lyoko.application.hitl import ApprovalManager
 from lyoko.application.nodes.helpers import (
     _NO_LLM_REPLY,
     make_gate,
@@ -19,6 +17,8 @@ from lyoko.application.notifications import (
 )
 from lyoko.application.tool_gate import GateMode
 from lyoko.application.use_cases.retrieve_memory import RetrieveMemoryLessonsUseCase
+from lyoko.domain.interfaces.approval import ApprovalManagerInterface
+from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.mcp import MCPClientInterface
@@ -36,8 +36,8 @@ class HandleChatTurnUseCase:
         mcp_client: MCPClientInterface | None,
         llm: LLMClientInterface | None,
         supervisor: SupervisorInterface | None = None,
-        approval_manager: ApprovalManager | None = None,
-        chat_manager: ChatManager | None = None,
+        approval_manager: ApprovalManagerInterface | None = None,
+        chat_manager: ChatServiceInterface | None = None,
         retrieve_memory_use_case: RetrieveMemoryLessonsUseCase | None = None,
         memory_repository: MemoryRepositoryInterface | None = None,
         embeddings_service: EmbeddingsServiceInterface | None = None,

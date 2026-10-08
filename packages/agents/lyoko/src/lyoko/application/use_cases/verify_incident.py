@@ -5,8 +5,6 @@ import logging
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from lyoko.application.chat_manager import ChatManager
-from lyoko.application.hitl import ApprovalManager
 from lyoko.application.incident_prompts import VERIFY_SYSTEM_PROMPT, parse_verdict
 from lyoko.application.nodes.helpers import (
     _EXECUTED_OUTCOMES,
@@ -18,6 +16,8 @@ from lyoko.application.nodes.helpers import (
 )
 from lyoko.application.tool_gate import GateMode
 from lyoko.config import settings
+from lyoko.domain.interfaces.approval import ApprovalManagerInterface
+from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.mcp import MCPClientInterface
 from lyoko.domain.interfaces.supervisor import SupervisorInterface
@@ -33,14 +33,20 @@ class VerifyIncidentUseCase:
         mcp_client: MCPClientInterface | None,
         llm: LLMClientInterface | None,
         supervisor: SupervisorInterface | None = None,
-        approval_manager: ApprovalManager | None = None,
-        chat_manager: ChatManager | None = None,
+        approval_manager: ApprovalManagerInterface | None = None,
+        chat_manager: ChatServiceInterface | None = None,
+        delay_seconds: float | None = None,
     ) -> None:
         self.mcp_client = mcp_client
         self.llm = llm
         self.supervisor = supervisor
         self.approval_manager = approval_manager
         self.chat_manager = chat_manager
+        self.delay_seconds = (
+            delay_seconds
+            if delay_seconds is not None
+            else getattr(settings, "verification_delay_seconds", 10)
+        )
 
     async def execute(self, state: dict[str, Any], config: RunnableConfig) -> dict[str, Any]:
         """Check, read-only, that the incident is actually resolved."""
@@ -48,8 +54,8 @@ class VerifyIncidentUseCase:
         if state.get("requires_escalation") or not executed or self.llm is None:
             return {"is_resolved": False}
 
-        logger.info("Waiting %ss for stabilization...", settings.verification_delay_seconds)
-        await asyncio.sleep(settings.verification_delay_seconds)
+        logger.info("Waiting %ss for stabilization...", self.delay_seconds)
+        await asyncio.sleep(self.delay_seconds)
 
         gate = make_gate(
             state,

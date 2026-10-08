@@ -1,12 +1,13 @@
 import asyncio
 import logging
 
+from lyoko.domain.interfaces.approval import ApprovalManagerInterface
 from lyoko.domain.models.chat import ApprovalResponse
 
 logger = logging.getLogger("lyoko.hitl")
 
 
-class ApprovalManager:
+class ApprovalManager(ApprovalManagerInterface):
     """Manages pending human-in-the-loop (HITL) approval requests."""
 
     def __init__(self) -> None:

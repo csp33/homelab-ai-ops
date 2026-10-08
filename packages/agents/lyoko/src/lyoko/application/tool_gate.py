@@ -8,8 +8,8 @@ from enum import StrEnum
 from typing import Any
 
 from lyoko.application.approval_prompt import describe_action, format_arguments
-from lyoko.application.chat_manager import ChatManager
-from lyoko.application.hitl import ApprovalManager
+from lyoko.domain.interfaces.approval import ApprovalManagerInterface
+from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 from lyoko.domain.models.chat import ApprovalAction, ApprovalRequest
 
 logger = logging.getLogger("lyoko.tool_gate")
@@ -102,8 +102,8 @@ class ToolGate:
         chat_id: str = "",
         message_thread_id: str | int | None = None,
         plan: str = "",
-        approval_manager: ApprovalManager | None = None,
-        chat_manager: ChatManager | None = None,
+        approval_manager: ApprovalManagerInterface | None = None,
+        chat_manager: ChatServiceInterface | None = None,
         readonly_lookup: ReadOnlyLookup | None = None,
     ) -> None:
         self.mode = mode
