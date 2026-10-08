@@ -3,12 +3,10 @@
 import logging
 from typing import Any
 
-from lyoko.application.nodes.helpers import (
-    describe_call,
-    is_message,
-)
+from lyoko.application.context.formatter import describe_call
 from lyoko.config import settings
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
+from lyoko.domain.models.state import is_message
 
 logger = logging.getLogger("lyoko.application.use_cases.notify_report")
 

@@ -256,7 +256,7 @@ async def test_incident_workflow_live_status_updates(monkeypatch):
 
 
 def test_incident_context_formats_correlated_alerts():
-    from lyoko.application.nodes.helpers import incident_context
+    from lyoko.application.context.formatter import incident_context
 
     state = {
         "alert_name": "KubeNodeNotReady",

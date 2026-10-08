@@ -5,17 +5,12 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 from lyoko.application.chat_prompts import CHAT_SYSTEM_PROMPT
-from lyoko.application.nodes.helpers import (
-    _NO_LLM_REPLY,
-    make_gate,
-    run_supervised,
-    status_callback,
-)
 from lyoko.application.notifications import (
     RECOVERY_ACKNOWLEDGEMENT,
     is_recovery_notification,
 )
-from lyoko.application.tool_gate import GateMode
+from lyoko.application.supervisor import run_supervised, status_callback
+from lyoko.application.tool_gate import GateMode, make_gate
 from lyoko.application.use_cases.retrieve_memory import RetrieveMemoryLessonsUseCase
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
@@ -26,6 +21,8 @@ from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
 from lyoko.domain.interfaces.supervisor import SupervisorInterface
 
 logger = logging.getLogger("lyoko.application.use_cases.handle_chat")
+
+_NO_LLM_REPLY = "Received message: '{text}'. (LLM provider not configured)"
 
 
 class HandleChatTurnUseCase:

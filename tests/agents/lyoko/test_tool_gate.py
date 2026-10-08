@@ -286,7 +286,7 @@ def test_matching_is_case_sensitive_so_lookalikes_do_not_slip_through():
 
 
 def test_make_gate_reads_the_message_thread_from_state():
-    from lyoko.application.nodes.helpers import make_gate
+    from lyoko.application.tool_gate import make_gate
 
     gate = make_gate(
         {"event_id": "chat-1", "chat_id": "42", "message_thread_id": "321"},

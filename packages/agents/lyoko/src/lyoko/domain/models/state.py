@@ -2,6 +2,14 @@
 
 from typing import Any, TypedDict
 
+EVENT_ALERT = "alert"
+EVENT_MESSAGE = "message"
+
+
+def is_message(state: dict[str, Any] | "LyokoState") -> bool:
+    """Return True if the state represents an operator chat message event."""
+    return state.get("event_type", EVENT_ALERT) == EVENT_MESSAGE
+
 
 class LyokoState(TypedDict, total=False):
     # What happened. ``event_type`` is "alert" (the default) or "message".

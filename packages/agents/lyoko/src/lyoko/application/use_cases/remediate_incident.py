@@ -4,19 +4,14 @@ import logging
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
+from lyoko.application.context.formatter import incident_context
 from lyoko.application.incident_prompts import REMEDIATE_SYSTEM_PROMPT, parse_result
 from lyoko.application.incident_status import (
     format_remediating_status,
     format_verifying_status,
 )
-from lyoko.application.nodes.helpers import (
-    _NO_FIX_MESSAGE,
-    incident_context,
-    make_gate,
-    run_supervised,
-    status_callback,
-)
-from lyoko.application.tool_gate import CallOutcome, GateMode, ToolCallRecord
+from lyoko.application.supervisor import run_supervised, status_callback
+from lyoko.application.tool_gate import CallOutcome, GateMode, ToolCallRecord, make_gate
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 from lyoko.domain.interfaces.llm import LLMClientInterface
@@ -24,6 +19,8 @@ from lyoko.domain.interfaces.mcp import MCPClientInterface
 from lyoko.domain.interfaces.supervisor import SupervisorInterface
 
 logger = logging.getLogger("lyoko.application.use_cases.remediate_incident")
+
+_NO_FIX_MESSAGE = "No automated fix applied (requires human inspection)"
 
 
 def _remediation_outcome(

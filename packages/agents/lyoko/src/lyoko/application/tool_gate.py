@@ -205,3 +205,40 @@ class ToolGate:
             f"Denied: the operator did not approve '{tool_name}' ({reason}). Do not retry it or "
             "look for a way around the denial. Stop and report what you found."
         )
+
+
+class ToolGateFactory:
+    """Factory for configuring and creating ToolGate instances."""
+
+    @staticmethod
+    def create_gate(
+        state: dict[str, Any],
+        mode: GateMode,
+        approval_manager: ApprovalManagerInterface | None = None,
+        chat_manager: ChatServiceInterface | None = None,
+        plan: str = "",
+        mcp_client: Any = None,
+    ) -> ToolGate:
+        from lyoko.application.context.formatter import IncidentContextFormatter
+        from lyoko.config import settings
+
+        alert_name = state.get("alert_name") or "event"
+        event_id = state.get("event_id") or f"incident-{alert_name}"
+        readonly_lookup: ReadOnlyLookup | None = getattr(mcp_client, "is_read_only", None)
+        return ToolGate(
+            mode=mode,
+            read_only_patterns=settings.read_only_tools,
+            auto_approved_patterns=settings.auto_approved_tools,
+            event_id=event_id,
+            origin=IncidentContextFormatter.format_origin(state),
+            session_id=state.get("session_id"),
+            chat_id=state.get("chat_id") or settings.telegram_default_chat_id or "",
+            message_thread_id=state.get("message_thread_id"),
+            plan=plan,
+            approval_manager=approval_manager,
+            chat_manager=chat_manager,
+            readonly_lookup=readonly_lookup,
+        )
+
+
+make_gate = ToolGateFactory.create_gate

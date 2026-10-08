@@ -5,8 +5,8 @@ from collections.abc import Callable
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from lyoko.application.nodes.helpers import run_supervised
 from lyoko.application.skills.matcher import SkillMatcherService
+from lyoko.application.supervisor import run_supervised
 from lyoko.application.use_cases.diagnose_incident import DiagnoseIncidentUseCase
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface

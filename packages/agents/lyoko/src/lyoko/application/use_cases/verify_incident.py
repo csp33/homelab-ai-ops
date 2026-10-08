@@ -5,16 +5,10 @@ import logging
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
+from lyoko.application.context.formatter import describe_call, incident_context
 from lyoko.application.incident_prompts import VERIFY_SYSTEM_PROMPT, parse_verdict
-from lyoko.application.nodes.helpers import (
-    _EXECUTED_OUTCOMES,
-    describe_call,
-    incident_context,
-    make_gate,
-    run_supervised,
-    status_callback,
-)
-from lyoko.application.tool_gate import GateMode
+from lyoko.application.supervisor import run_supervised, status_callback
+from lyoko.application.tool_gate import CallOutcome, GateMode, make_gate
 from lyoko.config import settings
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
@@ -23,6 +17,8 @@ from lyoko.domain.interfaces.mcp import MCPClientInterface
 from lyoko.domain.interfaces.supervisor import SupervisorInterface
 
 logger = logging.getLogger("lyoko.application.use_cases.verify_incident")
+
+_EXECUTED_OUTCOMES = frozenset({CallOutcome.AUTO_APPROVED.value, CallOutcome.APPROVED.value})
 
 
 class VerifyIncidentUseCase:

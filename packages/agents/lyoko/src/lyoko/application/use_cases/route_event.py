@@ -4,10 +4,10 @@ import logging
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from lyoko.application.nodes.helpers import is_message
 from lyoko.application.notifications import is_recovery_notification
 from lyoko.application.router import ROUTER_SYSTEM_PROMPT, Route, parse_route
 from lyoko.domain.interfaces.llm import LLMClientInterface
+from lyoko.domain.models.state import is_message
 
 logger = logging.getLogger("lyoko.application.use_cases.route_event")
 

@@ -3,14 +3,13 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from lyoko.application.nodes.chat import create_chat_node
-from lyoko.application.nodes.helpers import (
+from lyoko.application.context.formatter import (
     format_pairs,
     incident_context,
-    is_message,
     origin,
     truncate,
 )
+from lyoko.application.nodes.chat import create_chat_node
 from lyoko.application.nodes.notify import format_incident_report
 from lyoko.application.nodes.router import choose_branch, create_route_node
 from lyoko.application.notifications import (
@@ -18,6 +17,7 @@ from lyoko.application.notifications import (
     is_recovery_notification,
 )
 from lyoko.domain.interfaces.llm import LLMClientInterface
+from lyoko.domain.models.state import is_message
 
 
 def test_workflow_node_helpers():
@@ -95,7 +95,7 @@ async def test_route_node_and_choose_branch():
 
 
 def test_status_callback_reads_only_config_configurable():
-    from lyoko.application.nodes.helpers import status_callback
+    from lyoko.application.supervisor import status_callback
 
     sentinel = object()
     assert status_callback({"configurable": {"on_status": sentinel}}) is sentinel

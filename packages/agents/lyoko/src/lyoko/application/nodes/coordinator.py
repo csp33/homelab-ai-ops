@@ -5,7 +5,6 @@ from collections.abc import Callable
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from lyoko.application.nodes.helpers import is_message
 from lyoko.application.use_cases.coordinate_workflow import CoordinateWorkflowUseCase
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
@@ -15,6 +14,7 @@ from lyoko.domain.interfaces.mcp import MCPClientInterface
 from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
 from lyoko.domain.interfaces.supervisor import SupervisorInterface
 from lyoko.domain.models.incident import CoordinatorNext, SpecialistDomain
+from lyoko.domain.models.state import is_message
 
 logger = logging.getLogger("lyoko.workflow.coordinator")
 

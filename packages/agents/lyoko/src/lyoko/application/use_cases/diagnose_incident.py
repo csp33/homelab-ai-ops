@@ -2,21 +2,15 @@ import logging
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
+from lyoko.application.context.formatter import incident_context, origin
 from lyoko.application.incident_prompts import DIAGNOSE_SYSTEM_PROMPT, parse_diagnosis
 from lyoko.application.incident_status import (
     format_diagnosing_status,
     format_remediating_status,
 )
-from lyoko.application.nodes.helpers import (
-    incident_context,
-    is_message,
-    make_gate,
-    origin,
-    run_supervised,
-    status_callback,
-)
 from lyoko.application.skills.matcher import SkillMatcherService
-from lyoko.application.tool_gate import GateMode
+from lyoko.application.supervisor import run_supervised, status_callback
+from lyoko.application.tool_gate import GateMode, make_gate
 from lyoko.application.use_cases.retrieve_memory import RetrieveMemoryLessonsUseCase
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
@@ -25,6 +19,7 @@ from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.mcp import MCPClientInterface
 from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
 from lyoko.domain.interfaces.supervisor import SupervisorInterface
+from lyoko.domain.models.state import is_message
 
 logger = logging.getLogger("lyoko.application.use_cases.diagnose_incident")
 
