@@ -28,8 +28,6 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 from lyoko.application.chat_manager import ChatManager
 from lyoko.application.hitl import ApprovalManager
-from lyoko.application.nodes.chat import create_chat_node
-from lyoko.application.nodes.incident_diagnose import create_diagnose_node
 from lyoko.application.nodes.incident_remediate import create_remediate_node
 from lyoko.application.nodes.incident_verify import create_verify_node
 from lyoko.application.nodes.notify import create_notify_node
@@ -116,7 +114,13 @@ def create_lyoko_graph(
         )
     triage_node = create_composite_triage_node(handlers=handlers)
 
-    chat_node = create_chat_node(
+    from lyoko.application.nodes.coordinator import (
+        choose_coordinator_next,
+        create_coordinator_node,
+    )
+    from lyoko.application.nodes.specialists import create_specialist_node
+
+    coordinator_node = create_coordinator_node(
         mcp_client=mcp_client,
         llm=llm,
         supervisor=supervisor,
@@ -124,15 +128,8 @@ def create_lyoko_graph(
         chat_manager=chat_manager,
         memory_repository=memory_repository,
         embeddings_service=embeddings_service,
-    )
-    diagnose_node = create_diagnose_node(
-        mcp_client=mcp_client,
-        llm=diagnose_llm or llm,
-        supervisor=diagnose_supervisor or supervisor,
-        approval_manager=approval_manager,
-        chat_manager=chat_manager,
-        memory_repository=memory_repository,
-        embeddings_service=embeddings_service,
+        diagnose_llm=diagnose_llm,
+        diagnose_supervisor=diagnose_supervisor,
     )
     remediate_node = create_remediate_node(
         mcp_client=mcp_client,
@@ -153,19 +150,49 @@ def create_lyoko_graph(
     workflow = StateGraph(LyokoState)
     workflow.add_node("route", route_node)
     workflow.add_node("triage", triage_node)
-    workflow.add_node("chat", chat_node)
-    workflow.add_node("diagnose", diagnose_node)
+    workflow.add_node("coordinator", coordinator_node)
+
+    # Specialist nodes
+    specialists_dict = specialists or {}
+    for domain in ["kubernetes", "unifi", "homeassistant", "grafana"]:
+        spec = specialists_dict.get(domain)
+        node_fn = create_specialist_node(
+            domain=domain,
+            specialist=spec,
+            mcp_client=mcp_client,
+            approval_manager=approval_manager,
+            chat_manager=chat_manager,
+        )
+        workflow.add_node(domain, node_fn)
+        workflow.add_edge(domain, "coordinator")
+
     workflow.add_node("remediate", remediate_node)
     workflow.add_node("verify", verify_node)
     workflow.add_node("notify", notify_node)
 
     workflow.add_edge(START, "route")
-    workflow.add_conditional_edges("route", choose_branch, {"chat": "chat", "diagnose": "triage"})
     workflow.add_conditional_edges(
-        "triage", choose_triage, {"handled": "notify", "diagnose": "diagnose"}
+        "route",
+        choose_branch,
+        {"chat": "coordinator", "diagnose": "triage"},
     )
-    workflow.add_edge("chat", END)
-    workflow.add_edge("diagnose", "remediate")
+    workflow.add_conditional_edges(
+        "triage",
+        choose_triage,
+        {"handled": "notify", "diagnose": "coordinator"},
+    )
+    workflow.add_conditional_edges(
+        "coordinator",
+        choose_coordinator_next,
+        {
+            "kubernetes": "kubernetes",
+            "unifi": "unifi",
+            "homeassistant": "homeassistant",
+            "grafana": "grafana",
+            "remediate": "remediate",
+            "chat_end": END,
+        },
+    )
     workflow.add_edge("remediate", "verify")
     workflow.add_edge("verify", "notify")
     workflow.add_edge("notify", END)
