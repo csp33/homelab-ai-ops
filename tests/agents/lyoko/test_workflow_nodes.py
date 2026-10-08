@@ -3,23 +3,25 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from lyoko.application.context.formatter import (
-    format_pairs,
-    incident_context,
-    origin,
-    truncate,
-)
-from lyoko.application.notifications import (
+from lyoko.application.context.formatter import IncidentContextFormatter
+from lyoko.application.routing.edges import WorkflowRouteSelector
+from lyoko.application.routing.recovery import (
     RECOVERY_ACKNOWLEDGEMENT,
-    is_recovery_notification,
+    RecoveryNotificationDetector,
 )
 from lyoko.application.use_cases.diagnose_incident import DiagnoseIncidentUseCase
 from lyoko.application.use_cases.handle_chat import HandleChatTurnUseCase
 from lyoko.application.use_cases.notify_report import format_incident_report
 from lyoko.application.use_cases.route_event import RouteEventUseCase
-from lyoko.application.workflow_routing import choose_branch
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.models.state import is_message
+
+format_pairs = IncidentContextFormatter.format_pairs
+incident_context = IncidentContextFormatter.format_context
+origin = IncidentContextFormatter.format_origin
+truncate = IncidentContextFormatter.truncate
+choose_branch = WorkflowRouteSelector.choose_branch
+is_recovery_notification = RecoveryNotificationDetector.is_recovery_notification
 
 
 def create_chat_node(**kwargs):

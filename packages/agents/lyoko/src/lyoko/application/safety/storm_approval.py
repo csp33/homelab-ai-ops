@@ -66,8 +66,3 @@ class AlertStormApprovalFactory:
             chat_id=default_chat_id,
             actions=[FORCE_ACTION],
         )
-
-
-# Functional aliases for backward compatibility
-build_storm_approval_request = AlertStormApprovalFactory.build_storm_approval_request
-build_suppressed_approval_request = AlertStormApprovalFactory.build_suppressed_approval_request

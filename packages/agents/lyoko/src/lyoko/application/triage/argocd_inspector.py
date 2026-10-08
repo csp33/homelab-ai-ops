@@ -99,13 +99,3 @@ class ArgoCDApplicationInspector:
     def manifest_to_yaml(manifest: dict[str, Any]) -> str:
         """Serialize a manifest to YAML for the server-side-apply tool."""
         return yaml.safe_dump(manifest, sort_keys=False)
-
-
-# Functional delegates for backward compatibility
-parse_outofsync_app = ArgoCDApplicationInspector.parse_outofsync_app
-manifest_from_tool_result = ArgoCDApplicationInspector.manifest_from_tool_result
-autosync_disabled = ArgoCDApplicationInspector.autosync_disabled
-has_sync_error = ArgoCDApplicationInspector.has_sync_error
-enable_autosync = ArgoCDApplicationInspector.enable_autosync
-is_synced_and_healthy = ArgoCDApplicationInspector.is_synced_and_healthy
-manifest_to_yaml = ArgoCDApplicationInspector.manifest_to_yaml

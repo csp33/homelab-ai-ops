@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from lyoko.application.context.formatter import describe_call
+from lyoko.application.context.formatter import IncidentContextFormatter
 from lyoko.config import settings
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 from lyoko.domain.models.state import is_message
@@ -29,7 +29,10 @@ def format_incident_report(state: dict[str, Any]) -> str:
         lines.append(f"**Memories Applied:** {len(state['matched_memories'])}")
     actions = state.get("actions") or []
     if actions:
-        lines.append("**Tool Calls:** " + ", ".join(describe_call(a) for a in actions))
+        lines.append(
+            "**Tool Calls:** "
+            + ", ".join(IncidentContextFormatter.describe_call(a) for a in actions)
+        )
     if state.get("verification"):
         lines.append(f"**Verification:** {state['verification']}")
     return "\n".join(lines)

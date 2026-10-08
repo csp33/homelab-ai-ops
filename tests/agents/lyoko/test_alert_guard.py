@@ -4,7 +4,7 @@ import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
-from lyoko.application.alert_guard import AlertStormProtector, CircuitState
+from lyoko.application.safety.alert_guard import AlertStormProtector, CircuitState
 from lyoko.config import AgentSettings
 from lyoko.domain.models.incident import Incident
 

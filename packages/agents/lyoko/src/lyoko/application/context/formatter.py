@@ -63,12 +63,3 @@ class IncidentContextFormatter:
     @staticmethod
     def describe_call(record: dict[str, Any]) -> str:
         return f"`{record['tool']}` ({record['outcome'].replace('_', ' ')})"
-
-
-# Functional delegates for backward compatibility
-truncate = IncidentContextFormatter.truncate
-format_pairs = IncidentContextFormatter.format_pairs
-format_correlated = IncidentContextFormatter.format_correlated
-incident_context = IncidentContextFormatter.format_context
-origin = IncidentContextFormatter.format_origin
-describe_call = IncidentContextFormatter.describe_call

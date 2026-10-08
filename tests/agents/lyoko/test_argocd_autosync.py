@@ -5,14 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import yaml
-from lyoko.application.argocd_outofsync import (
-    autosync_disabled,
-    enable_autosync,
-    has_sync_error,
-    is_synced_and_healthy,
-    parse_outofsync_app,
-)
 from lyoko.application.triage.argocd_autosync import ArgoCDAutosyncHandler
+from lyoko.application.triage.argocd_inspector import ArgoCDApplicationInspector
 from lyoko.application.triage.dispatcher import (
     TRIAGE_DIAGNOSE,
     TRIAGE_HANDLED,
@@ -20,6 +14,12 @@ from lyoko.application.triage.dispatcher import (
 )
 from lyoko.application.use_cases.triage_incident import TriageIncidentUseCase
 from lyoko.config import settings
+
+autosync_disabled = ArgoCDApplicationInspector.autosync_disabled
+enable_autosync = ArgoCDApplicationInspector.enable_autosync
+has_sync_error = ArgoCDApplicationInspector.has_sync_error
+is_synced_and_healthy = ArgoCDApplicationInspector.is_synced_and_healthy
+parse_outofsync_app = ArgoCDApplicationInspector.parse_outofsync_app
 
 
 def create_argocd_autosync_node(

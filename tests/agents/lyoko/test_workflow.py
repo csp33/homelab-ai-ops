@@ -256,7 +256,7 @@ async def test_incident_workflow_live_status_updates(monkeypatch):
 
 
 def test_incident_context_formats_correlated_alerts():
-    from lyoko.application.context.formatter import incident_context
+    from lyoko.application.context.formatter import IncidentContextFormatter
 
     state = {
         "alert_name": "KubeNodeNotReady",
@@ -267,7 +267,7 @@ def test_incident_context_formats_correlated_alerts():
             {"alertname": "KubePodCrashLooping", "namespace": "default", "pod": "api-123"},
         ],
     }
-    context = incident_context(state)
+    context = IncidentContextFormatter.format_context(state)
     assert "KubeNodeNotReady" in context
     assert "Correlated / Cascade Alerts (2):" in context
     assert "- TargetDown (namespace: monitoring, pod: prometheus-0)" in context

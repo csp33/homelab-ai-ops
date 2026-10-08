@@ -105,8 +105,3 @@ class ApprovalActionDescriptor:
         if len(text) > _MAX_ARGUMENTS_CHARS:
             return text[:_MAX_ARGUMENTS_CHARS] + "\n... (truncated)"
         return text
-
-
-# Functional aliases for backward compatibility
-describe_action = ApprovalActionDescriptor.describe_action
-format_arguments = ApprovalActionDescriptor.format_arguments

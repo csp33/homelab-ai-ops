@@ -8,18 +8,14 @@ import logging
 
 from fastapi import FastAPI
 
-from lyoko.application.chat_agent import ChatHistoryTracker, InteractiveChatAgent
-from lyoko.application.chat_sessions import ChatSessionTracker
+from lyoko.application.chat.agent import InteractiveChatAgent
+from lyoko.application.chat.history import ChatHistoryTracker
+from lyoko.application.chat.sessions import ChatSessionTracker
 from lyoko.application.harness.buffer import SmartOutputBufferService
-from lyoko.application.hitl import ApprovalManager
+from lyoko.application.hitl.manager import ApprovalManager
 from lyoko.application.skills.matcher import SkillMatcherService
 from lyoko.application.specialists.agent import DomainSpecialistAgent
-from lyoko.application.specialists.prompts import (
-    K8S_SPECIALIST_PROMPT,
-    NETWORK_SPECIALIST_PROMPT,
-    OBSERVABILITY_SPECIALIST_PROMPT,
-    SMARTHOME_SPECIALIST_PROMPT,
-)
+from lyoko.application.specialists.prompts import SpecialistPromptProvider
 from lyoko.application.supervisor import SupervisorAgent
 from lyoko.application.triage.argocd_autosync import ArgoCDAutosyncHandler
 from lyoko.application.triage.argocd_sync_failed import ArgoCDSyncFailedHandler
@@ -91,28 +87,28 @@ def build_domain_specialists(
         "kubernetes": DomainSpecialistAgent(
             name="k8s_specialist",
             domain="kubernetes",
-            system_prompt=K8S_SPECIALIST_PROMPT,
+            system_prompt=SpecialistPromptProvider.get_prompt("kubernetes"),
             llm=llm,
             mcp_client=mcp_client,
         ),
         "unifi": DomainSpecialistAgent(
             name="network_specialist",
             domain="unifi",
-            system_prompt=NETWORK_SPECIALIST_PROMPT,
+            system_prompt=SpecialistPromptProvider.get_prompt("unifi"),
             llm=llm,
             mcp_client=mcp_client,
         ),
         "homeassistant": DomainSpecialistAgent(
             name="smarthome_specialist",
             domain="homeassistant",
-            system_prompt=SMARTHOME_SPECIALIST_PROMPT,
+            system_prompt=SpecialistPromptProvider.get_prompt("homeassistant"),
             llm=llm,
             mcp_client=mcp_client,
         ),
         "grafana": DomainSpecialistAgent(
             name="observability_specialist",
             domain="grafana",
-            system_prompt=OBSERVABILITY_SPECIALIST_PROMPT,
+            system_prompt=SpecialistPromptProvider.get_prompt("grafana"),
             llm=llm,
             mcp_client=mcp_client,
         ),

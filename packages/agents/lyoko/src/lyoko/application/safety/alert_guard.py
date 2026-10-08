@@ -16,10 +16,7 @@ from collections.abc import Awaitable, Callable
 from enum import StrEnum
 from typing import Any
 
-from lyoko.application.alert_notifications import (
-    build_storm_approval_request,
-    build_suppressed_approval_request,
-)
+from lyoko.application.safety.storm_approval import AlertStormApprovalFactory
 from lyoko.config import AgentSettings
 from lyoko.config import settings as default_settings
 from lyoko.domain.models.chat import ApprovalResponse
@@ -236,7 +233,7 @@ class AlertStormProtector:
         if not self._chat_manager:
             return
         storm_key = f"storm-{int(time.time())}"
-        storm_inc, req = build_storm_approval_request(
+        storm_inc, req = AlertStormApprovalFactory.build_storm_approval_request(
             storm_key=storm_key,
             alerts=alerts,
             count=count,
@@ -258,7 +255,7 @@ class AlertStormProtector:
     async def _notify_suppressed(self, incident: Incident, key: str) -> None:
         if not self._chat_manager:
             return
-        req = build_suppressed_approval_request(
+        req = AlertStormApprovalFactory.build_suppressed_approval_request(
             key=key,
             incident=incident,
             default_chat_id=self._settings.telegram_default_chat_id or "",

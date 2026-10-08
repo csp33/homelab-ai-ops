@@ -152,8 +152,3 @@ class DomainSpecialistAgent(SpecialistAgentInterface):
             parent_config=parent_config,
             on_status=on_status,
         )
-
-
-# Functional delegates for backward compatibility
-_format_signature = SpecialistToolCatalogFormatter.format_signature
-_format_catalog = SpecialistToolCatalogFormatter.format_catalog

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from lyoko.application.approval_prompt import describe_action, format_arguments
+from lyoko.application.hitl.descriptor import ApprovalActionDescriptor
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 from lyoko.domain.models.chat import ApprovalAction, ApprovalRequest
@@ -166,14 +166,14 @@ class ToolGate:
 
         self._approval_count += 1
         approval_id = f"{self._event_id}.{self._approval_count}"
-        action_summary = describe_action(tool_name, arguments)
+        action_summary = ApprovalActionDescriptor.describe_action(tool_name, arguments)
         details_parts = [f"Action: {action_summary}"]
         if self._plan:
             details_parts.append(f"Plan: {self._plan}")
         details_parts.extend([self._origin, f"Tool: `{tool_name}`"])
         # Only show the arguments when they are short enough to read; a full resource manifest is
         # noise, and the Action/Plan lines already say what will happen.
-        args_text = format_arguments(arguments)
+        args_text = ApprovalActionDescriptor.format_arguments(arguments)
         if "truncated" not in args_text and len(args_text) <= _MAX_ARGUMENTS_PREVIEW_CHARS:
             details_parts.append(f"Arguments:\n```json\n{args_text}\n```")
         request = ApprovalRequest(

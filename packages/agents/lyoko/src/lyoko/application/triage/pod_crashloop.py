@@ -6,8 +6,8 @@ import re
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
+from lyoko.application.safety.tool_gate import GateMode, make_gate
 from lyoko.application.supervisor import status_callback
-from lyoko.application.tool_gate import GateMode, make_gate
 from lyoko.application.triage.base import TriageResult
 from lyoko.config import settings
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface

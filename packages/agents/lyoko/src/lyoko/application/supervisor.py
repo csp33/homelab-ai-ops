@@ -7,7 +7,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
 from lyoko.application.context.loader import build_agent_context
 from lyoko.application.prompts.loader import load_prompt
-from lyoko.application.tool_gate import ToolGate
+from lyoko.application.safety.tool_gate import ToolGate
 from lyoko.config import settings
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.supervisor import SupervisorInterface

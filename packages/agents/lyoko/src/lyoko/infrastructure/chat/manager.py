@@ -2,7 +2,7 @@
 
 import logging
 
-from lyoko.application.chat_sessions import ChatSessionTracker
+from lyoko.application.chat.sessions import ChatSessionTracker
 from lyoko.domain.interfaces.chat_connector import (
     ApprovalHandler,
     ChatConnector,

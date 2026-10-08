@@ -22,10 +22,3 @@ class SpecialistPromptProvider:
         }
         template_name = mapping.get(domain_normalized, f"specialists/{domain_normalized}.md")
         return f"{load_prompt(template_name)}\n\n{build_agent_context(domain_normalized)}"
-
-
-# Module-level constants for backwards compatibility
-NETWORK_SPECIALIST_PROMPT = SpecialistPromptProvider.get_prompt("network")
-K8S_SPECIALIST_PROMPT = SpecialistPromptProvider.get_prompt("k8s")
-SMARTHOME_SPECIALIST_PROMPT = SpecialistPromptProvider.get_prompt("smarthome")
-OBSERVABILITY_SPECIALIST_PROMPT = SpecialistPromptProvider.get_prompt("observability")

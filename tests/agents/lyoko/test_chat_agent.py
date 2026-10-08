@@ -4,8 +4,8 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from lyoko.application.chat_agent import InteractiveChatAgent
-from lyoko.application.chat_sessions import ChatSessionTracker
+from lyoko.application.chat.agent import InteractiveChatAgent
+from lyoko.application.chat.sessions import ChatSessionTracker
 from lyoko.application.workflow import create_lyoko_graph
 from lyoko.domain.models.chat import ChatUser, IncomingMessage
 

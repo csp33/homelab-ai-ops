@@ -5,17 +5,9 @@ import logging
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from lyoko.application.argocd_outofsync import (
-    autosync_disabled,
-    enable_autosync,
-    has_sync_error,
-    is_synced_and_healthy,
-    manifest_from_tool_result,
-    manifest_to_yaml,
-    parse_outofsync_app,
-)
+from lyoko.application.safety.tool_gate import GateMode, make_gate
 from lyoko.application.supervisor import status_callback
-from lyoko.application.tool_gate import GateMode, make_gate
+from lyoko.application.triage.argocd_inspector import ArgoCDApplicationInspector
 from lyoko.application.triage.base import TriageResult
 from lyoko.config import settings
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
@@ -45,7 +37,7 @@ def _status_line(manifest: dict[str, Any]) -> str:
 def extract_outofsync_app(state: dict[str, Any]) -> str | None:
     """Extract target Argo CD application name from alert or chat message."""
     if is_message(state):
-        return parse_outofsync_app(state.get("text", ""))
+        return ArgoCDApplicationInspector.parse_outofsync_app(state.get("text", ""))
 
     alert_name = state.get("alert_name")
     if alert_name in ("ArgoCDAppOutOfSync", "homelab-argocd-app-out-of-sync"):
@@ -98,12 +90,16 @@ class ArgoCDAutosyncHandler:
             raw = await self._span(
                 f"mcp:{_GET_TOOL}", lambda: self.mcp_client.call_tool(_GET_TOOL, get_args)
             )
-            manifest = manifest_from_tool_result(raw)
+            manifest = ArgoCDApplicationInspector.manifest_from_tool_result(raw)
         except Exception as exc:
             logger.warning("Autosync fast-path read failed for %s: %s", app, exc)
             return None
 
-        if manifest is None or not autosync_disabled(manifest) or has_sync_error(manifest):
+        if (
+            manifest is None
+            or not ArgoCDApplicationInspector.autosync_disabled(manifest)
+            or ArgoCDApplicationInspector.has_sync_error(manifest)
+        ):
             logger.info("Autosync fast-path not applicable for '%s'.", app)
             return None
 
@@ -124,7 +120,9 @@ class ArgoCDAutosyncHandler:
             plan=plan,
             mcp_client=self.mcp_client,
         )
-        resource = manifest_to_yaml(enable_autosync(manifest))
+        resource = ArgoCDApplicationInspector.manifest_to_yaml(
+            ArgoCDApplicationInspector.enable_autosync(manifest)
+        )
         refusal = await self._span(
             "operator-approval",
             lambda: gate.authorize(_APPLY_TOOL, {"resource": resource}),
@@ -173,13 +171,13 @@ class ArgoCDAutosyncHandler:
                 raw_after = await self._span(
                     f"mcp:{_GET_TOOL}", lambda: self.mcp_client.call_tool(_GET_TOOL, get_args)
                 )
-                after = manifest_from_tool_result(raw_after)
+                after = ArgoCDApplicationInspector.manifest_from_tool_result(raw_after)
             except Exception as exc:
                 logger.warning("Autosync fast-path verification failed for %s: %s", app, exc)
                 break
             if after is None:
                 break
-            resolved = is_synced_and_healthy(after)
+            resolved = ArgoCDApplicationInspector.is_synced_and_healthy(after)
             verification = f"Application `{app}` now {_status_line(after)}."
             if resolved:
                 break

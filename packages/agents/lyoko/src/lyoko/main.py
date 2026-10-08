@@ -9,8 +9,8 @@ from fastapi import FastAPI
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg_pool import AsyncConnectionPool
 
-from lyoko.application.alert_guard import AlertStormProtector
-from lyoko.application.hitl import ApprovalManager
+from lyoko.application.hitl.manager import ApprovalManager
+from lyoko.application.safety.alert_guard import AlertStormProtector
 from lyoko.application.workflow import create_lyoko_graph
 from lyoko.composition import (
     build_chat_manager,

@@ -4,14 +4,12 @@ import logging
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from lyoko.application.context.formatter import incident_context
-from lyoko.application.incident_prompts import REMEDIATE_SYSTEM_PROMPT, parse_result
-from lyoko.application.incident_status import (
-    format_remediating_status,
-    format_verifying_status,
-)
+from lyoko.application.context.formatter import IncidentContextFormatter
+from lyoko.application.incident.parser import IncidentOutputParser
+from lyoko.application.incident.status import IncidentStatusFormatter
+from lyoko.application.prompts.incident import REMEDIATE_SYSTEM_PROMPT
+from lyoko.application.safety.tool_gate import CallOutcome, GateMode, ToolCallRecord, make_gate
 from lyoko.application.supervisor import run_supervised, status_callback
-from lyoko.application.tool_gate import CallOutcome, GateMode, ToolCallRecord, make_gate
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 from lyoko.domain.interfaces.llm import LLMClientInterface
@@ -92,13 +90,13 @@ class RemediateIncidentUseCase:
                 phase="remediate",
                 system_prompt=REMEDIATE_SYSTEM_PROMPT,
                 prompt=(
-                    f"Carry out this remediation plan.\n\n{incident_context(state)}\n\n"
+                    f"Carry out this remediation plan.\n\n{IncidentContextFormatter.format_context(state)}\n\n"
                     f"Root cause: {state.get('root_cause', 'Unknown')}\n\n"
                     f"Plan:\n{state.get('plan', '')}"
                 ),
                 on_status=status_callback(config),
             )
-            summary = parse_result(answer)
+            summary = IncidentOutputParser.parse_result(answer)
         except Exception as exc:
             logger.error("Remediation failed: %s", exc, exc_info=True)
             error = str(exc)
@@ -108,13 +106,13 @@ class RemediateIncidentUseCase:
         progress_chat_id = state.get("progress_chat_id")
         if self.chat_manager is not None and progress_msg_id and progress_chat_id:
             if not outcome.get("requires_escalation"):
-                status_text = format_verifying_status(
+                status_text = IncidentStatusFormatter.format_verifying_status(
                     state,
                     state.get("root_cause", "Unknown"),
                     outcome.get("action_taken", "Changes applied."),
                 )
             else:
-                status_text = format_remediating_status(
+                status_text = IncidentStatusFormatter.format_remediating_status(
                     state,
                     state.get("root_cause", "Unknown"),
                     requires_escalation=True,

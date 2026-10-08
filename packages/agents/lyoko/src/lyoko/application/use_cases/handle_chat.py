@@ -3,13 +3,13 @@
 import logging
 from typing import Any
 
-from lyoko.application.chat_prompts import CHAT_SYSTEM_PROMPT
-from lyoko.application.notifications import (
+from lyoko.application.prompts.chat import CHAT_SYSTEM_PROMPT
+from lyoko.application.routing.recovery import (
     RECOVERY_ACKNOWLEDGEMENT,
-    is_recovery_notification,
+    RecoveryNotificationDetector,
 )
+from lyoko.application.safety.tool_gate import GateMode, make_gate
 from lyoko.application.supervisor import run_supervised, status_callback
-from lyoko.application.tool_gate import GateMode, make_gate
 from lyoko.application.use_cases.retrieve_memory import RetrieveMemoryLessonsUseCase
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
@@ -52,7 +52,7 @@ class HandleChatTurnUseCase:
         """Answer the operator via supervised tool execution."""
         text = state.get("text", "")
         history_context = state.get("history_context", "")
-        if is_recovery_notification(text):
+        if RecoveryNotificationDetector.is_recovery_notification(text):
             # A recovery notification has nothing to investigate; acknowledge it and stop.
             logger.info("Recovery notification acknowledged without investigation.")
             return {"reply": RECOVERY_ACKNOWLEDGEMENT}

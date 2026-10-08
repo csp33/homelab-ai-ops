@@ -5,8 +5,8 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
-from lyoko.application.chat_history import ChatHistoryTracker
-from lyoko.application.chat_sessions import (
+from lyoko.application.chat.history import ChatHistoryTracker
+from lyoko.application.chat.sessions import (
     DEFAULT_SESSION_IDLE_TIMEOUT_SECONDS,
     ChatSessionTracker,
 )

@@ -1,7 +1,7 @@
 import asyncio
 
 import pytest
-from lyoko.application.hitl import ApprovalManager
+from lyoko.application.hitl.manager import ApprovalManager
 from lyoko.domain.models.chat import ApprovalResponse
 
 

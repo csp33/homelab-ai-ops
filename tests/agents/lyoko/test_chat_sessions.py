@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
-from lyoko.application.chat_sessions import ChatSessionTracker
+from lyoko.application.chat.sessions import ChatSessionTracker
 from lyoko.domain.interfaces.chat_connector import ChatConnector
 from lyoko.domain.models.chat import ApprovalRequest, SentMessage
 from lyoko.infrastructure.chat.manager import ChatManager

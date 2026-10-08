@@ -4,43 +4,33 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from lyoko.application.specialists.agent import DomainSpecialistAgent
-from lyoko.application.specialists.prompts import (
-    K8S_SPECIALIST_PROMPT,
-    NETWORK_SPECIALIST_PROMPT,
-    OBSERVABILITY_SPECIALIST_PROMPT,
-    SMARTHOME_SPECIALIST_PROMPT,
-)
+from lyoko.application.specialists.prompts import SpecialistPromptProvider
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.mcp import MCPClientInterface
 
 
 @pytest.mark.asyncio
 async def test_domain_specialist_initialization_and_prompts():
-    assert "Kubernetes" in K8S_SPECIALIST_PROMPT
-    assert "UniFi" in NETWORK_SPECIALIST_PROMPT
-    assert "Home Assistant" in SMARTHOME_SPECIALIST_PROMPT
-    assert (
-        "Grafana" in OBSERVABILITY_SPECIALIST_PROMPT
-        or "Prometheus" in OBSERVABILITY_SPECIALIST_PROMPT
-    )
+    assert "Kubernetes" in SpecialistPromptProvider.get_prompt("k8s")
+    assert "UniFi" in SpecialistPromptProvider.get_prompt("network")
+    assert "Home Assistant" in SpecialistPromptProvider.get_prompt("smarthome")
+    obs_prompt = SpecialistPromptProvider.get_prompt("observability")
+    assert "Grafana" in obs_prompt or "Prometheus" in obs_prompt
 
 
 @pytest.mark.asyncio
 async def test_all_specialists_carry_filtering_discipline():
-    for prompt in (
-        K8S_SPECIALIST_PROMPT,
-        NETWORK_SPECIALIST_PROMPT,
-        SMARTHOME_SPECIALIST_PROMPT,
-        OBSERVABILITY_SPECIALIST_PROMPT,
-    ):
+    for domain in ("k8s", "network", "smarthome", "observability"):
+        prompt = SpecialistPromptProvider.get_prompt(domain)
         assert "Filtering discipline" in prompt
         assert "filter the returned output yourself" in prompt
 
 
 @pytest.mark.asyncio
 async def test_network_specialist_knows_essid_is_the_wifi_field():
-    assert "essid" in NETWORK_SPECIALIST_PROMPT
-    assert "not `ssid`" in NETWORK_SPECIALIST_PROMPT
+    prompt = SpecialistPromptProvider.get_prompt("network")
+    assert "essid" in prompt
+    assert "not `ssid`" in prompt
 
 
 @pytest.mark.asyncio
@@ -63,10 +53,11 @@ async def test_domain_specialist_run_executes_with_scoped_domain():
         ]
     )
 
+    network_prompt = SpecialistPromptProvider.get_prompt("network")
     agent = DomainSpecialistAgent(
         name="NetworkSpecialist",
         domain="unifi",
-        system_prompt=NETWORK_SPECIALIST_PROMPT,
+        system_prompt=network_prompt,
         llm=mock_llm,
         mcp_client=mock_mcp,
     )
@@ -80,7 +71,7 @@ async def test_domain_specialist_run_executes_with_scoped_domain():
     mock_llm.chat.assert_awaited_once()
     call_kwargs = mock_llm.chat.await_args.kwargs
     assert call_kwargs["prompt"] == "Top bandwidth consumers"
-    assert call_kwargs["system_prompt"].startswith(NETWORK_SPECIALIST_PROMPT)
+    assert call_kwargs["system_prompt"].startswith(network_prompt)
     assert "AVAILABLE TOOLS IN YOUR DOMAIN" in call_kwargs["system_prompt"]
     assert "unifi_list_clients(network, limit?)" in call_kwargs["system_prompt"]
     assert "specialist:unifi" in call_kwargs["tags"]

@@ -66,9 +66,3 @@ class IncidentStatusFormatter:
         lines.append(f"• *Action Taken:* {action_taken}")
         lines.extend(["", "🔬 *Phase: Verify* — _Verifying cluster stabilization..._"])
         return "\n".join(lines)
-
-
-# Aliases for backward compatibility
-format_diagnosing_status = IncidentStatusFormatter.format_diagnosing_status
-format_remediating_status = IncidentStatusFormatter.format_remediating_status
-format_verifying_status = IncidentStatusFormatter.format_verifying_status

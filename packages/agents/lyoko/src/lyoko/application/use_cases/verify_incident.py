@@ -5,10 +5,11 @@ import logging
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from lyoko.application.context.formatter import describe_call, incident_context
-from lyoko.application.incident_prompts import VERIFY_SYSTEM_PROMPT, parse_verdict
+from lyoko.application.context.formatter import IncidentContextFormatter
+from lyoko.application.incident.parser import IncidentOutputParser
+from lyoko.application.prompts.incident import VERIFY_SYSTEM_PROMPT
+from lyoko.application.safety.tool_gate import CallOutcome, GateMode, make_gate
 from lyoko.application.supervisor import run_supervised, status_callback
-from lyoko.application.tool_gate import CallOutcome, GateMode, make_gate
 from lyoko.config import settings
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
@@ -62,7 +63,9 @@ class VerifyIncidentUseCase:
             chat_manager=self.chat_manager,
             mcp_client=self.mcp_client,
         )
-        changes = "\n".join(f"- {describe_call(a)} {a['arguments']}" for a in executed)
+        changes = "\n".join(
+            f"- {IncidentContextFormatter.describe_call(a)} {a['arguments']}" for a in executed
+        )
         try:
             answer = await run_supervised(
                 state,
@@ -74,7 +77,7 @@ class VerifyIncidentUseCase:
                 phase="verify",
                 system_prompt=VERIFY_SYSTEM_PROMPT,
                 prompt=(
-                    f"Verify this incident is resolved.\n\n{incident_context(state)}\n\n"
+                    f"Verify this incident is resolved.\n\n{IncidentContextFormatter.format_context(state)}\n\n"
                     f"Root cause: {state.get('root_cause', 'Unknown')}\n\n"
                     f"Changes applied:\n{changes}"
                 ),
@@ -84,5 +87,5 @@ class VerifyIncidentUseCase:
             logger.error("Verification failed: %s", exc, exc_info=True)
             return {"is_resolved": False, "verification": f"Verification failed: {exc}"}
 
-        resolved, evidence = parse_verdict(answer)
+        resolved, evidence = IncidentOutputParser.parse_verdict(answer)
         return {"is_resolved": resolved, "verification": evidence}
