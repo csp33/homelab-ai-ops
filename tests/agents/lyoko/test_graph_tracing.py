@@ -54,4 +54,4 @@ async def test_graph_nodes_are_named_after_the_phase():
     await graph.ainvoke(_message(), config={"callbacks": [recorder]})
 
     assert "route" in recorder.chain_names
-    assert "chat" in recorder.chain_names
+    assert "coordinator" in recorder.chain_names

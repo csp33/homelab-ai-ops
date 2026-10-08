@@ -107,14 +107,14 @@ async def test_chat_message_produces_a_single_trace_with_named_spans():
     # Each step has a name that says what it is, under the node that ran it.
     assert tree.ancestors("route-llm")[:2] == ["route", "telegram-chat-interaction"]
     agent_chain = tree.ancestors("chat-agent")
-    assert agent_chain[:2] == ["chat", "telegram-chat-interaction"]
+    assert agent_chain[:2] == ["coordinator", "telegram-chat-interaction"]
 
     # The gateway call is visible by its real tool name, nested inside the agent run.
     assert "mcp:pods_log" in tree.names.values()
     mcp_chain = tree.ancestors("mcp:pods_log")
     assert mcp_chain[0] == "gateway_call_tool"
     assert "chat-agent" in mcp_chain
-    assert "chat" in mcp_chain
+    assert "coordinator" in mcp_chain
     assert mcp_chain[-1] == "telegram-chat-interaction"
 
 
@@ -148,6 +148,6 @@ async def test_alert_incident_phases_are_children_of_the_one_trace():
     )
 
     assert tree.roots() == ["lyoko-KubePodCrashLooping-1"]
-    assert tree.ancestors("diagnose-agent")[:2] == ["diagnose", "lyoko-KubePodCrashLooping-1"]
+    assert tree.ancestors("diagnose-agent")[:2] == ["coordinator", "lyoko-KubePodCrashLooping-1"]
     assert "mcp:pods_get" in tree.names.values()
     assert "route-llm" not in tree.names.values()
