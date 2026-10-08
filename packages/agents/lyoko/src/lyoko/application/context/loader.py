@@ -2,20 +2,24 @@
 
 from pathlib import Path
 
-_CONTEXT_DIR = Path(__file__).parent
+_DOCS_DIR = Path(__file__).parent / "docs"
 
 
 class HomelabContextLoader:
     """Loads and aggregates homelab architectural context documents."""
 
     def __init__(self, context_dir: Path | None = None) -> None:
-        self.context_dir = context_dir or _CONTEXT_DIR
+        self.context_dir = context_dir or _DOCS_DIR
 
     def load_context(self, filename: str) -> str:
         """Load a markdown context document from the context directory."""
         path = self.context_dir / filename
         if not path.exists():
-            raise FileNotFoundError(f"Homelab context file not found: {path}")
+            fallback = Path(__file__).parent / filename
+            if fallback.exists():
+                path = fallback
+            else:
+                raise FileNotFoundError(f"Homelab context file not found: {path}")
         return path.read_text(encoding="utf-8").strip()
 
     def get_homelab_context(

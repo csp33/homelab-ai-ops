@@ -1,14 +1,11 @@
 """Domain model defining the shared graph state for LYOKO."""
 
+from __future__ import annotations
+
 from typing import Any, TypedDict
 
 EVENT_ALERT = "alert"
 EVENT_MESSAGE = "message"
-
-
-def is_message(state: dict[str, Any] | "LyokoState") -> bool:
-    """Return True if the state represents an operator chat message event."""
-    return state.get("event_type", EVENT_ALERT) == EVENT_MESSAGE
 
 
 class LyokoState(TypedDict, total=False):
@@ -57,3 +54,8 @@ class LyokoState(TypedDict, total=False):
     pending_delegation: dict[str, Any] | None
     delegation_history: list[dict[str, Any]]
     coordinator_scratchpad: str | None
+
+
+def is_message(state: dict[str, Any] | LyokoState) -> bool:
+    """Return True if the state represents an operator chat message event."""
+    return state.get("event_type", EVENT_ALERT) == EVENT_MESSAGE
