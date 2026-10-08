@@ -145,7 +145,10 @@ class TelegramConnector(
         self._app.add_handler(CommandHandler("new", self._handle_telegram_message))
         self._app.add_handler(CommandHandler("feedback", self._handle_telegram_message))
         self._app.add_handler(CommandHandler("teach", self._handle_telegram_message))
+        self._app.add_handler(CommandHandler("forget", self._handle_telegram_message))
+        self._app.add_handler(CommandHandler("memories", self._handle_telegram_message))
         self._app.add_handler(MessageHandler(filters.COMMAND, self._handle_telegram_message))
+
         self._app.add_handler(CallbackQueryHandler(self._handle_callback_query))
 
         await self._app.initialize()

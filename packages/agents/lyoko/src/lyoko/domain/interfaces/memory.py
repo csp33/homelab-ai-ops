@@ -30,3 +30,7 @@ class MemoryRepositoryInterface(ABC):
     @abstractmethod
     async def list_recent_memories(self, limit: int = 50) -> list[MemoryEntry]:
         """List recent memories for inspection."""
+
+    @abstractmethod
+    async def delete_memory(self, memory_id: int) -> bool:
+        """Delete a memory entry by ID. Returns True if deleted, False if not found."""
