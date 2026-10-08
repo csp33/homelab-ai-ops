@@ -8,20 +8,20 @@ import logging
 
 from fastapi import FastAPI
 
+from lyoko.application.agents.specialist_prompts import SpecialistPromptProvider
+from lyoko.application.agents.specialists import DomainSpecialistAgent
+from lyoko.application.agents.supervisor import SupervisorAgent
 from lyoko.application.chat.agent import InteractiveChatAgent
 from lyoko.application.chat.history import ChatHistoryTracker
 from lyoko.application.chat.sessions import ChatSessionTracker
-from lyoko.application.harness.buffer import SmartOutputBufferService
-from lyoko.application.hitl.manager import ApprovalManager
+from lyoko.application.context.buffer import SmartOutputBufferService
+from lyoko.application.incidents.triage.argocd_autosync import ArgoCDAutosyncHandler
+from lyoko.application.incidents.triage.argocd_sync_failed import ArgoCDSyncFailedHandler
+from lyoko.application.incidents.triage.base import TriageHandler
+from lyoko.application.incidents.triage.cloudflare_tunnel import CloudflareTunnelHandler
+from lyoko.application.incidents.triage.pod_crashloop import PodCrashLoopHandler
+from lyoko.application.safety.hitl.manager import ApprovalManager
 from lyoko.application.skills.matcher import SkillMatcherService
-from lyoko.application.specialists.agent import DomainSpecialistAgent
-from lyoko.application.specialists.prompts import SpecialistPromptProvider
-from lyoko.application.supervisor import SupervisorAgent
-from lyoko.application.triage.argocd_autosync import ArgoCDAutosyncHandler
-from lyoko.application.triage.argocd_sync_failed import ArgoCDSyncFailedHandler
-from lyoko.application.triage.base import TriageHandler
-from lyoko.application.triage.cloudflare_tunnel import CloudflareTunnelHandler
-from lyoko.application.triage.pod_crashloop import PodCrashLoopHandler
 from lyoko.config import settings
 from lyoko.domain.exceptions.mcp import MCPGatewayError
 from lyoko.domain.interfaces.llm import LLMClientInterface

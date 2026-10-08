@@ -5,10 +5,10 @@ from collections.abc import Sequence
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from lyoko.application.triage.base import TriageHandler
-from lyoko.application.triage.dispatcher import TRIAGE_DIAGNOSE
+from lyoko.application.incidents.triage.base import TriageHandler
+from lyoko.application.incidents.triage.dispatcher import TRIAGE_DIAGNOSE
 
-logger = logging.getLogger("lyoko.application.use_cases.triage_incident")
+logger = logging.getLogger("lyoko.application.incidents.use_cases.triage")
 
 
 class TriageIncidentUseCase:

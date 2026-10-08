@@ -1,14 +1,14 @@
 import logging
 from typing import Any
 
+from lyoko.application.agents.supervisor import run_supervised, status_callback
 from lyoko.application.context.formatter import IncidentContextFormatter
-from lyoko.application.incident.parser import IncidentOutputParser
-from lyoko.application.incident.status import IncidentStatusFormatter
+from lyoko.application.incidents.parser import IncidentOutputParser
+from lyoko.application.incidents.status import IncidentStatusFormatter
+from lyoko.application.memory.use_cases.retrieve import RetrieveMemoryLessonsUseCase
 from lyoko.application.prompts.incident import DIAGNOSE_SYSTEM_PROMPT
 from lyoko.application.safety.tool_gate import GateMode, make_gate
 from lyoko.application.skills.matcher import SkillMatcherService
-from lyoko.application.supervisor import run_supervised, status_callback
-from lyoko.application.use_cases.retrieve_memory import RetrieveMemoryLessonsUseCase
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
@@ -18,7 +18,7 @@ from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
 from lyoko.domain.interfaces.supervisor import SupervisorInterface
 from lyoko.domain.models.state import is_message
 
-logger = logging.getLogger("lyoko.application.use_cases.diagnose_incident")
+logger = logging.getLogger("lyoko.application.incidents.use_cases.diagnose")
 
 
 class DiagnoseIncidentUseCase:

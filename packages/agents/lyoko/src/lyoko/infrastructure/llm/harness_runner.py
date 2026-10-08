@@ -5,7 +5,7 @@ import logging
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
-from lyoko.application.harness.buffer import SmartOutputBufferService
+from lyoko.application.context.buffer import SmartOutputBufferService
 from lyoko.config import settings
 from lyoko.domain.interfaces.harness import HarnessRunnerInterface
 from lyoko.infrastructure.llm.content import extract_message_text

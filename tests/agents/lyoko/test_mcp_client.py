@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from langchain_core.callbacks import BaseCallbackHandler
+from lyoko.composition import verify_mcp_gateway
 from lyoko.domain.exceptions.mcp import (
     MCPAuthenticationError,
     MCPEndpointNotFoundError,
@@ -15,7 +16,6 @@ from lyoko.domain.exceptions.mcp import (
     MCPGatewayUnreachableError,
 )
 from lyoko.infrastructure.mcp.client import FastMCPClient
-from lyoko.main import verify_mcp_gateway
 
 SECRET_TOKEN = "super-secret-service-token"
 
@@ -147,7 +147,10 @@ async def test_langchain_tools_surface_gateway_error_to_the_llm(status_server):
 async def test_startup_check_aborts_on_configuration_error():
     client = AsyncMock()
     client.verify_connection.side_effect = MCPAuthenticationError("bad token")
-    with patch("lyoko.main.settings.mcp_fail_fast", True), pytest.raises(MCPAuthenticationError):
+    with (
+        patch("lyoko.composition.settings.mcp_fail_fast", True),
+        pytest.raises(MCPAuthenticationError),
+    ):
         await verify_mcp_gateway(client)
 
 
@@ -155,7 +158,7 @@ async def test_startup_check_aborts_on_configuration_error():
 async def test_startup_check_tolerates_configuration_error_when_fail_fast_disabled():
     client = AsyncMock()
     client.verify_connection.side_effect = MCPEndpointNotFoundError("wrong path")
-    with patch("lyoko.main.settings.mcp_fail_fast", False):
+    with patch("lyoko.composition.settings.mcp_fail_fast", False):
         await verify_mcp_gateway(client)
 
 
@@ -163,7 +166,7 @@ async def test_startup_check_tolerates_configuration_error_when_fail_fast_disabl
 async def test_startup_check_tolerates_unreachable_gateway():
     client = AsyncMock()
     client.verify_connection.side_effect = MCPGatewayUnreachableError("still starting")
-    with patch("lyoko.main.settings.mcp_fail_fast", True):
+    with patch("lyoko.composition.settings.mcp_fail_fast", True):
         await verify_mcp_gateway(client)
 
 

@@ -3,8 +3,8 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from lyoko.application.specialists.agent import DomainSpecialistAgent
-from lyoko.application.specialists.prompts import SpecialistPromptProvider
+from lyoko.application.agents.specialist_prompts import SpecialistPromptProvider
+from lyoko.application.agents.specialists import DomainSpecialistAgent
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.mcp import MCPClientInterface
 

@@ -5,13 +5,13 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 from lyoko.application.prompts.router import ROUTER_SYSTEM_PROMPT
-from lyoko.application.routing.classifier import RouteClassifier
-from lyoko.application.routing.recovery import RecoveryNotificationDetector
+from lyoko.application.workflow.routing.classifier import RouteClassifier
+from lyoko.application.workflow.routing.recovery import RecoveryNotificationDetector
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.models.routing import Route
 from lyoko.domain.models.state import is_message
 
-logger = logging.getLogger("lyoko.application.use_cases.route_event")
+logger = logging.getLogger("lyoko.application.workflow.routing.route_event")
 
 
 class RouteEventUseCase:

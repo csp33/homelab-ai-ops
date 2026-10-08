@@ -4,9 +4,9 @@ import logging
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
+from lyoko.application.chat.use_cases.handle_turn import HandleChatTurnUseCase
+from lyoko.application.incidents.use_cases.diagnose import DiagnoseIncidentUseCase
 from lyoko.application.skills.matcher import SkillMatcherService
-from lyoko.application.use_cases.diagnose_incident import DiagnoseIncidentUseCase
-from lyoko.application.use_cases.handle_chat import HandleChatTurnUseCase
 from lyoko.domain.interfaces.approval import ApprovalManagerInterface
 from lyoko.domain.interfaces.chat_service import ChatServiceInterface
 from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
@@ -16,7 +16,7 @@ from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
 from lyoko.domain.interfaces.supervisor import SupervisorInterface
 from lyoko.domain.models.state import is_message
 
-logger = logging.getLogger("lyoko.application.use_cases.coordinate_workflow")
+logger = logging.getLogger("lyoko.application.workflow.coordinator")
 
 
 class CoordinateWorkflowUseCase:
