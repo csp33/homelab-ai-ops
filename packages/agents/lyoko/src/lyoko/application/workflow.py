@@ -156,16 +156,16 @@ def create_lyoko_graph(
     # Specialist nodes
     specialists_dict = specialists or {}
     for domain in SpecialistDomain:
-        spec = specialists_dict.get(domain.value)
+        spec = specialists_dict.get(domain)
         node_fn = create_specialist_node(
-            domain=domain.value,
+            domain=domain,
             specialist=spec,
             mcp_client=mcp_client,
             approval_manager=approval_manager,
             chat_manager=chat_manager,
         )
-        workflow.add_node(domain.value, node_fn)
-        workflow.add_edge(domain.value, "coordinator")
+        workflow.add_node(domain, node_fn)
+        workflow.add_edge(domain, "coordinator")
 
     workflow.add_node("remediate", remediate_node)
     workflow.add_node("verify", verify_node)
@@ -186,12 +186,12 @@ def create_lyoko_graph(
         "coordinator",
         choose_coordinator_next,
         {
-            CoordinatorNext.KUBERNETES.value: SpecialistDomain.KUBERNETES.value,
-            CoordinatorNext.UNIFI.value: SpecialistDomain.UNIFI.value,
-            CoordinatorNext.HOMEASSISTANT.value: SpecialistDomain.HOMEASSISTANT.value,
-            CoordinatorNext.GRAFANA.value: SpecialistDomain.GRAFANA.value,
-            CoordinatorNext.REMEDIATE.value: "remediate",
-            CoordinatorNext.CHAT_END.value: END,
+            CoordinatorNext.KUBERNETES: SpecialistDomain.KUBERNETES,
+            CoordinatorNext.UNIFI: SpecialistDomain.UNIFI,
+            CoordinatorNext.HOMEASSISTANT: SpecialistDomain.HOMEASSISTANT,
+            CoordinatorNext.GRAFANA: SpecialistDomain.GRAFANA,
+            CoordinatorNext.REMEDIATE: "remediate",
+            CoordinatorNext.CHAT_END: END,
         },
     )
     workflow.add_edge("remediate", "verify")

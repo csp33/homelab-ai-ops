@@ -82,14 +82,16 @@ def test_lyoko_memory_domain_models():
 
 
 def test_coordinator_next_and_specialist_domain_enums():
-    assert SpecialistDomain.KUBERNETES.value == "kubernetes"
-    assert SpecialistDomain.UNIFI.value == "unifi"
-    assert SpecialistDomain.HOMEASSISTANT.value == "homeassistant"
-    assert SpecialistDomain.GRAFANA.value == "grafana"
+    assert SpecialistDomain.KUBERNETES == "kubernetes"
+    assert SpecialistDomain.UNIFI == "unifi"
+    assert SpecialistDomain.HOMEASSISTANT == "homeassistant"
+    assert SpecialistDomain.GRAFANA == "grafana"
+    assert isinstance(SpecialistDomain.KUBERNETES, str)
 
-    assert CoordinatorNext.KUBERNETES.value == "kubernetes"
-    assert CoordinatorNext.UNIFI.value == "unifi"
-    assert CoordinatorNext.HOMEASSISTANT.value == "homeassistant"
-    assert CoordinatorNext.GRAFANA.value == "grafana"
-    assert CoordinatorNext.REMEDIATE.value == "remediate"
-    assert CoordinatorNext.CHAT_END.value == "chat_end"
+    assert CoordinatorNext.KUBERNETES == "kubernetes"
+    assert CoordinatorNext.UNIFI == "unifi"
+    assert CoordinatorNext.HOMEASSISTANT == "homeassistant"
+    assert CoordinatorNext.GRAFANA == "grafana"
+    assert CoordinatorNext.REMEDIATE == "remediate"
+    assert CoordinatorNext.CHAT_END == "chat_end"
+    assert isinstance(CoordinatorNext.CHAT_END, str)

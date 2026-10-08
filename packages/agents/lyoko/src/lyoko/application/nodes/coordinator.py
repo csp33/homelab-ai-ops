@@ -19,7 +19,7 @@ logger = logging.getLogger("lyoko.workflow.coordinator")
 SPECIALIST_DOMAINS = frozenset(SpecialistDomain)
 
 
-def choose_coordinator_next(state: dict[str, Any]) -> str:
+def choose_coordinator_next(state: dict[str, Any]) -> CoordinatorNext:
     """Determine the next node after coordinator execution.
 
     - If a specialist delegation is pending, route to that specialist node.
@@ -30,15 +30,15 @@ def choose_coordinator_next(state: dict[str, Any]) -> str:
     if pending and isinstance(pending, dict):
         domain = pending.get("domain")
         if domain in SPECIALIST_DOMAINS:
-            return CoordinatorNext(domain).value
+            return CoordinatorNext(domain)
 
     # Chat branch resolution goes directly to END (reply is already formatted)
     if is_message(state) and state.get("route") != "incident":
-        return CoordinatorNext.CHAT_END.value
+        return CoordinatorNext.CHAT_END
 
     # For alerts / incidents: coordinator diagnosis leads to remediate.
     # remediate and verify handle non-actionable or escalated incidents safely.
-    return CoordinatorNext.REMEDIATE.value
+    return CoordinatorNext.REMEDIATE
 
 
 def create_coordinator_node(
