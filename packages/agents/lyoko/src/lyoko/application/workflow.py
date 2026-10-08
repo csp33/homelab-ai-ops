@@ -39,6 +39,7 @@ from lyoko.config import settings  # noqa: F401
 from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
+from lyoko.domain.models.incident import CoordinatorNext, SpecialistDomain
 
 
 class LyokoState(TypedDict, total=False):
@@ -154,17 +155,17 @@ def create_lyoko_graph(
 
     # Specialist nodes
     specialists_dict = specialists or {}
-    for domain in ["kubernetes", "unifi", "homeassistant", "grafana"]:
-        spec = specialists_dict.get(domain)
+    for domain in SpecialistDomain:
+        spec = specialists_dict.get(domain.value)
         node_fn = create_specialist_node(
-            domain=domain,
+            domain=domain.value,
             specialist=spec,
             mcp_client=mcp_client,
             approval_manager=approval_manager,
             chat_manager=chat_manager,
         )
-        workflow.add_node(domain, node_fn)
-        workflow.add_edge(domain, "coordinator")
+        workflow.add_node(domain.value, node_fn)
+        workflow.add_edge(domain.value, "coordinator")
 
     workflow.add_node("remediate", remediate_node)
     workflow.add_node("verify", verify_node)
@@ -185,12 +186,12 @@ def create_lyoko_graph(
         "coordinator",
         choose_coordinator_next,
         {
-            "kubernetes": "kubernetes",
-            "unifi": "unifi",
-            "homeassistant": "homeassistant",
-            "grafana": "grafana",
-            "remediate": "remediate",
-            "chat_end": END,
+            CoordinatorNext.KUBERNETES.value: SpecialistDomain.KUBERNETES.value,
+            CoordinatorNext.UNIFI.value: SpecialistDomain.UNIFI.value,
+            CoordinatorNext.HOMEASSISTANT.value: SpecialistDomain.HOMEASSISTANT.value,
+            CoordinatorNext.GRAFANA.value: SpecialistDomain.GRAFANA.value,
+            CoordinatorNext.REMEDIATE.value: "remediate",
+            CoordinatorNext.CHAT_END.value: END,
         },
     )
     workflow.add_edge("remediate", "verify")

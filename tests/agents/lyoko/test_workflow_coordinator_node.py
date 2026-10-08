@@ -55,11 +55,14 @@ async def test_coordinator_handles_alert_diagnose():
 
 
 def test_choose_coordinator_next():
+    from lyoko.domain.models.incident import CoordinatorNext, SpecialistDomain
+
     # If pending delegation exists for a known specialist
     state_delegating = {
         "pending_delegation": {"domain": "kubernetes"},
     }
-    assert choose_coordinator_next(state_delegating) == "kubernetes"
+    assert choose_coordinator_next(state_delegating) == CoordinatorNext.KUBERNETES.value
+    assert choose_coordinator_next(state_delegating) == SpecialistDomain.KUBERNETES.value
 
     # If message and finished
     state_chat_done = {
@@ -68,7 +71,7 @@ def test_choose_coordinator_next():
         "route": "chat",
         "reply": "All good",
     }
-    assert choose_coordinator_next(state_chat_done) == "chat_end"
+    assert choose_coordinator_next(state_chat_done) == CoordinatorNext.CHAT_END.value
 
     # If alert and actionable or unfixable diagnosis, routes to remediate
     state_alert = {
@@ -76,4 +79,4 @@ def test_choose_coordinator_next():
         "event_type": "alert",
         "requires_escalation": True,
     }
-    assert choose_coordinator_next(state_alert) == "remediate"
+    assert choose_coordinator_next(state_alert) == CoordinatorNext.REMEDIATE.value

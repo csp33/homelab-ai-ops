@@ -30,6 +30,22 @@ class IncidentStatus(StrEnum):
     FAILED = "failed"
 
 
+class SpecialistDomain(StrEnum):
+    KUBERNETES = "kubernetes"
+    UNIFI = "unifi"
+    HOMEASSISTANT = "homeassistant"
+    GRAFANA = "grafana"
+
+
+class CoordinatorNext(StrEnum):
+    KUBERNETES = "kubernetes"
+    UNIFI = "unifi"
+    HOMEASSISTANT = "homeassistant"
+    GRAFANA = "grafana"
+    REMEDIATE = "remediate"
+    CHAT_END = "chat_end"
+
+
 @dataclass(frozen=True)
 class Incident:
     """An alert LYOKO must investigate.

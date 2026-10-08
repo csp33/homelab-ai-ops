@@ -1,9 +1,11 @@
 """Unit tests for LYOKO agent domain models."""
 
 from lyoko.domain.models.incident import (
+    CoordinatorNext,
     Incident,
     IncidentState,
     IncidentStatus,
+    SpecialistDomain,
 )
 from lyoko.domain.models.memory import (
     FeedbackRequest,
@@ -77,3 +79,17 @@ def test_lyoko_memory_domain_models():
     result = MemoryQueryResult(memory=entry, similarity=0.92)
     assert result.similarity == 0.92
     assert result.memory.id == 10
+
+
+def test_coordinator_next_and_specialist_domain_enums():
+    assert SpecialistDomain.KUBERNETES.value == "kubernetes"
+    assert SpecialistDomain.UNIFI.value == "unifi"
+    assert SpecialistDomain.HOMEASSISTANT.value == "homeassistant"
+    assert SpecialistDomain.GRAFANA.value == "grafana"
+
+    assert CoordinatorNext.KUBERNETES.value == "kubernetes"
+    assert CoordinatorNext.UNIFI.value == "unifi"
+    assert CoordinatorNext.HOMEASSISTANT.value == "homeassistant"
+    assert CoordinatorNext.GRAFANA.value == "grafana"
+    assert CoordinatorNext.REMEDIATE.value == "remediate"
+    assert CoordinatorNext.CHAT_END.value == "chat_end"

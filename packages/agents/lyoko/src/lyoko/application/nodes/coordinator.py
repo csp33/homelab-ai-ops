@@ -12,10 +12,11 @@ from lyoko.application.use_cases.coordinate_workflow import CoordinateWorkflowUs
 from lyoko.domain.interfaces.embeddings import EmbeddingsServiceInterface
 from lyoko.domain.interfaces.llm import LLMClientInterface
 from lyoko.domain.interfaces.memory import MemoryRepositoryInterface
+from lyoko.domain.models.incident import CoordinatorNext, SpecialistDomain
 
 logger = logging.getLogger("lyoko.workflow.coordinator")
 
-SPECIALIST_DOMAINS = frozenset({"kubernetes", "unifi", "homeassistant", "grafana"})
+SPECIALIST_DOMAINS = frozenset(SpecialistDomain)
 
 
 def choose_coordinator_next(state: dict[str, Any]) -> str:
@@ -29,15 +30,15 @@ def choose_coordinator_next(state: dict[str, Any]) -> str:
     if pending and isinstance(pending, dict):
         domain = pending.get("domain")
         if domain in SPECIALIST_DOMAINS:
-            return domain
+            return CoordinatorNext(domain).value
 
     # Chat branch resolution goes directly to END (reply is already formatted)
     if is_message(state) and state.get("route") != "incident":
-        return "chat_end"
+        return CoordinatorNext.CHAT_END.value
 
     # For alerts / incidents: coordinator diagnosis leads to remediate.
     # remediate and verify handle non-actionable or escalated incidents safely.
-    return "remediate"
+    return CoordinatorNext.REMEDIATE.value
 
 
 def create_coordinator_node(
