@@ -51,7 +51,7 @@ from lyoko.domain.models.state import LyokoState
 
 
 def create_lyoko_graph(
-    mcp_client: MCPClientInterface | None = None,
+    mcp_client: MCPClientInterface,
     approval_manager: ApprovalManagerInterface | None = None,
     chat_manager: ChatServiceInterface | None = None,
     checkpointer: Any = None,
