@@ -471,3 +471,75 @@ async def test_tool_schema_remembers_the_readonly_hint():
         await client.get_tool_schema("grafana_query_prometheus")
 
     assert client.is_read_only("grafana_query_prometheus") is True
+
+
+@pytest.mark.asyncio
+async def test_call_tool_resolves_alias_key_for_tool_name():
+    """Models often pass the tool name under 'tool', 'name', or 'target_tool'."""
+    client = FastMCPClient(server_url="http://x/mcp", token="")
+    client.call_tool = AsyncMock(return_value={"ok": True})
+    tools = {t.name: t for t in client.get_langchain_tools()}
+
+    await tools["gateway_call_tool"].ainvoke({"tool": "ha_get_logs", "source": "core", "limit": 10})
+    client.call_tool.assert_awaited_once_with("ha_get_logs", {"source": "core", "limit": 10})
+
+
+@pytest.mark.asyncio
+async def test_call_tool_resolves_single_nested_key_matching_tool_name():
+    """Models sometimes wrap the parameters under {tool_name: {args}}."""
+    client = FastMCPClient(server_url="http://x/mcp", token="")
+    client.call_tool = AsyncMock(return_value={"ok": True})
+    tools = {t.name: t for t in client.get_langchain_tools()}
+
+    await tools["gateway_call_tool"].ainvoke({"ha_get_logs": {"source": "core", "limit": 10}})
+    client.call_tool.assert_awaited_once_with("ha_get_logs", {"source": "core", "limit": 10})
+
+
+@pytest.mark.asyncio
+async def test_call_tool_infers_tool_name_from_domain_catalog():
+    """When tool_name is omitted, infer it if passed arguments uniquely match a domain tool."""
+    client = FastMCPClient(server_url="http://x/mcp", token="")
+    client.call_tool = AsyncMock(return_value={"ok": True})
+    client.get_domain_catalog = AsyncMock(
+        return_value=[
+            {
+                "name": "ha_get_logs",
+                "parameters": {
+                    "properties": {
+                        "source": {"type": "string"},
+                        "level": {"type": "string"},
+                        "structured": {"type": "boolean"},
+                    }
+                },
+            },
+            {
+                "name": "ha_get_state",
+                "parameters": {
+                    "properties": {
+                        "entity_id": {"type": "string"},
+                    }
+                },
+            },
+        ]
+    )
+    tools = {t.name: t for t in await client.get_domain_langchain_tools("homeassistant")}
+
+    output = await tools["gateway_call_tool"].ainvoke(
+        {"source": "error_log", "level": "error", "structured": True}
+    )
+    assert output == "{'ok': True}"
+    client.call_tool.assert_awaited_once_with(
+        "ha_get_logs", {"source": "error_log", "level": "error", "structured": True}
+    )
+
+
+@pytest.mark.asyncio
+async def test_call_tool_returns_actionable_error_when_tool_name_cannot_be_inferred():
+    """When tool_name is completely missing and cannot be inferred, return actionable feedback."""
+    client = FastMCPClient(server_url="http://x/mcp", token="")
+    client.call_tool = AsyncMock()
+    tools = {t.name: t for t in client.get_langchain_tools()}
+
+    output = await tools["gateway_call_tool"].ainvoke({"foo": "bar", "baz": 123})
+    assert "Missing required 'tool_name'" in output
+    assert "gateway_call_tool" in output

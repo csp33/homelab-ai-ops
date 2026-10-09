@@ -45,8 +45,9 @@ class SpecialistToolCatalogFormatter:
         body = "\n".join(lines)
         return (
             "--- AVAILABLE TOOLS IN YOUR DOMAIN ---\n"
-            "Call them directly by exact name with `gateway_call_tool(tool_name, arguments)`. The signature "
-            "after each name shows its exact argument names ('?' = optional). Do NOT call "
+            "Call them by passing `tool_name` and `arguments` to `gateway_call_tool(tool_name, arguments)`.\n"
+            'Example: `gateway_call_tool(tool_name="<tool_name>", arguments={...})`. The `tool_name` is REQUIRED.\n'
+            "The signature after each name shows its exact argument names ('?' = optional). Do NOT call "
             "`gateway_get_tool_schema` upfront; all argument names are already listed below. Only call "
             "`gateway_get_tool_schema` if a `gateway_call_tool` invocation fails or is rejected.\n"
             f"{body}\n"

@@ -147,6 +147,17 @@ class ReActHarnessRunner(HarnessRunnerInterface):
 
             if cycle_len is not None or call_occurrences >= 2:
                 logger.warning("Breaking ReAct loop due to cycle or repeat detection.")
+                for tc in response.tool_calls:
+                    messages.append(
+                        ToolMessage(
+                            content=(
+                                "[System Note: Repeated tool call cycle detected. Execution stopped "
+                                "to prevent infinite loop. Summarize findings now without further calls.]"
+                            ),
+                            tool_call_id=tc["id"],
+                            name=tc.get("name", "tool"),
+                        )
+                    )
                 break
 
             call_history.append(current_sig)
