@@ -12,6 +12,7 @@ def create_webhook_router(
     workflow_app: Any = None,
     tracer: TracerInterface | None = None,
     alert_guard: Any = None,
+    task_tracker: Any = None,
 ) -> APIRouter:
     """Router handling Prometheus / Alertmanager incoming webhooks."""
     router = APIRouter(prefix="/webhook", tags=["webhooks"])
@@ -20,6 +21,12 @@ def create_webhook_router(
     async def handle_alertmanager_webhook(
         request: Request, background_tasks: BackgroundTasks
     ) -> dict[str, str]:
+        tracker = task_tracker or getattr(request.app.state, "task_tracker", None)
+        if tracker and tracker.is_closing:
+            raise HTTPException(
+                status_code=503, detail="Server is shutting down; draining active tasks."
+            )
+
         try:
             data = await request.json()
         except Exception as exc:
@@ -89,12 +96,15 @@ def create_webhook_router(
             guard = AlertStormProtector(
                 chat_manager=chat_mgr,
                 dispatch_callback=_dispatch,
+                task_tracker=tracker,
             )
             # Cache on app.state if available so state is preserved across requests
             if hasattr(request.app, "state"):
                 request.app.state.alert_guard = guard
         elif guard._dispatch_callback is None:
             guard._dispatch_callback = _dispatch
+        if hasattr(guard, "_task_tracker") and guard._task_tracker is None and tracker is not None:
+            guard._task_tracker = tracker
 
         background_tasks.add_task(guard.ingest_alerts, alerts)
 

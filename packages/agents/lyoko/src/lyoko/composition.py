@@ -25,6 +25,7 @@ from lyoko.application.skills.matcher import SkillMatcherService
 from lyoko.config import settings
 from lyoko.domain.exceptions.mcp import MCPGatewayError
 from lyoko.domain.interfaces.llm import LLMClientInterface
+from lyoko.domain.interfaces.lock import DistributedLock
 from lyoko.domain.interfaces.mcp import MCPClientInterface
 from lyoko.infrastructure.chat.manager import ChatManager
 from lyoko.infrastructure.chat.telegram import TelegramConnector
@@ -162,6 +163,7 @@ def build_chat_manager(
     approval_manager: ApprovalManager,
     memory_repo: PostgresMemoryRepository | None = None,
     embeddings_service: EmbeddingsService | None = None,
+    lock: DistributedLock | None = None,
 ) -> ChatManager:
     """Instantiate the chat connectors.
 
@@ -181,6 +183,7 @@ def build_chat_manager(
             discussion_group_id=settings.telegram_discussion_group_id,
             memory_repository=memory_repo,
             embeddings_service=embeddings_service,
+            lock=lock,
         )
         telegram_connector.register_approval_handler(approval_manager.resolve_approval)
         chat_manager.add_connector(telegram_connector)
