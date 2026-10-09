@@ -91,3 +91,36 @@ async def test_recovery_resumes_interrupted_incident():
 
     await asyncio.sleep(0.01)
     mock_engine.ainvoke.assert_called_once_with(None, config=mock_tuple.config)
+
+
+@pytest.mark.asyncio
+async def test_recovery_drains_alist_before_calling_aget_state():
+    """Verify checkpointer iterator is fully drained before aget_state is called to prevent lock deadlock."""
+    generator_active = True
+    deadlock_detected = False
+
+    async def mock_alist(config):
+        nonlocal generator_active
+        mock_t = MagicMock()
+        mock_t.config = {"configurable": {"thread_id": "incident-deadlock-test"}}
+        yield mock_t
+        generator_active = False
+
+    async def mock_aget_state(cfg):
+        nonlocal deadlock_detected
+        if generator_active:
+            deadlock_detected = True
+        snap = MagicMock()
+        snap.next = ()
+        return snap
+
+    mock_checkpointer = MagicMock()
+    mock_checkpointer.alist = mock_alist
+    mock_engine = MagicMock()
+    mock_engine.aget_state = AsyncMock(side_effect=mock_aget_state)
+
+    service = OrphanRecoveryService(workflow_engine=mock_engine, checkpointer=mock_checkpointer)
+    await service.recover_orphaned_incidents()
+
+    assert not deadlock_detected
+    assert not generator_active
